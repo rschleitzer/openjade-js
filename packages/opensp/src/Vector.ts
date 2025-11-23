@@ -270,4 +270,9 @@ export class Vector<T> {
     }
     this.ptr_ = p;
   }
+
+  // Provides access to underlying array (like C++ &vector[0])
+  data(): T[] | null {
+    return this.ptr_;
+  }
 }

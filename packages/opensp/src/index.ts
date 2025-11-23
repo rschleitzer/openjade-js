@@ -29,3 +29,22 @@ export { NamedResource } from './NamedResource';
 // Utilities
 export { Hash } from './Hash';
 export { HashTable, HashTableIter, Hashable } from './HashTable';
+export * from './constant';
+export { Mode, nModes, minShortrefMode } from './Mode';
+export { StringResource } from './StringResource';
+export { SubstTable } from './SubstTable';
+
+// Location and origin tracking
+export {
+  Location,
+  Origin,
+  ProxyOrigin,
+  BracketOrigin,
+  ReplacementOrigin,
+  MultiReplacementOrigin,
+  InputSourceOrigin,
+  EntityOrigin,
+  ExternalInfo,
+  NamedCharRef,
+  InputSourceOriginNamedCharRef
+} from './Location';

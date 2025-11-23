@@ -80,29 +80,42 @@ packages/opensp/src/
 Total: 18 files, ~1,400 lines of ported TypeScript code
 ```
 
+### Phase 3: Location and Utilities (Recently Completed)
+- ✅ **SubstTable.ts** - Character substitution table with binary search
+- ✅ **Location.ts** - Source location tracking system
+  - Location class (origin + index)
+  - Origin hierarchy (base class for location origins)
+  - ProxyOrigin, BracketOrigin, ReplacementOrigin, MultiReplacementOrigin
+  - InputSourceOrigin with character reference tracking
+  - EntityOrigin (partial - awaiting Entity class)
+  - NamedCharRef tracking
+  - ExternalInfo support
+- ✅ **Vector.data()** - Added data() method for underlying array access
+
 ## Next Steps (Priority Order)
 
-### Phase 3: Core Infrastructure Classes (Next)
-4. Port Resource.h/cxx → Resource.ts (message resources)
-5. Port Message.h/cxx → Message.ts (message system)
-6. Port Location.h/cxx → Location.ts (source location tracking)
+### Phase 4: Core Infrastructure Classes (Next)
+4. Port Message.h/cxx → Message.ts (message system)
+5. Port Text.h/cxx → Text.ts (text with location tracking)
+6. Port Markup.h/cxx → Markup.ts (markup tracking)
 7. Port Input.h/cxx → Input.ts (input abstraction)
-8. Port EntityManager.h/cxx → EntityManager.ts
+8. Port Entity.h/cxx → Entity.ts (entity management)
+9. Port EntityManager.h/cxx → EntityManager.ts
 
-### Phase 4: SGML Tokenization
-9. Port Syntax.h/cxx → Syntax.ts
-10. Port CharsetInfo.h/cxx → CharsetInfo.ts
-11. Port Scanner classes
+### Phase 5: SGML Tokenization
+10. Port Syntax.h/cxx → Syntax.ts
+11. Port CharsetInfo.h/cxx → CharsetInfo.ts
+12. Port Scanner classes
 
-### Phase 5: Parser Core
-12. Port Parser.h/cxx → Parser.ts
-13. Port ParserState.h/cxx → ParserState.ts
-14. Port Event.h/cxx → Event.ts
+### Phase 6: Parser Core
+13. Port Parser.h/cxx → Parser.ts
+14. Port ParserState.h/cxx → ParserState.ts
+15. Port Event.h/cxx → Event.ts
 
-### Phase 6: Application Layer
-15. Port nsgmls tool (equivalent to onsgmls in TypeScript)
-16. Create ESIS output test
-17. Compare with C++ onsgmls output
+### Phase 7: Application Layer
+16. Port onsgmls tool (ESIS output generator)
+17. Create ESIS output test
+18. Compare with C++ onsgmls output byte-for-byte
 
 ## Testing Strategy
 
@@ -123,9 +136,11 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 
 ## Success Metrics
 
-- [x] All foundational data structures ported (16 core classes)
+- [x] All foundational data structures ported (18 core classes)
 - [x] Smart pointer system complete (Resource, Ptr, Owner, CopyOwner)
-- [ ] Basic parser infrastructure complete (Location, Message, Input)
+- [x] Location tracking system complete (Location, Origin hierarchy)
+- [x] Character substitution utilities (SubstTable)
+- [ ] Basic parser infrastructure complete (Message, Input, Text)
 - [ ] Entity and DTD management (EntityManager, Dtd, Syntax)
 - [ ] Can parse minimal SGML document
 - [ ] ESIS output matches C++ version exactly
@@ -161,8 +176,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~1,400 lines (18 core classes)
-- **Progress: ~3%** (by LOC, but critical foundation complete)
+- TypeScript (ported so far): ~2,000 lines (20+ classes including Location system)
+- **Progress: ~4%** (by LOC, but critical foundation complete)
 
 ---
 
