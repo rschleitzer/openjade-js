@@ -117,30 +117,34 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **CodingSystem.ts** - Character encoding infrastructure (Decoder, Encoder, InputCodingSystem, OutputCodingSystem)
 - ✅ **IdentityCodingSystem.ts** - Identity (pass-through) character encoding
 
+### Phase 7: Message System (Completed)
+- ✅ **MessageBuilder.ts** - Abstract interface for message formatting
+- ✅ **MessageArg.ts** - Message argument classes (StringMessageArg, NumberMessageArg, OrdinalMessageArg, etc.)
+- ✅ **Message.ts** - Complete message system with MessageType hierarchy, Messenger abstract class, and implementations
+
 ## Next Steps (Priority Order)
 
-### Phase 7: Core Infrastructure Classes (Next)
-1. Port Message.h/cxx → Message.ts (message system)
-2. Port CodingSystem.h/cxx → CodingSystem.ts (character encoding)
-3. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
-4. Port Input.h/cxx → Input.ts (input abstraction)
-5. Port Entity.h/cxx → Entity.ts (entity management)
-6. Port EntityManager.h/cxx → EntityManager.ts
+### Phase 8: Core Infrastructure Classes (Next)
+1. Port ExternalId.h/cxx → ExternalId.ts (external identifier handling)
+2. Port CharsetInfo.h/cxx → CharsetInfo.ts (character set information)
+3. Port InputSource.h/cxx → InputSource.ts (input abstraction)
+4. Port Entity.h/cxx → Entity.ts (entity management)
+5. Port EntityManager.h/cxx → EntityManager.ts
+6. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
 
-### Phase 8: SGML Tokenization
+### Phase 9: SGML Tokenization
 7. Port Syntax.h/cxx → Syntax.ts
-8. Port CharsetInfo.h/cxx → CharsetInfo.ts
-9. Port Scanner classes
+8. Port Scanner classes
 
-### Phase 9: Parser Core
-10. Port Parser.h/cxx → Parser.ts
-11. Port ParserState.h/cxx → ParserState.ts
-12. Port Event.h/cxx → Event.ts
+### Phase 10: Parser Core
+9. Port Parser.h/cxx → Parser.ts
+10. Port ParserState.h/cxx → ParserState.ts
+11. Port Event.h/cxx → Event.ts
 
-### Phase 10: Application Layer
-13. Port onsgmls tool (ESIS output generator)
-14. Create ESIS output test
-15. Compare with C++ onsgmls output byte-for-byte
+### Phase 11: Application Layer
+12. Port onsgmls tool (ESIS output generator)
+13. Create ESIS output test
+14. Compare with C++ onsgmls output byte-for-byte
 
 ## Testing Strategy
 
@@ -201,8 +205,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~4,900 lines (45 modules out of 120 headers)
-- **Progress: ~10%** (by LOC, foundational layer complete)
+- TypeScript (ported so far): ~5,500 lines (49 modules out of 120 headers)
+- **Progress: ~11%** (by LOC, foundational layer complete)
 
 ---
 
