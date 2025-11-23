@@ -57,6 +57,8 @@ export {
   InputSourceOriginNamedCharRef
 } from './Location';
 export { EntityDecl } from './EntityDecl';
+export { EntityCatalog } from './EntityCatalog';
+export { EntityManager } from './EntityManager';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
