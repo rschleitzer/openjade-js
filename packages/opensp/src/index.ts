@@ -71,6 +71,10 @@ export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
 // I/O streams
 export { OutputByteStream, StrOutputByteStream, FileOutputByteStream } from './OutputByteStream';
 
+// Coding systems
+export { Decoder, Encoder, RecoveringEncoder, InputCodingSystem, OutputCodingSystem, CodingSystem } from './CodingSystem';
+export { IdentityCodingSystem } from './IdentityCodingSystem';
+
 // Parser and command-line options
 export { EventsWanted } from './EventsWanted';
 export { Warnings, ParserOptions, Quantity } from './ParserOptions';
