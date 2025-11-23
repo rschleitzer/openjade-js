@@ -80,7 +80,7 @@ packages/opensp/src/
 Total: 18 files, ~1,400 lines of ported TypeScript code
 ```
 
-### Phase 3: Location and Utilities (Recently Completed)
+### Phase 3: Location and Utilities (Completed)
 - ✅ **SubstTable.ts** - Character substitution table with binary search
 - ✅ **Location.ts** - Source location tracking system
   - Location class (origin + index)
@@ -91,31 +91,54 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - NamedCharRef tracking
   - ExternalInfo support
 - ✅ **Vector.data()** - Added data() method for underlying array access
+- ✅ **Text.ts** - Text with location tracking
+- ✅ **CharMap.ts** / **XcharMap.ts** - Character mapping utilities
+- ✅ **ISet.ts** / **RangeMap.ts** - Integer sets and range mapping
+- ✅ **IListIterBase.ts** / **IListIter.ts** / **List.ts** - List iteration support
+
+### Phase 4: Options and Configuration (Completed)
+- ✅ **EventsWanted.ts** - Parser event configuration flags
+- ✅ **ParserOptions.ts** / **Warnings.ts** - Parser options with 70+ warning flags
+- ✅ **Options.ts** / **LongOption.ts** - Command-line option parsing (getopt-style)
+
+### Phase 5: Advanced Data Structures (Completed)
+- ✅ **PointerTable.ts** - Generic hash table with open addressing
+- ✅ **OwnerTable.ts** / **CopyOwnerTable.ts** - Owning hash tables with RAII semantics
+- ✅ **NamedTable.ts** - Hash table for Named objects
+- ✅ **NamedResourceTable.ts** - Hash table for NamedResource objects
+- ✅ **IQueue.ts** / **IQueueBase.ts** - Intrusive circular queue
+- ✅ **NCVector.ts** - Non-copying vector alias
+
+### Phase 6: System Utilities (Completed)
+- ✅ **TypeId.ts** - Runtime type information (simplified for TypeScript)
+- ✅ **macros.ts** - ASSERT, CANNOT_HAPPEN, SIZEOF utilities
+- ✅ **sptchar.ts** - Platform string utilities
+- ✅ **OutputByteStream.ts** - Buffered byte output streams (StrOutputByteStream, FileOutputByteStream)
 
 ## Next Steps (Priority Order)
 
-### Phase 4: Core Infrastructure Classes (Next)
-4. Port Message.h/cxx → Message.ts (message system)
-5. Port Text.h/cxx → Text.ts (text with location tracking)
-6. Port Markup.h/cxx → Markup.ts (markup tracking)
-7. Port Input.h/cxx → Input.ts (input abstraction)
-8. Port Entity.h/cxx → Entity.ts (entity management)
-9. Port EntityManager.h/cxx → EntityManager.ts
+### Phase 7: Core Infrastructure Classes (Next)
+1. Port Message.h/cxx → Message.ts (message system)
+2. Port CodingSystem.h/cxx → CodingSystem.ts (character encoding)
+3. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
+4. Port Input.h/cxx → Input.ts (input abstraction)
+5. Port Entity.h/cxx → Entity.ts (entity management)
+6. Port EntityManager.h/cxx → EntityManager.ts
 
-### Phase 5: SGML Tokenization
-10. Port Syntax.h/cxx → Syntax.ts
-11. Port CharsetInfo.h/cxx → CharsetInfo.ts
-12. Port Scanner classes
+### Phase 8: SGML Tokenization
+7. Port Syntax.h/cxx → Syntax.ts
+8. Port CharsetInfo.h/cxx → CharsetInfo.ts
+9. Port Scanner classes
 
-### Phase 6: Parser Core
-13. Port Parser.h/cxx → Parser.ts
-14. Port ParserState.h/cxx → ParserState.ts
-15. Port Event.h/cxx → Event.ts
+### Phase 9: Parser Core
+10. Port Parser.h/cxx → Parser.ts
+11. Port ParserState.h/cxx → ParserState.ts
+12. Port Event.h/cxx → Event.ts
 
-### Phase 7: Application Layer
-16. Port onsgmls tool (ESIS output generator)
-17. Create ESIS output test
-18. Compare with C++ onsgmls output byte-for-byte
+### Phase 10: Application Layer
+13. Port onsgmls tool (ESIS output generator)
+14. Create ESIS output test
+15. Compare with C++ onsgmls output byte-for-byte
 
 ## Testing Strategy
 
@@ -176,8 +199,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~4,500 lines (42 modules)
-- **Progress: ~9%** (by LOC, critical foundation complete)
+- TypeScript (ported so far): ~4,700 lines (43 modules out of 120 headers)
+- **Progress: ~9%** (by LOC, foundational layer complete)
 
 ---
 
