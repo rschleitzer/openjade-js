@@ -44,7 +44,8 @@ export class HashTable<K extends Hashable, V> {
   private getHashKey(key: K): string {
     // For StringC, use the Hash function
     if (key instanceof String || (key as any).data) {
-      const h = Hash.hash(key as any as StringC);
+      const hashFunc = new Hash();
+      const h = hashFunc.hash(key as any as StringC);
       return h.toString();
     }
     // For other types, use toString()

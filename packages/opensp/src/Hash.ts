@@ -2,9 +2,10 @@
 // See the file COPYING for copying permission.
 
 import { StringC } from './StringC';
+import { HashFunction } from './PointerTable';
 
-export class Hash {
-  static hash(str: StringC): number {
+export class Hash implements HashFunction<StringC> {
+  hash(str: StringC): number {
     // unsigned long h = 0;
     let h = 0;
     const ptr = str.data();

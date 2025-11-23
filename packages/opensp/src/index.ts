@@ -67,3 +67,9 @@ export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
 export { EventsWanted } from './EventsWanted';
 export { Warnings, ParserOptions, Quantity } from './ParserOptions';
 export { Options, LongOption } from './Options';
+
+// Table utilities
+export { PointerTable, PointerTableIter, HashFunction, KeyFunction } from './PointerTable';
+export { OwnerTable, OwnerTableIter, CopyOwnerTable } from './OwnerTable';
+export { NamedTable, NamedTableIter, ConstNamedTableIter, NamedTableKeyFunction } from './NamedTable';
+export { NamedResourceTable, NamedResourceTableIter, ConstNamedResourceTableIter, NamedResourceKeyFunction } from './NamedResourceTable';
