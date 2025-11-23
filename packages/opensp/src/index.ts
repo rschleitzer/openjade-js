@@ -51,3 +51,7 @@ export {
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
+
+// Character mapping utilities
+export { CharMap, CharMapResource } from './CharMap';
+export { XcharMap } from './XcharMap';
