@@ -41,6 +41,7 @@ export { SubstTable } from './SubstTable';
 export { TypeId } from './TypeId';
 export { ASSERT, CANNOT_HAPPEN, SIZEOF } from './macros';
 export * from './sptchar';
+export { Allocator } from './Allocator';
 
 // Location and origin tracking
 export {
