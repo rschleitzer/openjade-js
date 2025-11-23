@@ -131,28 +131,34 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **MarkupScan.ts** - Markup scanning type definitions
 - ✅ **InputSource.ts** - Abstract input source with buffering and location tracking
 
+### Phase 10: Entity Management Foundation (Completed)
+- ✅ **EntityDecl.ts** - Entity declaration base class with DeclType and DataType enums
+- ✅ **EntityCatalog.ts** - Abstract entity catalog interface for resolving external identifiers
+- ✅ **EntityManager.ts** - Abstract entity manager interface for opening input sources
+
 ## Next Steps (Priority Order)
 
-### Phase 10: Entity and DTD Management (Next)
-1. Port Entity.h/cxx → Entity.ts (entity management)
-2. Port EntityDecl.h/cxx → EntityDecl.ts (entity declarations)
-3. Port EntityManager.h/cxx → EntityManager.ts
-4. Port Dtd.h/cxx → Dtd.ts (document type definition)
-5. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
+### Phase 11: Entity Implementation (Next)
+1. Port Attribute.h/cxx → Attribute.ts (attribute definitions)
+2. Port Attributed.h/cxx → Attributed.ts (attributed mixin)
+3. Port Notation.h/cxx → Notation.ts (notation declarations)
+4. Port Entity.h/cxx → Entity.ts (entity management)
+5. Port Dtd.h/cxx → Dtd.ts (document type definition)
+6. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
 
-### Phase 11: SGML Tokenization
-6. Port Syntax.h/cxx → Syntax.ts
-7. Port Scanner classes
+### Phase 12: SGML Tokenization
+7. Port Syntax.h/cxx → Syntax.ts
+8. Port Scanner classes
 
-### Phase 12: Parser Core
-8. Port Parser.h/cxx → Parser.ts
-9. Port ParserState.h/cxx → ParserState.ts
-10. Port Event.h/cxx → Event.ts
+### Phase 13: Parser Core
+9. Port Parser.h/cxx → Parser.ts
+10. Port ParserState.h/cxx → ParserState.ts
+11. Port Event.h/cxx → Event.ts
 
-### Phase 13: Application Layer
-11. Port onsgmls tool (ESIS output generator)
-12. Create ESIS output test
-13. Compare with C++ onsgmls output byte-for-byte
+### Phase 14: Application Layer
+12. Port onsgmls tool (ESIS output generator)
+13. Create ESIS output test
+14. Compare with C++ onsgmls output byte-for-byte
 
 ## Testing Strategy
 
@@ -213,8 +219,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~6,800 lines (54 modules out of 120 headers)
-- **Progress: ~14%** (by LOC, foundational layer complete)
+- TypeScript (ported so far): ~7,000 lines (57 modules out of 120 headers)
+- **Progress: ~14%** (by LOC, foundational infrastructure complete)
 
 ---
 
