@@ -114,6 +114,8 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **macros.ts** - ASSERT, CANNOT_HAPPEN, SIZEOF utilities
 - ✅ **sptchar.ts** - Platform string utilities
 - ✅ **OutputByteStream.ts** - Buffered byte output streams (StrOutputByteStream, FileOutputByteStream)
+- ✅ **CodingSystem.ts** - Character encoding infrastructure (Decoder, Encoder, InputCodingSystem, OutputCodingSystem)
+- ✅ **IdentityCodingSystem.ts** - Identity (pass-through) character encoding
 
 ## Next Steps (Priority Order)
 
@@ -199,8 +201,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~4,700 lines (43 modules out of 120 headers)
-- **Progress: ~9%** (by LOC, foundational layer complete)
+- TypeScript (ported so far): ~4,900 lines (45 modules out of 120 headers)
+- **Progress: ~10%** (by LOC, foundational layer complete)
 
 ---
 
