@@ -40,6 +40,7 @@ export { StringResource } from './StringResource';
 export { SubstTable } from './SubstTable';
 export { TypeId } from './TypeId';
 export { ASSERT, CANNOT_HAPPEN, SIZEOF } from './macros';
+export * from './sptchar';
 
 // Location and origin tracking
 export {
