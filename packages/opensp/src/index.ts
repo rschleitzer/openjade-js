@@ -63,6 +63,9 @@ export { EntityManager } from './EntityManager';
 export { Attributed } from './Attributed';
 export { Notation } from './Notation';
 
+// SGML syntax
+export { Syntax } from './Syntax';
+
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
 export { SdText, SdTextItem, SdTextIter } from './SdText';
