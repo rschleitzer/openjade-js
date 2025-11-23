@@ -139,10 +139,14 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **Notation.ts** - Notation declarations extending EntityDecl and Attributed
 - ✅ **SdText.ts** - SGML declaration text with location tracking
 - ✅ **CharsetDecl.ts** - Character set declaration with range mapping
+- ✅ **Allocator.ts** - Memory allocator stub (not needed in TypeScript/GC)
+
+### Phase 11: Parser Core (In Progress)
+- ✅ **Syntax.ts** - SGML syntax definition core (875 lines) - delimters, character sets, quantities
 
 ## Next Steps (Priority Order)
 
-### Phase 11: Entity Implementation (Next)
+### Phase 11 Continuation: Parser Core Components
 1. Port Attribute.h/cxx → Attribute.ts (attribute definitions)
 2. Port Attributed.h/cxx → Attributed.ts (attributed mixin)
 3. Port Notation.h/cxx → Notation.ts (notation declarations)
@@ -223,8 +227,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~7,350 lines (62 modules out of 120 headers)
-- **Progress: ~15%** (by LOC, foundational infrastructure complete)
+- TypeScript (ported so far): ~8,425 lines (64 modules out of 120 headers)
+- **Progress: ~17%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
