@@ -72,6 +72,7 @@ export { XcharMap } from './XcharMap';
 export { UnivCharsetDesc, UnivCharsetDescIter } from './UnivCharsetDesc';
 export { CharsetInfo } from './CharsetInfo';
 export { PublicId, ExternalId } from './ExternalId';
+export { CharsetDecl, CharsetDeclSection, CharsetDeclRange } from './CharsetDecl';
 
 // Set and range utilities
 export { ISet, ISetRange, ISetIter } from './ISet';
