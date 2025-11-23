@@ -137,6 +137,8 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **EntityManager.ts** - Abstract entity manager interface for opening input sources
 - ✅ **Attributed.ts** - Mixin for classes with attribute definitions
 - ✅ **Notation.ts** - Notation declarations extending EntityDecl and Attributed
+- ✅ **SdText.ts** - SGML declaration text with location tracking
+- ✅ **CharsetDecl.ts** - Character set declaration with range mapping
 
 ## Next Steps (Priority Order)
 
@@ -221,8 +223,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~7,100 lines (59 modules out of 120 headers)
-- **Progress: ~14%** (by LOC, foundational infrastructure complete)
+- TypeScript (ported so far): ~7,350 lines (62 modules out of 120 headers)
+- **Progress: ~15%** (by LOC, foundational infrastructure complete)
 
 ---
 
