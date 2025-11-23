@@ -63,6 +63,7 @@ export { Text, TextItem, TextIter } from './Text';
 // Character mapping utilities
 export { CharMap, CharMapResource } from './CharMap';
 export { XcharMap } from './XcharMap';
+export { UnivCharsetDesc, UnivCharsetDescIter } from './UnivCharsetDesc';
 
 // Set and range utilities
 export { ISet, ISetRange, ISetIter } from './ISet';
