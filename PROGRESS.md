@@ -22,6 +22,14 @@ We've successfully initiated the 1:1 mechanical port of OpenSP from C++ to TypeS
 - ✅ **IListBase.ts** - Base intrusive list implementation
 - ✅ **IList.ts** - Generic IList<T> template class
 
+### Smart Pointers & Resource Management (Phase 2)
+- ✅ **Resource.ts** - Reference counting base class (335+ uses in codebase)
+- ✅ **Ptr.ts** - Reference-counted smart pointer Ptr<T> and ConstPtr<T>
+- ✅ **Owner.ts** - Owning pointer template Owner<T>
+- ✅ **CopyOwner.ts** - Copy-on-assign owner CopyOwner<T>
+- ✅ **Named.ts** - Base class for named objects
+- ✅ **NamedResource.ts** - Named + Resource combined base class
+
 ### Testing
 - ✅ Basic test suite (`src/test.ts`) validates:
   - String operations (create, copy, append, insert, equals, resize)
@@ -51,27 +59,28 @@ We've successfully initiated the 1:1 mechanical port of OpenSP from C++ to TypeS
 ```
 packages/opensp/src/
 ├── Boolean.ts        (684 bytes)   - Type definitions
-├── IList.ts          (960 bytes)   - Generic intrusive list
-├── IListBase.ts      (1,779 bytes) - Intrusive list base class
-├── Link.ts           (389 bytes)   - Linked list node
-├── StringC.ts        (189 bytes)   - StringC typedef
-├── StringOf.ts       (6,917 bytes) - Generic String<T> implementation
-├── Vector.ts         (7,296 bytes) - Generic Vector<T> implementation
 ├── types.ts          (1,383 bytes) - Fundamental types
-├── index.ts          (new)         - Main exports
-└── test.ts           (new)         - Test suite
+├── StringOf.ts       (6,917 bytes) - Generic String<T> implementation
+├── StringC.ts        (189 bytes)   - StringC typedef
+├── Vector.ts         (7,296 bytes) - Generic Vector<T> implementation
+├── Link.ts           (389 bytes)   - Linked list node
+├── IListBase.ts      (1,779 bytes) - Intrusive list base class
+├── IList.ts          (960 bytes)   - Generic intrusive list
+├── Resource.ts       (624 bytes)   - Reference counting base
+├── Ptr.ts            (4,234 bytes) - Smart pointers (Ptr, ConstPtr)
+├── Owner.ts          (1,124 bytes) - Owning pointer
+├── CopyOwner.ts      (783 bytes)   - Copy-on-assign owner
+├── Named.ts          (631 bytes)   - Named objects base
+├── NamedResource.ts  (598 bytes)   - Named + Resource
+├── index.ts          (27 lines)    - Main exports
+└── test.ts           (2,758 bytes) - Test suite
 
-Total: ~20KB of ported TypeScript code
+Total: 16 files, ~30KB of ported TypeScript code
 ```
 
 ## Next Steps (Priority Order)
 
-### Phase 2: Smart Pointers & Memory Management
-1. Port Ptr.h/cxx → Ptr.ts (reference counted pointer)
-2. Port Owner.h → Owner.ts (ownership wrapper - likely just type alias)
-3. Port CopyOwner.h → CopyOwner.ts
-
-### Phase 3: Core Infrastructure Classes
+### Phase 3: Core Infrastructure Classes (Next)
 4. Port Resource.h/cxx → Resource.ts (message resources)
 5. Port Message.h/cxx → Message.ts (message system)
 6. Port Location.h/cxx → Location.ts (source location tracking)
@@ -112,8 +121,10 @@ Total: ~20KB of ported TypeScript code
 
 ## Success Metrics
 
-- [ ] All core data structures ported (3/10 done)
-- [ ] Basic parser infrastructure complete
+- [x] All foundational data structures ported (16 core classes)
+- [x] Smart pointer system complete (Resource, Ptr, Owner, CopyOwner)
+- [ ] Basic parser infrastructure complete (Location, Message, Input)
+- [ ] Entity and DTD management (EntityManager, Dtd, Syntax)
 - [ ] Can parse minimal SGML document
 - [ ] ESIS output matches C++ version exactly
 - [ ] Performance within 5x of C++ (acceptable Node.js overhead)
@@ -148,8 +159,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~500 lines
-- **Progress: ~1%** (by LOC, but foundational work is critical)
+- TypeScript (ported so far): ~1,000 lines (16 core classes)
+- **Progress: ~2%** (by LOC, but critical foundation complete)
 
 ---
 
