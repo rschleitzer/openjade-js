@@ -15,6 +15,9 @@ export { Vector } from './Vector';
 export { Link } from './Link';
 export { IListBase } from './IListBase';
 export { IList } from './IList';
+export { IListIterBase } from './IListIterBase';
+export { IListIter } from './IListIter';
+export { List, ListItem, ListIter } from './List';
 
 // Smart pointers and resource management
 export { Resource } from './Resource';
@@ -59,3 +62,8 @@ export { XcharMap } from './XcharMap';
 // Set and range utilities
 export { ISet, ISetRange, ISetIter } from './ISet';
 export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
+
+// Parser and command-line options
+export { EventsWanted } from './EventsWanted';
+export { Warnings, ParserOptions, Quantity } from './ParserOptions';
+export { Options, LongOption } from './Options';
