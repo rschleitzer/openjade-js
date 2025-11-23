@@ -68,6 +68,9 @@ export { XcharMap } from './XcharMap';
 export { ISet, ISetRange, ISetIter } from './ISet';
 export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
 
+// I/O streams
+export { OutputByteStream, StrOutputByteStream, FileOutputByteStream } from './OutputByteStream';
+
 // Parser and command-line options
 export { EventsWanted } from './EventsWanted';
 export { Warnings, ParserOptions, Quantity } from './ParserOptions';
