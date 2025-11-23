@@ -176,8 +176,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~2,000 lines (20+ classes including Location system)
-- **Progress: ~4%** (by LOC, but critical foundation complete)
+- TypeScript (ported so far): ~3,300 lines (30+ classes)
+- **Progress: ~7%** (by LOC, critical foundation complete)
 
 ---
 
