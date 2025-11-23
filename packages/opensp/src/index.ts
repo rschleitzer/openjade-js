@@ -48,3 +48,6 @@ export {
   NamedCharRef,
   InputSourceOriginNamedCharRef
 } from './Location';
+
+// Text with location tracking
+export { Text, TextItem, TextIter } from './Text';
