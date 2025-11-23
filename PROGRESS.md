@@ -142,17 +142,16 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **Allocator.ts** - Memory allocator stub (not needed in TypeScript/GC)
 
 ### Phase 11: Parser Core (In Progress)
-- ✅ **Syntax.ts** - SGML syntax definition core (875 lines) - delimters, character sets, quantities
+- ✅ **Syntax.ts** - SGML syntax definition core (875 lines) - delimiters, character sets, quantities
+- ✅ **Sd.ts** - SGML declaration configuration (563 lines) - features, capacities, reserved names
 
 ## Next Steps (Priority Order)
 
 ### Phase 11 Continuation: Parser Core Components
-1. Port Attribute.h/cxx → Attribute.ts (attribute definitions)
-2. Port Attributed.h/cxx → Attributed.ts (attributed mixin)
-3. Port Notation.h/cxx → Notation.ts (notation declarations)
-4. Port Entity.h/cxx → Entity.ts (entity management)
-5. Port Dtd.h/cxx → Dtd.ts (document type definition)
-6. Port OutputCharStream.h/cxx → OutputCharStream.ts (character output)
+1. Port Markup.h/cxx → Markup.ts (markup handling with Syntax and Sd)
+2. Port Attribute.h/cxx → Attribute.ts (attribute definitions - large ~1400 lines)
+3. Port Entity.h/cxx → Entity.ts (entity management)
+4. Port Dtd.h/cxx → Dtd.ts (document type definition)
 
 ### Phase 12: SGML Tokenization
 7. Port Syntax.h/cxx → Syntax.ts
@@ -227,8 +226,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~8,425 lines (64 modules out of 120 headers)
-- **Progress: ~17%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~8,986 lines (65 modules out of 120 headers)
+- **Progress: ~18%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
