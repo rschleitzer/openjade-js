@@ -29,6 +29,8 @@ We've successfully initiated the 1:1 mechanical port of OpenSP from C++ to TypeS
 - ✅ **CopyOwner.ts** - Copy-on-assign owner CopyOwner<T>
 - ✅ **Named.ts** - Base class for named objects
 - ✅ **NamedResource.ts** - Named + Resource combined base class
+- ✅ **Hash.ts** - String hashing utility (Chris Torek algorithm)
+- ✅ **HashTable.ts** - Generic hash table using native Map
 
 ### Testing
 - ✅ Basic test suite (`src/test.ts`) validates:
@@ -75,7 +77,7 @@ packages/opensp/src/
 ├── index.ts          (27 lines)    - Main exports
 └── test.ts           (2,758 bytes) - Test suite
 
-Total: 16 files, ~30KB of ported TypeScript code
+Total: 18 files, ~1,400 lines of ported TypeScript code
 ```
 
 ## Next Steps (Priority Order)
@@ -159,8 +161,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~1,000 lines (16 core classes)
-- **Progress: ~2%** (by LOC, but critical foundation complete)
+- TypeScript (ported so far): ~1,400 lines (18 core classes)
+- **Progress: ~3%** (by LOC, but critical foundation complete)
 
 ---
 

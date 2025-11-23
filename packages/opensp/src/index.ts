@@ -25,3 +25,7 @@ export { CopyOwner, Copyable } from './CopyOwner';
 // Named resources
 export { Named } from './Named';
 export { NamedResource } from './NamedResource';
+
+// Utilities
+export { Hash } from './Hash';
+export { HashTable, HashTableIter, Hashable } from './HashTable';
