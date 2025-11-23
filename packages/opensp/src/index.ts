@@ -38,6 +38,8 @@ export * from './constant';
 export { Mode, nModes, minShortrefMode } from './Mode';
 export { StringResource } from './StringResource';
 export { SubstTable } from './SubstTable';
+export { TypeId } from './TypeId';
+export { ASSERT, CANNOT_HAPPEN, SIZEOF } from './macros';
 
 // Location and origin tracking
 export {
