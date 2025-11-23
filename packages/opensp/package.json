@@ -1,0 +1,23 @@
+{
+  "name": "@openjade-js/opensp",
+  "version": "0.1.0",
+  "description": "TypeScript port of OpenSP SGML parser",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "sgml",
+    "parser",
+    "opensp"
+  ],
+  "author": "TypeScript port of OpenSP by James Clark and the OpenJade community",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
