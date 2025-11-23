@@ -12,12 +12,14 @@ export { StringC } from './StringC';
 
 // Container classes
 export { Vector } from './Vector';
+export { NCVector } from './NCVector';
 export { Link } from './Link';
 export { IListBase } from './IListBase';
 export { IList } from './IList';
 export { IListIterBase } from './IListIterBase';
 export { IListIter } from './IListIter';
 export { List, ListItem, ListIter } from './List';
+export { IQueue, IQueueBase } from './IQueue';
 
 // Smart pointers and resource management
 export { Resource } from './Resource';
