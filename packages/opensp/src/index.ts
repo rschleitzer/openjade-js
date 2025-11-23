@@ -59,6 +59,8 @@ export {
 export { EntityDecl } from './EntityDecl';
 export { EntityCatalog } from './EntityCatalog';
 export { EntityManager } from './EntityManager';
+export { Attributed } from './Attributed';
+export { Notation } from './Notation';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
