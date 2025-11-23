@@ -65,6 +65,7 @@ export { Notation } from './Notation';
 
 // SGML syntax
 export { Syntax } from './Syntax';
+export { Sd } from './Sd';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
