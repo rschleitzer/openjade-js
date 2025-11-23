@@ -75,6 +75,39 @@ export { OutputByteStream, StrOutputByteStream, FileOutputByteStream } from './O
 export { Decoder, Encoder, RecoveringEncoder, InputCodingSystem, OutputCodingSystem, CodingSystem } from './CodingSystem';
 export { IdentityCodingSystem } from './IdentityCodingSystem';
 
+// Message system
+export { MessageBuilder } from './MessageBuilder';
+export {
+  MessageArg,
+  StringMessageArg,
+  NumberMessageArg,
+  OrdinalMessageArg,
+  OtherMessageArg,
+  StringVectorMessageArg
+} from './MessageArg';
+export {
+  MessageModule,
+  libModule,
+  appModule,
+  MessageFragment,
+  MessageType,
+  MessageType0,
+  MessageType1,
+  MessageType2,
+  MessageType3,
+  MessageType4,
+  MessageType5,
+  MessageType6,
+  MessageType0L,
+  MessageType1L,
+  OpenElementInfo,
+  Message,
+  Messenger,
+  ForwardingMessenger,
+  ParentLocationMessenger,
+  NullMessenger
+} from './Message';
+
 // Parser and command-line options
 export { EventsWanted } from './EventsWanted';
 export { Warnings, ParserOptions, Quantity } from './ParserOptions';
