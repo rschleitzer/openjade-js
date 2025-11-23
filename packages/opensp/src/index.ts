@@ -55,3 +55,7 @@ export { Text, TextItem, TextIter } from './Text';
 // Character mapping utilities
 export { CharMap, CharMapResource } from './CharMap';
 export { XcharMap } from './XcharMap';
+
+// Set and range utilities
+export { ISet, ISetRange, ISetIter } from './ISet';
+export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
