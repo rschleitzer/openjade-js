@@ -135,6 +135,8 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 - ✅ **EntityDecl.ts** - Entity declaration base class with DeclType and DataType enums
 - ✅ **EntityCatalog.ts** - Abstract entity catalog interface for resolving external identifiers
 - ✅ **EntityManager.ts** - Abstract entity manager interface for opening input sources
+- ✅ **Attributed.ts** - Mixin for classes with attribute definitions
+- ✅ **Notation.ts** - Notation declarations extending EntityDecl and Attributed
 
 ## Next Steps (Priority Order)
 
@@ -219,7 +221,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~7,000 lines (57 modules out of 120 headers)
+- TypeScript (ported so far): ~7,100 lines (59 modules out of 120 headers)
 - **Progress: ~14%** (by LOC, foundational infrastructure complete)
 
 ---
