@@ -64,6 +64,7 @@ export { Notation } from './Notation';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
+export { SdText, SdTextItem, SdTextIter } from './SdText';
 
 // Character mapping utilities
 export { CharMap, CharMapResource } from './CharMap';
