@@ -3572,7 +3572,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const indexResult = { value: 0 };
 
     if (!atts.tokenIndex(text.string(), indexResult)) {
-      if (atts.handleAsUnterminated(this)) {
+      if (atts.handleAsUnterminated(this as any)) {
         return false;
       }
       atts.noteInvalidSpec();
@@ -3586,8 +3586,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
       } else if (this.options().warnMissingAttributeName) {
         this.message(ParserMessages.missingAttributeName);
       }
-      atts.setSpec(indexResult.value, this);
-      atts.setValueToken(indexResult.value, text, this, specLength);
+      atts.setSpec(indexResult.value, this as any);
+      atts.setValueToken(indexResult.value, text, this as any, specLength);
     }
     return true;
   }
@@ -3632,7 +3632,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return false;
     }
 
-    atts.setSpec(indexResult.value, this);
+    atts.setSpec(indexResult.value, this as any);
     const text = new Text();
 
     // Parse value based on token type

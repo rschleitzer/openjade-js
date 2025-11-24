@@ -152,9 +152,9 @@ export abstract class InternalEntity extends Entity {
     this.text_.swap(text);
   }
 
+  // Port of InternalEntity::string from Entity.h (lines 318-321)
   string(): StringC {
-    // TODO: Convert text to string
-    return new StringOf<Char>();
+    return this.text_.string();
   }
 
   text(): Text {
