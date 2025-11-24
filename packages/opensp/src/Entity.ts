@@ -15,6 +15,8 @@ import { Markup } from './Markup';
 import { Notation } from './Notation';
 import { AttributeList } from './Attribute';
 import { Allocator } from './Allocator';
+import * as ParserMessages from './ParserMessages';
+import { StringMessageArg, NumberMessageArg } from './MessageArg';
 
 // Forward declarations
 export class ParserState { }
@@ -111,15 +113,25 @@ export abstract class Entity extends EntityDecl {
   }
 
   protected checkRef(parserState: ParserState): void {
-    // TODO: Implement reference checking
+    // Base implementation - overridden in subclasses
   }
 
   protected static checkEntlvl(parserState: ParserState): void {
-    // TODO: Implement entity level checking
+    // Port of Entity::checkEntlvl from Entity.cxx (lines 582-588)
+    // -1 because document entity isn't counted
+    const ps = parserState as any;
+    if (ps.inputLevel() - 1 === ps.syntax().entlvl()) {
+      ps.message(ParserMessages.entlvl, new NumberMessageArg(ps.syntax().entlvl()));
+    }
   }
 
   protected checkNotOpen(parserState: ParserState): Boolean {
-    // TODO: Implement open entity checking
+    // Port of Entity::checkNotOpen from Entity.cxx (lines 590-598)
+    const ps = parserState as any;
+    if (ps.entityIsOpen(this)) {
+      ps.message(ParserMessages.recursiveEntityReference, new StringMessageArg(this.name()));
+      return false;
+    }
     return true;
   }
 
@@ -154,8 +166,11 @@ export abstract class InternalEntity extends Entity {
   }
 
   protected checkRef(parserState: ParserState): void {
-    super.checkRef(parserState);
-    // TODO: Additional internal entity checks
+    // Port of InternalEntity::checkRef from Entity.cxx (lines 600-603)
+    const ps = parserState as any;
+    if (ps.sd().entityRef() === 0) { // Sd::entityRefNone = 0
+      ps.message(ParserMessages.entityRefNone);
+    }
   }
 }
 
@@ -171,7 +186,8 @@ export class PiEntity extends InternalEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement PI literal reference
+    // Port of PiEntity::litReference from Entity.cxx (lines 300-306)
+    (parserState as any).message(ParserMessages.piEntityReference);
   }
 
   protected normalReference(
@@ -179,15 +195,20 @@ export class PiEntity extends InternalEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement PI normal reference
+    // Port of PiEntity::normalReference from Entity.cxx (lines 307-315)
+    (parserState as any).noteMarkup();
+    // TODO: Fire PiEntityEvent
+    // (parserState as any).eventHandler().pi(new PiEntityEvent(this, origin.pointer()));
   }
 
   declReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement PI declaration reference
+    // Port of PiEntity::declReference from Entity.cxx (lines 316-320)
+    (parserState as any).message(ParserMessages.piEntityReference);
   }
 
   rcdataReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement PI rcdata reference
+    // Port of PiEntity::rcdataReference from Entity.cxx (lines 322-326)
+    (parserState as any).message(ParserMessages.piEntityReference);
   }
 
   copy(): Entity {
@@ -223,7 +244,14 @@ export class InternalCdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement CDATA normal reference
+    // Port of InternalCdataEntity::normalReference from Entity.cxx (lines 343-351)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (this.string().size() > 0) {
+      (parserState as any).noteData();
+      // TODO: Fire CdataEntityEvent
+      // (parserState as any).eventHandler().data(new CdataEntityEvent(this, origin.pointer()));
+    }
   }
 
   litReference(
@@ -232,7 +260,18 @@ export class InternalCdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement CDATA literal reference
+    // Port of InternalCdataEntity::litReference from Entity.cxx (lines 358-376)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (squeezeSpaces) {
+      const loc = new Location(origin.pointer(), 0);
+      text.addEntityStart(loc);
+      text.addCharsTokenize(this.text_.string(), loc, (parserState as any).syntax().space());
+      loc.addOffset(this.text_.size());
+      text.addEntityEnd(loc);
+    } else {
+      text.addCdata(this.string(), new ConstPtr(origin.pointer()));
+    }
   }
 
   copy(): Entity {
@@ -242,7 +281,7 @@ export class InternalCdataEntity extends InternalDataEntity {
   }
 
   isCharacterData(): Boolean {
-    return true;
+    return this.string().size() > 0;
   }
 }
 
@@ -268,7 +307,17 @@ export class InternalSdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement SDATA normal reference
+    // Port of InternalSdataEntity::normalReference from Entity.cxx (lines 410-425)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (this.checkNotOpen(parserState)) {
+      if (generateEvent && (parserState as any).wantMarkup()) {
+        // TODO: Fire EntityStartEvent
+        // (parserState as any).eventHandler().entityStart(new EntityStartEvent(origin));
+      }
+      // TODO: Push InternalInputSource
+      // (parserState as any).pushInput(new InternalInputSource(this.text_.string(), origin.pointer()));
+    }
   }
 
   litReference(
@@ -277,7 +326,18 @@ export class InternalSdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement SDATA literal reference
+    // Port of InternalSdataEntity::litReference from Entity.cxx (lines 393-410)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (squeezeSpaces) {
+      const loc = new Location(origin.pointer(), 0);
+      text.addEntityStart(loc);
+      text.addCharsTokenize(this.text_.string(), loc, (parserState as any).syntax().space());
+      loc.addOffset(this.text_.size());
+      text.addEntityEnd(loc);
+    } else {
+      text.addSdata(this.string(), new ConstPtr(origin.pointer()));
+    }
   }
 
   copy(): Entity {
@@ -371,8 +431,11 @@ export abstract class ExternalEntity extends Entity {
   }
 
   protected checkRef(parserState: ParserState): void {
-    super.checkRef(parserState);
-    // TODO: Additional external entity checks
+    // Port of ExternalEntity::checkRef from Entity.cxx (lines 605-608)
+    const ps = parserState as any;
+    if (ps.sd().entityRef() !== 2) { // Sd::entityRefAny = 2
+      ps.message(ParserMessages.entityRefInternal);
+    }
   }
 }
 
@@ -391,7 +454,33 @@ export class ExternalTextEntity extends ExternalEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement external text normal reference
+    // Port of ExternalTextEntity::normalReference from Entity.cxx (lines 435-457)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (this.checkNotOpen(parserState)) {
+      if (generateEvent && (parserState as any).wantMarkup()) {
+        // TODO: Fire EntityStartEvent
+        // (parserState as any).eventHandler().entityStart(new EntityStartEvent(origin));
+      }
+      if (this.externalId().effectiveSystemId().size() > 0) {
+        // TODO: Push input from entity manager
+        // (parserState as any).pushInput(
+        //   (parserState as any).entityManager().open(
+        //     this.externalId().effectiveSystemId(),
+        //     (parserState as any).sd().docCharset(),
+        //     origin.pointer(),
+        //     0,
+        //     parserState
+        //   )
+        // );
+      } else {
+        (parserState as any).message(
+          ParserMessages.nonExistentEntityRef,
+          new StringMessageArg(this.name()),
+          this.defLocation()
+        );
+      }
+    }
   }
 
   litReference(
@@ -400,7 +489,13 @@ export class ExternalTextEntity extends ExternalEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement external text literal reference
+    // Port of ExternalTextEntity::litReference from Entity.cxx (lines 459-470)
+    if ((parserState as any).options().warnAttributeValueExternalEntityRef &&
+        this.declType() === EntityDecl.DeclType.generalEntity) {
+      (parserState as any).message(ParserMessages.attributeValueExternalEntityRef);
+    }
+    text.addEntityStart(new Location(origin.pointer(), 0));
+    this.normalReference(parserState, origin, false);
   }
 }
 
@@ -420,11 +515,13 @@ export abstract class ExternalNonTextEntity extends ExternalEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement error - can't reference in literal
+    // Port of ExternalNonTextEntity::litReference from Entity.cxx (lines 511-517)
+    (parserState as any).message(ParserMessages.externalNonTextEntityRcdata);
   }
 
   rcdataReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement error - can't reference in rcdata
+    // Port of ExternalNonTextEntity::rcdataReference from Entity.cxx (lines 520-524)
+    (parserState as any).message(ParserMessages.externalNonTextEntityRcdata);
   }
 
   protected normalReference(
@@ -432,15 +529,17 @@ export abstract class ExternalNonTextEntity extends ExternalEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement error - can't reference normally
+    // Port of ExternalNonTextEntity::normalReference from Entity.cxx (lines 504-509)
+    (parserState as any).message(ParserMessages.externalNonTextEntityReference);
   }
 
   dsReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement error - can't reference in DS
+    // Port of ExternalNonTextEntity::dsReference from Entity.cxx (lines 497-502)
+    (parserState as any).message(ParserMessages.dtdDataEntityReference);
   }
 
   isCharacterData(): Boolean {
-    return this.dataType() === EntityDecl.DataType.cdata;
+    return true;
   }
 }
 
@@ -489,7 +588,17 @@ export class ExternalDataEntity extends ExternalNonTextEntity {
   }
 
   contentReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement external data content reference
+    // Port of ExternalDataEntity::contentReference from Entity.cxx (lines 477-487)
+    if ((parserState as any).options().warnExternalDataEntityRef) {
+      (parserState as any).message(ParserMessages.externalDataEntityRef);
+    }
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    (parserState as any).noteData();
+    // TODO: Fire ExternalDataEntityEvent
+    // (parserState as any).eventHandler().externalDataEntity(
+    //   new ExternalDataEntityEvent(this, origin.pointer())
+    // );
   }
 
   setNotation(notation: ConstPtr<Notation>, attributes: AttributeList): void {
