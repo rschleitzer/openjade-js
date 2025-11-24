@@ -109,3 +109,4 @@ export const entlvl = new MessageType1(MessageType.Severity.error, null, -1, 'en
 export const recursiveEntityReference = new MessageType1(MessageType.Severity.error, null, -1, 'recursive reference to entity %1');
 export const entityRefNone = new MessageType0(MessageType.Severity.error, null, -1, 'entity reference not allowed (SGML declaration: ENTITYREF NONE)');
 export const entityRefInternal = new MessageType0(MessageType.Severity.error, null, -1, 'external entity reference not allowed (SGML declaration: ENTITYREF INTERNAL)');
+export const internalDataEntityReference = new MessageType0(MessageType.Severity.error, null, -1, 'a reference to a CDATA or SDATA entity is allowed only in a context where a data character could occur');

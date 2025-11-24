@@ -12,6 +12,7 @@ import { Vector } from './Vector';
 import { Text } from './Text';
 import { Ptr, ConstPtr } from './Ptr';
 import { Message, Messenger } from './Message';
+import { StringMessageArg } from './MessageArg';
 import { Location } from './Location';
 import { Syntax } from './Syntax';
 import { Notation } from './Notation';
@@ -54,8 +55,11 @@ export abstract class AttributeValue extends Resource {
     return false;
   }
 
+  // Port of AttributeValue::handleAsUnterminated from Attribute.cxx (lines 1377-1410)
+  // This tries to guess if this attribute value looks like it had a missing ending quote.
   static handleAsUnterminated(text: Text, context: AttributeContext): Boolean {
-    // TODO: Implement
+    // TODO: Implement full logic - requires TextIter
+    // For now, return false (no unterminated attribute handling)
     return false;
   }
 }
@@ -1088,53 +1092,274 @@ export class DataAttributeValue extends CdataAttributeValue {
   }
 }
 
-// AttributeList - placeholder for attribute list type
+// Attribute - individual attribute in a list
+// Port of Attribute class from Attribute.h (lines 460-480) and Attribute.cxx (lines 1146-1188)
+export class Attribute {
+  private specIndexPlus_: number;
+  private value_: ConstPtr<AttributeValue>;
+  private semantics_: CopyOwner<AttributeSemantics> | null;
+
+  constructor(other?: Attribute) {
+    if (other) {
+      // Copy constructor from Attribute.cxx (lines 1154-1158)
+      this.specIndexPlus_ = other.specIndexPlus_;
+      this.value_ = new ConstPtr<AttributeValue>(other.value_);
+      this.semantics_ = other.semantics_ ? new CopyOwner<AttributeSemantics>(other.semantics_.pointer()!) : null;
+    } else {
+      // Default constructor from Attribute.cxx (lines 1146-1148)
+      this.specIndexPlus_ = 0;
+      this.value_ = new ConstPtr<AttributeValue>();
+      this.semantics_ = null;
+    }
+  }
+
+  // Port of Attribute.cxx (lines 1176-1182)
+  clear(): void {
+    this.specIndexPlus_ = 0;
+    this.value_.clear();
+    this.semantics_ = null;
+  }
+
+  specified(): Boolean {
+    return this.specIndexPlus_ !== 0;
+  }
+
+  specIndex(): number {
+    return this.specIndexPlus_ - 1;
+  }
+
+  value(): AttributeValue | null {
+    return this.value_.pointer();
+  }
+
+  valuePointer(): ConstPtr<AttributeValue> {
+    return this.value_;
+  }
+
+  semantics(): AttributeSemantics | null {
+    return this.semantics_?.pointer() ?? null;
+  }
+
+  setSpec(specIndex: number): void {
+    this.specIndexPlus_ = specIndex + 1;
+  }
+
+  setValue(value: ConstPtr<AttributeValue> | AttributeValue | null): void {
+    if (value instanceof ConstPtr) {
+      this.value_ = value;
+    } else {
+      this.value_ = new ConstPtr<AttributeValue>(value);
+    }
+  }
+
+  setSemantics(semantics: AttributeSemantics | null): void {
+    if (semantics) {
+      this.semantics_ = new CopyOwner<AttributeSemantics>(semantics);
+    } else {
+      this.semantics_ = null;
+    }
+  }
+}
+
+// AttributeList - manages attributes for an element
+// Port of AttributeList class from Attribute.h (lines 482-528) and Attribute.cxx (lines 1184-1371)
 export class AttributeList {
-  constructor() {}
+  private vec_: Vector<Attribute>;
+  private def_: ConstPtr<AttributeDefinitionList>;
+  private nSpec_: number;
+  private conref_: Boolean;
+  private nIdrefs_: number;
+  private nEntityNames_: number;
 
+  constructor(def?: ConstPtr<AttributeDefinitionList>) {
+    if (def) {
+      // Port of AttributeList.cxx (lines 1184-1188)
+      this.def_ = def;
+      this.vec_ = new Vector<Attribute>(def.isNull() ? 0 : def.pointer()!.size());
+      for (let i = 0; i < this.vec_.size(); i++) {
+        this.vec_.set(i, new Attribute());
+      }
+      this.nSpec_ = 0;
+      this.conref_ = false;
+      this.nIdrefs_ = 0;
+      this.nEntityNames_ = 0;
+    } else {
+      // Port of AttributeList.cxx (lines 1190-1192)
+      this.vec_ = new Vector<Attribute>();
+      this.def_ = new ConstPtr<AttributeDefinitionList>();
+      this.nSpec_ = 0;
+      this.conref_ = false;
+      this.nIdrefs_ = 0;
+      this.nEntityNames_ = 0;
+    }
+  }
+
+  // Port of AttributeList.cxx (lines 1216-1241)
   swap(other: AttributeList): void {
-    // TODO: Implement swap
+    this.vec_.swap(other.vec_);
+    this.def_.swap(other.def_);
+
+    let tem = other.nIdrefs_;
+    other.nIdrefs_ = this.nIdrefs_;
+    this.nIdrefs_ = tem;
+
+    tem = other.nEntityNames_;
+    other.nEntityNames_ = this.nEntityNames_;
+    this.nEntityNames_ = tem;
+
+    let temSize = other.nSpec_;
+    other.nSpec_ = this.nSpec_;
+    this.nSpec_ = temSize;
+
+    const temBool = other.conref_;
+    other.conref_ = this.conref_;
+    this.conref_ = temBool;
   }
 
+  // Port of Attribute.h (lines 843-846)
   tokenIndex(name: StringC, result: { value: number }): boolean {
-    // TODO: Implement tokenIndex - get index of attribute by token value
+    if (this.def_.isNull()) {
+      return false;
+    }
+    return this.def_.pointer()!.tokenIndex(name, result);
+  }
+
+  // Port of AttributeList.cxx (lines 1357-1371)
+  handleAsUnterminated(context: AttributeContext): boolean {
+    if (this.nSpec_ > 0) {
+      for (let i = 0; i < this.vec_.size(); i++) {
+        if (this.vec_.get(i).specified() && this.vec_.get(i).specIndex() === this.nSpec_ - 1) {
+          const val = this.vec_.get(i).value();
+          const ptr = val?.text();
+          if (val && ptr && AttributeValue.handleAsUnterminated(ptr, context)) {
+            return true;
+          }
+          break;
+        }
+      }
+    }
     return false;
   }
 
-  handleAsUnterminated(parser: any): boolean {
-    // TODO: Implement handleAsUnterminated - handle unterminated attribute
-    return false;
-  }
-
+  // Port of AttributeList.cxx (lines 1280-1283)
   noteInvalidSpec(): void {
-    // TODO: Implement noteInvalidSpec - mark attribute spec as invalid
+    // This is needed for error recovery.
+    // We don't want nSpec_ to be > 0, if there is no attribute definition.
+    if (this.nSpec_ > 0) {
+      this.nSpec_++;
+    }
   }
 
+  // Port of Attribute.h (lines 849-852)
   tokenIndexUnique(name: StringC, index: number): boolean {
-    // TODO: Implement tokenIndexUnique - check if token index is unique
-    return true;
+    return this.def_.pointer()!.tokenIndexUnique(name, index);
   }
 
-  setSpec(index: number, parser: any): void {
-    // TODO: Implement setSpec - mark attribute as specified
+  // Port of AttributeList.cxx (lines 1271-1278)
+  setSpec(index: number, context: AttributeContext): void {
+    if (this.vec_.get(index).specified()) {
+      context.message(
+        {} as any, // TODO: ParserMessages.duplicateAttributeSpec
+        new StringMessageArg(this.def(index).name())
+      );
+    } else {
+      this.vec_.get(index).setSpec(this.nSpec_++);
+    }
   }
 
-  setValueToken(index: number, text: any, parser: any, specLength: { value: number }): void {
-    // TODO: Implement setValueToken - set attribute value from token
+  // Port of AttributeList.cxx (lines 1304-1316)
+  setValueToken(index: number, text: Text, context: AttributeContext, specLength: { value: number }): void {
+    const value = this.def(index).makeValueFromToken(text, context, specLength);
+    if (this.def(index).isConref()) {
+      this.conref_ = true;
+    }
+    this.vec_.get(index).setValue(value);
+    if (value) {
+      const nIdrefsRef = { value: this.nIdrefs_ };
+      const nEntityNamesRef = { value: this.nEntityNames_ };
+      const semantics = this.def(index).makeSemantics(value, context, nIdrefsRef, nEntityNamesRef);
+      this.nIdrefs_ = nIdrefsRef.value;
+      this.nEntityNames_ = nEntityNamesRef.value;
+      this.vec_.get(index).setSemantics(semantics);
+    }
   }
 
+  // Port of Attribute.h (lines 855-858)
   attributeIndex(name: StringC, result: { value: number }): boolean {
-    // TODO: Implement attributeIndex - get index of attribute by name
-    return false;
+    if (this.def_.isNull()) {
+      return false;
+    }
+    return this.def_.pointer()!.attributeIndex(name, result);
   }
 
+  // Port of Attribute.h (lines 837-840)
   tokenized(index: number): boolean {
-    // TODO: Implement tokenized - check if attribute is tokenized type
-    return false;
+    return this.def(index).tokenized();
   }
 
-  setValue(index: number, text: any, parser: any, specLength: { value: number }): boolean {
-    // TODO: Implement setValue - set attribute value from text
+  // Port of AttributeList.cxx (lines 1288-1302)
+  setValue(index: number, text: Text, context: AttributeContext, specLength: { value: number }): boolean {
+    const value = this.def(index).makeValue(text, context, specLength);
+    if (this.def(index).isConref()) {
+      this.conref_ = true;
+    }
+    this.vec_.get(index).setValue(value);
+    if (value) {
+      const nIdrefsRef = { value: this.nIdrefs_ };
+      const nEntityNamesRef = { value: this.nEntityNames_ };
+      const semantics = this.def(index).makeSemantics(value, context, nIdrefsRef, nEntityNamesRef);
+      this.nIdrefs_ = nIdrefsRef.value;
+      this.nEntityNames_ = nEntityNamesRef.value;
+      this.vec_.get(index).setSemantics(semantics);
+    } else if (AttributeValue.handleAsUnterminated(text, context)) {
+      return false;
+    }
     return true;
+  }
+
+  // Helper methods from Attribute.h (lines 819-873)
+
+  size(): number {
+    return this.vec_.size();
+  }
+
+  private def(i: number): AttributeDefinition {
+    return this.def_.pointer()!.def(i);
+  }
+
+  defPtr(): ConstPtr<AttributeDefinitionList> {
+    return this.def_;
+  }
+
+  name(i: number): StringC {
+    return this.def(i).name();
+  }
+
+  value(i: number): AttributeValue | null {
+    return this.vec_.get(i).value();
+  }
+
+  valuePointer(i: number): ConstPtr<AttributeValue> {
+    return this.vec_.get(i).valuePointer();
+  }
+
+  semantics(i: number): AttributeSemantics | null {
+    return this.vec_.get(i).semantics();
+  }
+
+  specified(i: number): Boolean {
+    return this.vec_.get(i).specified();
+  }
+
+  specIndex(i: number): number {
+    return this.vec_.get(i).specIndex();
+  }
+
+  nSpec(): number {
+    return this.nSpec_;
+  }
+
+  conref(): Boolean {
+    return this.conref_;
   }
 }

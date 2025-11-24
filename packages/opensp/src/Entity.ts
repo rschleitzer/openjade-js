@@ -211,9 +211,14 @@ export class PiEntity extends InternalEntity {
     (parserState as any).message(ParserMessages.piEntityReference);
   }
 
+  // Port of PiEntity::copy from Entity.cxx (lines 46-49)
+  // In C++: return new PiEntity(*this);
   copy(): Entity {
+    // Create a copy of the text by creating a new Text and copying via string/chars
     const textCopy = new Text();
-    // TODO: Copy text properly
+    // Note: Text doesn't have a copy constructor, so we rely on the constructor
+    // swapping behavior. For a proper copy, we'd need to implement Text.copy()
+    // For now, we just pass an empty text - this TODO remains until Text.copy() exists
     return new PiEntity(this.name(), this.declType(), this.defLocation(), textCopy);
   }
 }
@@ -224,8 +229,9 @@ export abstract class InternalDataEntity extends InternalEntity {
     super(name, EntityDecl.DeclType.generalEntity, dataType, defLocation, text);
   }
 
+  // Port of InternalDataEntity::declReference from Entity.cxx (lines 328-332)
   declReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement data entity declaration reference
+    (parserState as any).message(ParserMessages.internalDataEntityReference);
   }
 
   isDataOrSubdoc(): Boolean {
@@ -274,9 +280,11 @@ export class InternalCdataEntity extends InternalDataEntity {
     }
   }
 
+  // Port of InternalCdataEntity::copy from Entity.cxx (lines 65-68)
+  // In C++: return new InternalCdataEntity(*this);
   copy(): Entity {
     const textCopy = new Text();
-    // TODO: Copy text properly
+    // TODO: Implement Text.copy() for proper text duplication
     return new InternalCdataEntity(this.name(), this.defLocation(), textCopy);
   }
 
@@ -340,9 +348,11 @@ export class InternalSdataEntity extends InternalDataEntity {
     }
   }
 
+  // Port of InternalSdataEntity::copy from Entity.cxx (lines 77-80)
+  // In C++: return new InternalSdataEntity(*this);
   copy(): Entity {
     const textCopy = new Text();
-    // TODO: Copy text properly
+    // TODO: Implement Text.copy() for proper text duplication
     return new InternalSdataEntity(this.name(), this.defLocation(), textCopy);
   }
 
@@ -368,9 +378,11 @@ export class InternalTextEntity extends InternalEntity {
     this.bracketed_ = bracketed;
   }
 
+  // Port of InternalTextEntity::copy from Entity.cxx (lines 90-93)
+  // In C++: return new InternalTextEntity(*this);
   copy(): Entity {
     const textCopy = new Text();
-    // TODO: Copy text properly
+    // TODO: Implement Text.copy() for proper text duplication
     return new InternalTextEntity(this.name(), this.declType(), this.defLocation(), textCopy, this.bracketed_);
   }
 
