@@ -1322,6 +1322,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     );
   }
 
+  // Inherited from ContentState - no need to override
+  // afterDocumentElement() is already available
+
   noteEndElement(included: Boolean): void {
     this.outputState_.noteEndElement(
       included,
@@ -1723,32 +1726,32 @@ export class ParserState extends ContentState implements ParserStateInterface {
           // TODO: Parse declaration name
           // TODO: Handle different declaration types
           // TODO: skipDeclaration() on error
-          // TODO: noteMarkup()
+          this.noteMarkup();
           break;
 
         case TokenEnum.tokenMdoMdc:
           // Empty comment
           // TODO: emptyCommentDecl()
-          // TODO: noteMarkup()
+          this.noteMarkup();
           break;
 
         case TokenEnum.tokenMdoCom:
           // Comment declaration
           // TODO: parseCommentDecl()
-          // TODO: noteMarkup()
+          this.noteMarkup();
           break;
 
         case TokenEnum.tokenMdoDso:
           // Marked section start
           // TODO: Check afterDocumentElement()
           // TODO: parseMarkedSectionDeclStart()
-          // TODO: noteMarkup()
+          this.noteMarkup();
           break;
 
         case TokenEnum.tokenMscMdc:
           // Marked section end
           // TODO: handleMarkedSectionEnd()
-          // TODO: noteMarkup()
+          this.noteMarkup();
           break;
 
         case TokenEnum.tokenNet:
@@ -1764,13 +1767,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenRe:
           // Record end
           // TODO: acceptPcdata(currentLocation())
-          // TODO: queueRe(currentLocation())
+          this.queueRe(this.currentLocation());
           break;
 
         case TokenEnum.tokenRs:
           // Record start
           // TODO: acceptPcdata(currentLocation())
-          // TODO: noteRs()
+          this.noteRs();
           // TODO: Fire ignoredRs event if eventsWanted().wantInstanceMarkup()
           break;
 
