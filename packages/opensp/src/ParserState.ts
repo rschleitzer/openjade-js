@@ -1932,9 +1932,36 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected parseNamedCharRef(): boolean {
-    // Stub for parseNamedCharRef from parseCommon.cxx
-    // Full implementation looks up named character entity references
-    // TODO: Port full implementation
+    // Port of parseNamedCharRef from parseCommon.cxx (lines 239-280)
+    if (this.options().warnNamedCharRef) {
+      // TODO: Add namedCharRef message to ParserMessages
+      // this.message(ParserMessages.namedCharRef);
+    }
+
+    const input = this.currentInput();
+    if (!input) return false;
+
+    const startIndex = this.currentLocation().index();
+    input.discardInitial();
+    // TODO: Add nameLength message to ParserMessages
+    // this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+
+    let c: Char = 0;
+    let valid = false;
+    const name = new String<Char>();
+
+    // TODO: getCurrentToken(syntax().generalSubstTable(), name)
+    // TODO: syntax().lookupFunctionChar(name, &c)
+    // This requires:
+    // - getCurrentToken method
+    // - Syntax.lookupFunctionChar method
+    // - SubstTable support
+
+    // TODO: Handle refMode tokens (tokenRefc, tokenRe)
+    // TODO: NamedCharRef class for tracking reference type
+    // TODO: input.pushCharRef(c, NamedCharRef(...))
+
+    // Placeholder - needs full implementation
     return false;
   }
 
