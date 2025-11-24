@@ -272,6 +272,17 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Fixed4Decoder with LSB/MSB and LSW/MSW word order support
   - Fixed4Encoder with big-endian encoding
   - Full 32-bit character support with overflow detection
+- ✅ **UTF16CodingSystem.ts** - UTF-16 character encoding with surrogates (128 lines)
+  - UTF16Decoder with LSB/MSB byte order support
+  - Surrogate pair handling for characters beyond BMP (U+10000-U+10FFFF)
+  - Invalid surrogate detection and error handling
+  - UTF16Encoder with big-endian encoding and surrogate generation
+- ✅ **UnicodeCodingSystem.ts** - Unicode encoding with BOM detection (139 lines)
+  - UnicodeDecoder with automatic byte order detection via BOM
+  - Falls back to UTF-16 after BOM detection or if no sub-coding system
+  - Byte order mark (0xFEFF) and swapped BOM (0xFFFE) handling
+  - UnicodeEncoder writes BOM and delegates to UTF-16 encoder
+  - Supports optional sub-coding system for fallback
 
 ## Next Steps (Priority Order)
 
@@ -353,7 +364,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~15,930 lines (84 modules out of 120 headers)
+- TypeScript (ported so far): ~16,197 lines (86 modules out of 120 headers)
 - **Progress: ~32%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
