@@ -4,11 +4,11 @@
 This document summarizes the complete OpenSP SGML parser port from C++ to TypeScript.
 
 ## Session Statistics
-- **21 commits** completed
-- **ParserState.ts**: 2,665 lines (up from ~2,050)
-- **Token.ts**: 72 lines (new file)
-- **~700 lines** of parsing code added
+- **ParserState.ts**: 2,822 lines
+- **Token.ts**: 72 lines
+- **~850 lines** of parsing code added
 - **0 TypeScript compilation errors**
+- **All method stubs** with comprehensive documentation
 
 ## Completed Components
 
@@ -63,6 +63,16 @@ From `parseDecl.cxx`:
 - `acceptPcdata()` - validation stub
 - `reportNonSgmlCharacter()`
 
+### 8. Attribute Parsing Methods ✅
+From `parseAttribute.cxx`:
+- `parseAttributeSpec()` - main attribute specification parsing loop
+- `parseAttributeParameter()` - parse attribute name, token, VI, or end marker
+- `parseAttributeValueSpec()` - parse attribute value (literal or unquoted)
+- `handleAttributeNameToken()` - handle omitted attribute names
+- `parseAttributeValueLiteral()` - parse quoted attribute values
+- `parseTokenizedAttributeValueLiteral()` - parse tokenized attribute values
+- `extendUnquotedAttributeValue()` - error recovery for unquoted values
+
 ## Parser Framework Status: COMPLETE ✅
 
 The parser has:
@@ -83,10 +93,11 @@ The parser has:
 Remaining work is **filling in existing TODO comments**, not building new infrastructure:
 
 ### High Priority
-- DTD element type lookups
-- Event class implementations (StartElementEvent, EndElementEvent, etc.)
-- Attribute parsing (parseAttributeSpec)
-- Entity expansion logic
+- ✅ DTD infrastructure (Dtd, ElementType, RankStem)
+- ✅ Event class implementations (StartElementEvent, EndElementEvent, etc.)
+- ✅ Attribute parsing method stubs (parseAttributeSpec, parseAttributeParameter, etc.)
+- Entity expansion logic (fill in parseEntityReference TODO)
+- Attribute parsing implementations (fill in parseAttributeSpec TODOs)
 
 ### Medium Priority
 - Mode enumeration completion

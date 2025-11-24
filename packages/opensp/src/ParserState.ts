@@ -2662,4 +2662,160 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // - keeprsre() check
     // - Mode detection (econMode, econnetMode)
   }
+
+  // ========== Attribute Parsing Methods (parseAttribute.cxx) ==========
+
+  // Port of parseAttribute.cxx lines 15-94
+  // Parse attribute specification in start tag or empty tag
+  protected parseAttributeSpec(
+    mode: Mode,
+    atts: AttributeList,
+    netEnabling: { value: boolean },
+    newAttDef: Ptr<AttributeDefinitionList>
+  ): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 15-94
+    // Algorithm:
+    // 1. Parse attribute parameters in loop
+    // 2. Handle name, nameToken, vi, recoverUnquoted
+    // 3. Parse attribute values (literal or unquoted)
+    // 4. Check attribute specification length
+    // 5. Call atts.finish()
+    // Requires:
+    // - parseAttributeParameter
+    // - parseAttributeValueSpec
+    // - handleAttributeNameToken
+    // - AttributeParameter enum
+    return false;
+  }
+
+  // Port of parseAttribute.cxx lines 96-122
+  // Handle attribute name token (omitted attribute names)
+  protected handleAttributeNameToken(
+    text: Text,
+    atts: AttributeList,
+    specLength: { value: number }
+  ): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 96-122
+    // Algorithm:
+    // 1. Get token index from attribute list
+    // 2. Check if token is valid and unique (if WWW mode)
+    // 3. Set spec and value token in attribute list
+    // 4. Issue warnings for shorttag/missing attribute name
+    // Requires:
+    // - AttributeList.tokenIndex
+    // - AttributeList.setSpec, setValueToken
+    // - sd().attributeOmitName()
+    return false;
+  }
+
+  // Port of parseAttribute.cxx lines 124-249
+  // Parse attribute value specification (= value part)
+  protected parseAttributeValueSpec(
+    mode: Mode,
+    name: StringC,
+    atts: AttributeList,
+    specLength: { value: number },
+    newAttDef: Ptr<AttributeDefinitionList>
+  ): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 124-249
+    // Algorithm:
+    // 1. Get token after attribute name
+    // 2. Skip whitespace
+    // 3. Check if attribute exists in definition
+    // 4. If not, create implied attribute definition
+    // 5. Parse value based on token type:
+    //    - tokenLit/tokenLita: parse literal
+    //    - tokenNameStart/tokenDigit: parse name token
+    //    - tokenUnrecognized: unquoted value (error recovery)
+    // 6. Set value in attribute list
+    // Requires:
+    // - parseAttributeValueLiteral
+    // - parseTokenizedAttributeValueLiteral
+    // - extendUnquotedAttributeValue
+    // - AttributeList.setValue
+    return false;
+  }
+
+  // Port of parseAttribute.cxx lines 253-371
+  // Parse attribute parameter (name, token, VI, or end marker)
+  protected parseAttributeParameter(
+    mode: Mode,
+    allowVi: boolean,
+    result: { value: AttributeParameterType },
+    netEnabling: { value: boolean }
+  ): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 253-371
+    // Algorithm:
+    // 1. Get token in specified mode
+    // 2. Skip whitespace and comments (if piPasMode)
+    // 3. Determine parameter type based on token:
+    //    - tokenNameStart: name
+    //    - tokenDigit/tokenLcUcNmchar: nameToken
+    //    - tokenVi: vi (if allowed)
+    //    - tokenTagc/tokenNestc/tokenDsc: end
+    //    - tokenEtago/tokenStago: end (with unget)
+    //    - tokenUnrecognized: recoverUnquoted
+    // 4. Handle NET enabling logic
+    // 5. Add markup if tracking
+    // Requires:
+    // - getToken
+    // - extendNameToken
+    // - reportNonSgmlCharacter
+    // - currentMarkup().addS, addName, addDelim
+    return false;
+  }
+
+  // Port of parseAttribute.cxx lines 373-388
+  // Extend unquoted attribute value for error recovery
+  protected extendUnquotedAttributeValue(): void {
+    // TODO: Port full implementation from parseAttribute.cxx lines 373-388
+    // Algorithm:
+    // 1. Get current input source
+    // 2. Scan characters until whitespace, non-SGML, eE, or TAGC
+    // 3. End token with extended length
+    // Requires:
+    // - currentInput().tokenChar
+    // - syntax().isS, isSgmlChar
+    // - InputSource.endToken
+  }
+
+  // Port of parseAttribute.cxx lines 390-408
+  // Parse attribute value literal (quoted attribute value)
+  protected parseAttributeValueLiteral(lita: boolean, text: Text): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 390-408
+    // Algorithm:
+    // 1. Calculate max length (litlen - normsep)
+    // 2. Call parseLiteral with appropriate mode (alitMode or alitaMode)
+    // 3. Handle entity references, character references
+    // 4. Return success/failure
+    // Requires:
+    // - parseLiteral (already exists)
+    // - syntax().litlen(), normsep()
+    return false;
+  }
+
+  // Port of parseAttribute.cxx lines 410-455
+  // Parse tokenized attribute value literal
+  protected parseTokenizedAttributeValueLiteral(lita: boolean, text: Text): boolean {
+    // TODO: Port full implementation from parseAttribute.cxx lines 410-455
+    // Algorithm:
+    // 1. Calculate max length
+    // 2. Parse literal in talitMode/talitaMode
+    // 3. Tokenize the value (split on whitespace)
+    // 4. Return success/failure
+    // Requires:
+    // - parseLiteral (already exists)
+    // - Text tokenization methods
+    return false;
+  }
+}
+
+// AttributeParameter enum for parseAttributeSpec
+// Port of Parser.h AttributeParameter struct
+export enum AttributeParameterType {
+  end,              // End of attribute spec (TAGC, NESTC, DSC, STAGO, ETAGO)
+  name,             // Attribute name (starts with tokenNameStart)
+  nameToken,        // Name token (starts with tokenDigit or tokenLcUcNmchar)
+  vi,               // VI delimiter (=)
+  recoverUnquoted   // Error recovery for unquoted value
 }
