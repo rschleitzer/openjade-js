@@ -2367,4 +2367,76 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // - Validates end tag is legal
     // - Fires end element event
   }
+
+  protected parseEmptyStartTag(): void {
+    // Port of parseEmptyStartTag from parseInstance.cxx (lines 511-542)
+    // Empty start tag <> - refers to last ended or current element
+
+    // TODO: if (options().warnEmptyTag) message(ParserMessages.emptyStartTag)
+    // TODO: if (!currentDtd().isBase()) message(ParserMessages.emptyStartTagBaseDtd)
+
+    // Determine which element type this empty tag refers to
+    let e: any = null;
+    // TODO: Implement element type lookup
+    // if (!sd().omittag())
+    //   e = lastEndedElementType();
+    // else if (tagLevel() > 0)
+    //   e = currentElement().type();
+    // if (!e)
+    //   e = currentDtd().documentElementType();
+
+    // TODO: Create attribute list and accept start tag
+    // const attributes = allocAttributeList(e.attributeDef(), 0);
+    // attributes.finish(*this);
+    // TODO: Start markup tracking
+    // acceptStartTag(e, new StartElementEvent(...), 0);
+  }
+
+  protected parseEmptyEndTag(): void {
+    // Port of parseEmptyEndTag from parseInstance.cxx (lines 1070-1091)
+    // Empty end tag </> - closes current element
+
+    // TODO: if (options().warnEmptyTag) message(ParserMessages.emptyEndTag)
+    // TODO: if (!currentDtd().isBase()) message(ParserMessages.emptyEndTagBaseDtd)
+    // TODO: if (tagLevel() === 0) message(ParserMessages.emptyEndTagNoOpenElements)
+    // TODO: else { create markup, acceptEndTag(new EndElementEvent(...)) }
+  }
+
+  protected parseNullEndTag(): void {
+    // Port of parseNullEndTag from parseInstance.cxx (lines 1092-1119)
+    // Null end tag (NET) / - closes net-enabling element
+
+    // Find the net-enabling element on the stack
+    // for (;;) {
+    //   ASSERT(tagLevel() > 0);
+    //   if (currentElement().netEnabling()) break;
+    //   if (!currentElement().isFinished() && validate())
+    //     message(ParserMessages.elementNotFinished, ...);
+    //   implyCurrentElementEnd(currentLocation());
+    // }
+
+    // TODO: Check if element is finished
+    // TODO: Create markup with NET delimiter
+    // TODO: acceptEndTag(new EndElementEvent(...))
+  }
+
+  protected parseGroupStartTag(): void {
+    // Port of parseGroupStartTag from parseInstance.cxx (lines 542-580)
+    // Group start tag with name group: <(name1|name2)
+
+    // TODO: Start markup tracking with STAGO + GRPO delimiters
+    // TODO: parseTagNameGroup(active, 1)
+    // TODO: If active, parse and accept the start tag
+    // TODO: If not active, skip attribute spec and fire ignoredMarkup event
+  }
+
+  protected parseGroupEndTag(): void {
+    // Port of parseGroupEndTag from parseInstance.cxx (lines 581-612)
+    // Group end tag with name group: </(name1|name2)
+
+    // TODO: Start markup tracking with ETAGO + GRPO delimiters
+    // TODO: parseTagNameGroup(active, 0)
+    // TODO: If active, parse and accept the end tag
+    // TODO: If not active, skip to close and fire ignoredMarkup event
+  }
 }
