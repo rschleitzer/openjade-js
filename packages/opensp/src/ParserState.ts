@@ -20,7 +20,7 @@ import { InputSource } from './InputSource';
 import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
-import { Location } from './Location';
+import { Location, ReplacementOrigin } from './Location';
 import { Message, Messenger } from './Message';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
@@ -2332,15 +2332,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     maxLength: number,
     tooLongMessage: any,
     flags: number,
-    text: any
+    text: Text
   ): boolean {
     // Port of parseLiteral from parseCommon.cxx (lines 62-236)
-    // TODO: Requires Text class to be fully ported
-    // TODO: Requires Mode enum to be defined
-    // TODO: Requires token constants (tokenEe, tokenLit, tokenLita, etc.)
-    // TODO: Requires markup tracking
-    // TODO: Requires entity reference handling
-
     const startLevel = this.inputLevel();
     let currentMode = litMode;
 
@@ -2349,38 +2343,204 @@ export class ParserState extends ContentState implements ParserStateInterface {
       ? Number.MAX_SAFE_INTEGER
       : maxLength * 2;
 
-    // TODO: text.clear();
+    text.clear();
     const startLoc = this.currentLocation();
 
-    // if (flags & ParserState.literalDelimInfo)
-    //   text.addStartDelim(this.currentLocation());
+    if (flags & ParserState.literalDelimInfo) {
+      text.addStartDelim(this.currentLocation());
+    }
 
     for (;;) {
       const token = this.getToken(currentMode);
 
-      // TODO: Switch on token type and handle all cases
-      // This requires ~40+ token constants to be defined
-      // Key cases:
-      // - tokenEe: entity end
-      // - tokenUnrecognized: non-SGML character
-      // - tokenRs/tokenRe: record boundaries
-      // - tokenSpace/tokenSepchar: whitespace
-      // - tokenCroDigit/tokenHcroHexDigit: numeric char refs
-      // - tokenCroNameStart: named char refs
-      // - tokenEroNameStart/tokenPeroNameStart: entity refs
-      // - tokenLit/tokenLita: closing delimiters
-      // - tokenChar/tokenCharDelim: regular characters
+      switch (token) {
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() === startLevel) {
+            this.message(ParserMessages.literalLevel);
+            return false;
+          }
+          text.addEntityEnd(this.currentLocation());
+          this.popInputStack();
+          if (this.inputLevel() === startLevel) {
+            currentMode = litMode;
+          }
+          break;
 
-      // Placeholder: just break for now
-      break;
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(ParserMessages.literalMinimumData,
+            new StringMessageArg(this.currentToken()));
+          break;
+
+        case TokenEnum.tokenRs:
+          text.ignoreChar(this.currentChar(), this.currentLocation());
+          break;
+
+        case TokenEnum.tokenRe:
+          if (text.size() > reallyMaxLength && this.inputLevel() === startLevel) {
+            // Guess that the closing delimiter has been omitted
+            this.setNextLocation(startLoc);
+            this.message(ParserMessages.literalClosingDelimiter);
+            return false;
+          }
+          // fall through
+        case TokenEnum.tokenSepchar:
+          if ((flags & ParserState.literalSingleSpace) &&
+              (text.size() === 0 || text.lastChar() === this.syntax().space())) {
+            text.ignoreChar(this.currentChar(), this.currentLocation());
+          } else {
+            text.addChar(this.syntax().space(),
+              new Location(new ReplacementOrigin(this.currentLocation(), this.currentChar()), 0));
+          }
+          break;
+
+        case TokenEnum.tokenSpace:
+          if ((flags & ParserState.literalSingleSpace) &&
+              (text.size() === 0 || text.lastChar() === this.syntax().space())) {
+            text.ignoreChar(this.currentChar(), this.currentLocation());
+          } else {
+            text.addChar(this.currentChar(), this.currentLocation());
+          }
+          break;
+
+        case TokenEnum.tokenCroDigit:
+        case TokenEnum.tokenHcroHexDigit:
+          {
+            const charRefResult = this.parseNumericCharRef(token === TokenEnum.tokenHcroHexDigit);
+            if (!charRefResult.valid) {
+              return false;
+            }
+            const c = charRefResult.char!;
+            const loc = charRefResult.location!;
+
+            const translateResult = this.translateNumericCharRef(c);
+            if (!translateResult.valid) {
+              break;
+            }
+
+            if (!translateResult.isSgmlChar) {
+              if (flags & ParserState.literalNonSgml) {
+                text.addNonSgmlChar(c, loc);
+              } else {
+                this.message(ParserMessages.numericCharRefLiteralNonSgml,
+                  new NumberMessageArg(c));
+              }
+              break;
+            }
+
+            const finalChar = translateResult.char!;
+            if (flags & ParserState.literalDataTag) {
+              if (!this.syntax().isSgmlChar(finalChar)) {
+                this.message(ParserMessages.dataTagPatternNonSgml);
+              } else {
+                const functionCharSet = this.syntax().charSet(Syntax.Set.functionChar);
+                if (functionCharSet && functionCharSet.contains(finalChar)) {
+                  this.message(ParserMessages.dataTagPatternFunction);
+                }
+              }
+            }
+
+            if ((flags & ParserState.literalSingleSpace) &&
+                finalChar === this.syntax().space() &&
+                (text.size() === 0 || text.lastChar() === this.syntax().space())) {
+              text.ignoreChar(finalChar, loc);
+            } else {
+              text.addChar(finalChar, loc);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenCroNameStart:
+          if (!this.parseNamedCharRef()) {
+            return false;
+          }
+          break;
+
+        case TokenEnum.tokenEroGrpo:
+          this.message(this.inInstance() ? ParserMessages.eroGrpoStartTag : ParserMessages.eroGrpoProlog);
+          break;
+
+        case TokenEnum.tokenLit:
+        case TokenEnum.tokenLita:
+          if (flags & ParserState.literalDelimInfo) {
+            text.addEndDelim(this.currentLocation(), token === TokenEnum.tokenLita);
+          }
+          // Done parsing literal
+          if ((flags & ParserState.literalSingleSpace) &&
+              text.size() > 0 &&
+              text.lastChar() === this.syntax().space()) {
+            text.ignoreLastChar();
+          }
+          if (text.size() > maxLength) {
+            // Check if this is an attribute literal that should be handled as unterminated
+            switch (litMode) {
+              case Mode.alitMode:
+              case Mode.alitaMode:
+              case Mode.talitMode:
+              case Mode.talitaMode:
+                // TODO: AttributeValue.handleAsUnterminated(text, this)
+                // For now, just report the error
+                break;
+              default:
+                break;
+            }
+            this.message(tooLongMessage, new NumberMessageArg(maxLength));
+          }
+          return true;
+
+        case TokenEnum.tokenPeroNameStart:
+          if (this.options().warnInternalSubsetLiteralParamEntityRef &&
+              this.inputLevel() === 1) {
+            this.message(ParserMessages.internalSubsetLiteralParamEntityRef);
+          }
+          // fall through
+        case TokenEnum.tokenEroNameStart:
+          {
+            const result = this.parseEntityReference(
+              token === TokenEnum.tokenPeroNameStart,
+              (flags & ParserState.literalNoProcess) ? 2 : 0
+            );
+            if (!result.valid) {
+              return false;
+            }
+            // TODO: if (!result.entity.isNull())
+            //   result.entity.litReference(text, this, result.origin, (flags & literalSingleSpace) != 0);
+            if (this.inputLevel() > startLevel) {
+              currentMode = liteMode;
+            }
+          }
+          break;
+
+        case TokenEnum.tokenPeroGrpo:
+          this.message(ParserMessages.peroGrpoProlog);
+          break;
+
+        case TokenEnum.tokenCharDelim:
+          {
+            const input = this.currentInput();
+            if (input) {
+              const start = input.currentTokenStart();
+              const len = input.currentTokenLength();
+              const str = new String<Char>(start, len);
+              this.message(ParserMessages.dataCharDelim, new StringMessageArg(str));
+            }
+          }
+          // fall through
+        case TokenEnum.tokenChar:
+          if (text.size() > reallyMaxLength &&
+              this.inputLevel() === startLevel &&
+              this.currentChar() === this.syntax().standardFunction(Syntax.StandardFunction.fRE)) {
+            // Guess that the closing delimiter has been omitted
+            this.setNextLocation(startLoc);
+            this.message(ParserMessages.literalClosingDelimiter);
+            return false;
+          }
+          text.addChar(this.currentChar(), this.currentLocation());
+          break;
+      }
     }
-
-    // TODO: Handle post-processing
-    // - Remove trailing space if literalSingleSpace flag
-    // - Check max length
-    // - Handle unterminated attribute values
-
-    return true;
   }
 
   protected parseEntityReference(
@@ -3562,8 +3722,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const literalFlags = ParserState.literalNonSgml |
       (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
 
-    // TODO: Uncomment when parseLiteral fully implemented
-    /*
     if (this.parseLiteral(
       lita ? Mode.alitaMode : Mode.alitMode,
       Mode.aliteMode,
@@ -3581,8 +3739,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return true;
     }
     return false;
-    */
-    return false; // Stub for now
   }
 
   // Port of parseAttribute.cxx lines 411-430
@@ -3596,8 +3752,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const literalFlags = ParserState.literalSingleSpace |
       (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
 
-    // TODO: Uncomment when parseLiteral fully implemented
-    /*
     if (this.parseLiteral(
       lita ? Mode.talitaMode : Mode.talitMode,
       Mode.taliteMode,
@@ -3615,8 +3769,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return true;
     }
     return false;
-    */
-    return false; // Stub for now
   }
 }
 
