@@ -216,6 +216,7 @@ export class ElementType extends Named {
   private def_: ConstPtr<ElementDefinition>;
   private map_: ShortReferenceMap | null;
   private rankStem_: RankStem | null;
+  private attributeDef_: Attributed;
 
   constructor(name: StringC, index: number) {
     super(name);
@@ -225,6 +226,7 @@ export class ElementType extends Named {
     this.def_ = new ConstPtr<ElementDefinition>();
     this.map_ = null;
     this.rankStem_ = null;
+    this.attributeDef_ = new Attributed();
   }
 
   setElementDefinition(def: ConstPtr<ElementDefinition>, defIndex: number): void {
@@ -299,6 +301,20 @@ export class ElementType extends Named {
     this.rankStem_ = tempRankStem;
   }
 
-  // Attributed interface - inherited from Attributed base class
-  // These would be implemented if ElementType needs attribute functionality
+  // Attributed interface - delegated to attributeDef_ member
+  attributeDef(): import('./Ptr').Ptr<import('./Attribute').AttributeDefinitionList> {
+    return this.attributeDef_.attributeDef();
+  }
+
+  setAttributeDef(def: import('./Ptr').Ptr<import('./Attribute').AttributeDefinitionList>): void {
+    this.attributeDef_.setAttributeDef(def);
+  }
+
+  attributeDefTemp(): import('./Attribute').AttributeDefinitionList | null {
+    return this.attributeDef_.attributeDefTemp();
+  }
+
+  attributeDefConst(): import('./Ptr').ConstPtr<import('./Attribute').AttributeDefinitionList> {
+    return this.attributeDef_.attributeDefConst();
+  }
 }

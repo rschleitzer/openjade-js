@@ -123,6 +123,7 @@ export {
 } from './ElementType';
 export { ShortReferenceMap } from './ShortReferenceMap';
 export { OpenElement } from './OpenElement';
+export { ContentState } from './ContentState';
 export {
   ContentToken,
   ModelGroup,

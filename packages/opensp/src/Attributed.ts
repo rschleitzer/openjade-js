@@ -2,12 +2,7 @@
 // See the file COPYING for copying permission.
 
 import { Ptr, ConstPtr } from './Ptr';
-import { Resource } from './Resource';
-
-// Forward declaration - will be defined in Attribute.ts
-export interface AttributeDefinitionList extends Resource {
-  // Defined in Attribute.ts
-}
+import { AttributeDefinitionList } from './Attribute';
 
 // This is used for things that have attribute definitions
 // that notations and elements.
