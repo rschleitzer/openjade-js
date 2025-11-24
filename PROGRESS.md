@@ -218,13 +218,22 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - IdLinkRule for ID link associations
   - IdLinkRuleGroup for ID link collections
   - Link attribute definition management
-- 🚧 **Event.ts** - Parser event system (348 lines, partial, 11 of 54 classes)
+- ✅ **Event.ts** - Complete parser event system (1,319 lines, 54 event classes)
   - Event base class with type enumeration (39 event types)
-  - LocatedEvent, MarkupEvent abstract bases
-  - MessageEvent for error/warning messages
-  - StartElementEvent, EndElementEvent for element boundaries
-  - DataEvent, ImmediateDataEvent for character data
-  - **TODO**: Remaining 43 event classes (Pi, External entities, DTD/LPD events, etc.)
+  - EventHandler abstract base with all handler methods
+  - LocatedEvent, MarkupEvent, StartSubsetEvent, MarkedSectionEvent abstract bases
+  - Element events (StartElement, EndElement) with attribute and DTD tracking
+  - Data events (Data, ImmediateData, DataEntity, CdataEntity, SdataEntity)
+  - PI events (Pi, ImmediatePi, PiEntity)
+  - External entity events (ExternalEntity, ExternalDataEntity, SubdocEntity)
+  - Character events (NonSgmlChar, IgnoredRs/Re, ReOrigin, IgnoredChars)
+  - Markup events (Appinfo, Uselink, Usemap, CommentDecl, SSep)
+  - DTD/LPD events (StartDtd, EndDtd, StartLpd, EndLpd, EndProlog)
+  - Declaration events (Notation, Entity, Element, Attlist, LinkAttlist, Link, IdLink, Shortref)
+  - Marked section events (MarkedSectionStart, MarkedSectionEnd)
+  - Entity lifecycle events (EntityStart, EntityEnd, EntityDefaulted)
+  - SGML declaration events (SgmlDecl, SgmlDeclEntity)
+  - Ignored markup event
 
 ## Next Steps (Priority Order)
 
@@ -306,8 +315,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~13,777 lines (76 modules out of 120 headers)
-- **Progress: ~28%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~14,752 lines (76 modules out of 120 headers)
+- **Progress: ~30%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 

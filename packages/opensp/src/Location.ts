@@ -82,6 +82,10 @@ export class Origin extends Resource {
     throw new Error('Origin.parent() must be overridden');
   }
 
+  location(): Location {
+    throw new Error('Origin.location() must be overridden');
+  }
+
   refLength(): Index {
     return 0;
   }
