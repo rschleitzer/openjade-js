@@ -6,24 +6,19 @@ import { Boolean } from './Boolean';
 import { ConstPtr } from './Ptr';
 import { Resource } from './Resource';
 import { String } from './StringOf';
+import { Owner } from './Owner';
+import { Allocator } from './Allocator';
+
+// Import actual Entity types
+import type { Entity, InternalEntity } from './Entity';
+import type { EntityDecl } from './EntityDecl';
+import type { Text } from './Text';
 
 // StringC is String<Char>
 type StringC = String<Char>;
 
 // Forward declarations for types we'll port later
-// These will be replaced with actual classes when we port Entity.h
-export interface Entity extends Resource { }
-export interface EntityDecl {
-  name(): StringC;
-}
 export interface Markup { }
-export interface Text {
-  charLocation(off: Offset, origin: Origin | null, index: Index): Boolean;
-}
-export interface InternalEntity extends Entity {
-  asInternalEntity(): InternalEntity | null;
-  text(): Text;
-}
 
 export class ExternalInfo {
   // RTTI support would go here
@@ -373,14 +368,50 @@ export interface InputSourceOriginNamedCharRef {
 }
 
 // Abstract base class for EntityOrigin
-// Note: In the C++ code, EntityOrigin doesn't override the static make() methods
-// from InputSourceOrigin. The Entity-specific factory methods will be added later.
 export abstract class EntityOrigin extends InputSourceOrigin {
-  static allocSize: number = 0; // Will be set properly when we have full implementation
+  static allocSize: number = 0; // Will be set when EntityOriginImpl is defined
 
-  // These will be implemented when we port Entity.h
-  // static make(entity: ConstPtr<Entity>): EntityOrigin
-  // static makeWithLocation(entity: ConstPtr<Entity>, refLocation: Location): EntityOrigin
+  // Factory methods for EntityOrigin - these have different signatures than InputSourceOrigin.make()
+  // so we can't directly override. We'll use a different approach.
+  static makeEntity(entity: ConstPtr<Entity>, refLocation: Location, refLength: Index, markup: Owner<Markup>): EntityOrigin;
+  static makeEntity(entity: ConstPtr<Entity>, refLocation: Location): EntityOrigin;
+  static makeEntity(allocator: Allocator, entity: ConstPtr<Entity>): EntityOrigin;
+  static makeEntity(allocator: Allocator, entity: ConstPtr<Entity>, refLocation: Location): EntityOrigin;
+  static makeEntity(allocator: Allocator, entity: ConstPtr<Entity>, refLocation: Location, refLength: Index, markup: Owner<Markup>): EntityOrigin;
+  static makeEntity(
+    allocatorOrEntity: Allocator | ConstPtr<Entity>,
+    entityOrRefLocation?: ConstPtr<Entity> | Location,
+    refLocationOrRefLength?: Location | Index,
+    refLengthOrMarkup?: Index | Owner<Markup>,
+    markup?: Owner<Markup>
+  ): EntityOrigin {
+    // TypeScript doesn't have function overloading like C++, so we need to handle all cases
+    if (allocatorOrEntity instanceof Allocator) {
+      const allocator = allocatorOrEntity;
+      const entity = entityOrRefLocation as ConstPtr<Entity>;
+      if (refLocationOrRefLength instanceof Location) {
+        const refLocation = refLocationOrRefLength;
+        if (typeof refLengthOrMarkup === 'number' && markup) {
+          const refLength = refLengthOrMarkup;
+          return new EntityOriginImpl(entity, refLocation, refLength, markup);
+        } else {
+          return new EntityOriginImpl(entity, refLocation);
+        }
+      } else {
+        return new EntityOriginImpl(entity);
+      }
+    } else {
+      const entity = allocatorOrEntity;
+      const refLocation = entityOrRefLocation as Location;
+      if (typeof refLocationOrRefLength === 'number' && refLengthOrMarkup instanceof Owner) {
+        const refLength = refLocationOrRefLength;
+        const markupOwner = refLengthOrMarkup;
+        return new EntityOriginImpl(entity, refLocation, refLength, markupOwner);
+      } else {
+        return new EntityOriginImpl(entity, refLocation);
+      }
+    }
+  }
 }
 
 // Concrete implementation (private in C++, exported here for now)
@@ -484,3 +515,67 @@ class InputSourceOriginImpl extends EntityOrigin {
     return false;
   }
 }
+
+// Concrete implementation of EntityOrigin
+class EntityOriginImpl extends InputSourceOriginImpl {
+  private entity_: ConstPtr<Entity>;
+  private refLength_: Index;
+  private markup_: Owner<Markup> | null;
+
+  constructor(entity: ConstPtr<Entity>);
+  constructor(entity: ConstPtr<Entity>, refLocation: Location);
+  constructor(entity: ConstPtr<Entity>, refLocation: Location, refLength: Index, markup: Owner<Markup>);
+  constructor(entity: ConstPtr<Entity>, refLocation?: Location, refLength?: Index, markup?: Owner<Markup>) {
+    super(refLocation);
+    this.entity_ = entity;
+    this.refLength_ = refLength ?? 0;
+    this.markup_ = markup ?? null;
+  }
+
+  copy(): InputSourceOrigin {
+    let m: Owner<Markup> | null = null;
+    if (this.markup_) {
+      // In C++: m = new Markup(*markup_)
+      // For now, we'll stub this since Markup copy constructor isn't defined
+      m = this.markup_;
+    }
+    return new EntityOriginImpl(this.entity_, this.parent(), this.refLength_, m!);
+  }
+
+  refLength(): Index {
+    return this.refLength_;
+  }
+
+  asEntityOrigin(): EntityOrigin | null {
+    return this;
+  }
+
+  defLocation(off: Offset, origin: Origin | null, index: Index): Boolean {
+    if (this.entity_.isNull()) {
+      return false;
+    }
+    const internal = this.entity_.pointer()?.asInternalEntity();
+    if (!internal) {
+      return false;
+    }
+    // charLocation needs references - wrap in objects
+    const originRef = { value: origin };
+    const indexRef = { value: index };
+    return internal.text().charLocation(off, originRef, indexRef);
+  }
+
+  entityDecl(): EntityDecl | null {
+    return this.entity_.pointer() as EntityDecl | null;
+  }
+
+  markup(): Markup | null {
+    return this.markup_?.pointer() ?? null;
+  }
+
+  entity(): Entity | null {
+    return this.entity_.pointer();
+  }
+}
+
+// Set allocSize
+EntityOrigin.allocSize = 0; // In TS we don't need this for allocation

@@ -261,6 +261,10 @@ export class EventQueue extends EventHandler {
     return this.queue_.empty();
   }
 
+  clear(): void {
+    this.queue_.clear();
+  }
+
   private append(event: Event): void {
     this.queue_.append(event);
   }
