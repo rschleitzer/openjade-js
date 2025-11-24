@@ -2871,8 +2871,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     let skipCount = 0;
 
     for (;;) {
-      // TODO: Get mdMode from Mode
-      const token = this.getToken(this.currentMode());
+      const token = this.getToken(Mode.mdMode);
 
       if (this.inputLevel() === startLevel) {
         skipCount++;
@@ -2899,7 +2898,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenS:
           if (this.inputLevel() === startLevel &&
               skipCount >= skipMax &&
-              this.currentChar() === this.syntax().standardFunction(0 /* Syntax::fRE */)) {
+              this.currentChar() === this.syntax().standardFunction(Syntax.StandardFunction.fRE)) {
             return;
           }
           break;
