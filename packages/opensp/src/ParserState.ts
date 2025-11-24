@@ -1827,7 +1827,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         default:
           // Shortref tokens start at tokenFirstShortref
           if (token >= TokenEnum.tokenFirstShortref) {
-            // TODO: handleShortref(token - tokenFirstShortref)
+            this.handleShortref(token - TokenEnum.tokenFirstShortref);
           }
           break;
       }
@@ -2603,5 +2603,46 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // TODO: if (currentMarkup()) currentMarkup().addReservedName(result, input)
 
     return { valid: false };
+  }
+
+  protected handleShortref(index: number): void {
+    // Port of handleShortref from parseInstance.cxx (lines 333-395)
+    // Handles short reference substitution
+    // Short references are delimiter strings that map to entities
+
+    // TODO: Get entity from current element's short reference map
+    // const entity = currentElement().map().entity(index);
+
+    // if (!entity.isNull()) {
+    //   // Create markup and origin
+    //   if (eventsWanted().wantInstanceMarkup()) {
+    //     const markup = new Markup();
+    //     markup.addShortref(currentInput());
+    //   }
+    //   const origin = EntityOrigin.make(...);
+    //   entity.contentReference(*this, origin);
+    //   return;
+    // }
+
+    // If no entity mapping, treat as character data
+    const input = this.currentInput();
+    if (!input) return;
+
+    const length = input.currentTokenLength();
+    const s = input.currentTokenStart();
+    let i = 0;
+
+    // TODO: Handle econMode/econnetMode whitespace
+    // TODO: acceptPcdata(location)
+
+    // If sd().keeprsre(), fire data event immediately
+    // Otherwise, process character by character handling RS/RE
+
+    // TODO: Full implementation requires:
+    // - currentElement() with map() method
+    // - Entity class and contentReference method
+    // - EntityOrigin class
+    // - keeprsre() check
+    // - Mode detection (econMode, econnetMode)
   }
 }
