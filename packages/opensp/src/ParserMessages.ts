@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const activeDocLink = new MessageType0(MessageType.Severity.error, null, -1, 'active document link');
@@ -43,3 +43,35 @@ export const processingInstructionClose = new MessageType0(MessageType.Severity.
 export const piMissingName = new MessageType0(MessageType.Severity.warning, null, -1, 'processing instruction does not start with valid name');
 export const commentEntityEnd = new MessageType0(MessageType.Severity.error, null, -1, 'entity end in comment');
 export const sdCommentSignificant = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 not allowed in comment (SGML declaration COM feature)');
+export const markedSectionAfterDocumentElement = new MessageType0(MessageType.Severity.error, null, -1, 'marked section illegal after document element');
+export const dataCharDelim = new MessageType1(MessageType.Severity.warning, null, -1, 'character %1 is the first character of a delimiter but occurred as data');
+export const attributeSpecCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 not allowed in attribute specification list');
+export const attributeSpecEntityEnd = new MessageType0(MessageType.Severity.error, null, -1, 'entity end not allowed in attribute specification list except in attribute value literal');
+export const attributeNameShorttag = new MessageType0(MessageType.Severity.error, null, -1, 'the name and VI delimiter can be omitted from an attribute specification only if SHORTTAG YES is specified');
+export const attributeSpecLiteral = new MessageType0(MessageType.Severity.error, null, -1, 'an attribute value literal can occur in an attribute specification list only after a VI delimiter');
+export const attributeSpecNameTokenExpected = new MessageType0(MessageType.Severity.error, null, -1, 'an attribute specification must start with a name or name token');
+export const attributeTokenNotUnique = new MessageType1(MessageType.Severity.error, null, -1, 'token %1 can be value for multiple attributes so attribute name required');
+export const attributeValueExpected = new MessageType0(MessageType.Severity.error, null, -1, 'an attribute value specification must start with a literal or a name character');
+export const attributeValueNotLiteral = new MessageType0(MessageType.Severity.warning, null, -1, 'attribute value not a literal');
+export const attributeValueShorttag = new MessageType0(MessageType.Severity.error, null, -1, 'an attribute value specification must be an attribute value literal unless SHORTTAG YES is specified');
+export const attributeValueLength = new MessageType1(MessageType.Severity.quantityError, null, -1, 'length of attribute value must not exceed LITLEN less NORMSEP (%1)');
+export const attributeValueLengthNeg = new MessageType1(MessageType.Severity.quantityError, null, -1, 'length of attribute value must not exceed LITLEN less NORMSEP (%1)');
+export const tokenizedAttributeValueLength = new MessageType1(MessageType.Severity.quantityError, null, -1, 'length of tokenized attribute value must not exceed LITLEN less NORMSEP (%1)');
+export const tokenizedAttributeValueLengthNeg = new MessageType1(MessageType.Severity.quantityError, null, -1, 'length of tokenized attribute value must not exceed LITLEN less NORMSEP (%1)');
+export const attsplen = new MessageType2(MessageType.Severity.quantityError, null, -1, 'normalized length of attribute specification list must not exceed ATTSPLEN (%1); length was %2');
+export const characterNumber = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a character number in the document character set');
+export const emptyCommentDecl = new MessageType0(MessageType.Severity.warning, null, -1, 'empty comment declaration');
+export const missingAttributeName = new MessageType0(MessageType.Severity.warning, null, -1, 'attribute name missing');
+export const namedCharRef = new MessageType0(MessageType.Severity.warning, null, -1, 'named character reference');
+export const nestcWithoutNet = new MessageType0(MessageType.Severity.error, null, -1, 'NET-enabling start-tag not immediately followed by null end-tag');
+export const netEnablingStartTagShorttag = new MessageType0(MessageType.Severity.error, null, -1, 'NET-enabling start-tag requires SHORTTAG YES');
+export const noSuchAttributeToken = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a member of a group specified for any attribute');
+export const nonSgmlCharRef = new MessageType0(MessageType.Severity.warning, null, -1, 'reference to non-SGML character');
+export const pass2 = new MessageType0(MessageType.Severity.error, null, -1, 'unexpected entity end while starting second pass');
+export const psComment = new MessageType0(MessageType.Severity.warning, null, -1, 'comment in parameter separator');
+export const unclosedStartTagShorttag = new MessageType0(MessageType.Severity.error, null, -1, 'unclosed start-tag requires SHORTTAG YES');
+export const unquotedAttributeValue = new MessageType0(MessageType.Severity.error, null, -1, 'an attribute value must be a literal unless it contains only name characters');
+export const afterDocumentElementEntityEnd = new MessageType0(MessageType.Severity.error, null, -1, 'end of entity other than document entity after document element');
+export const characterReferenceAfterDocumentElement = new MessageType0(MessageType.Severity.error, null, -1, 'character reference illegal after document element');
+export const entityReferenceAfterDocumentElement = new MessageType0(MessageType.Severity.error, null, -1, 'entity reference illegal after document element');
+export const contentAsyncEntityRef = new MessageType0(MessageType.Severity.error, null, -1, 'entity end in different element from entity reference');

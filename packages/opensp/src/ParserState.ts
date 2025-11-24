@@ -1640,8 +1640,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
           }
           // TODO: Check specialParseInputLevel()
           // TODO: Fire entityEnd event if eventsWanted().wantInstanceMarkup()
-          // TODO: Check afterDocumentElement()
-          // TODO: Check sd().integrallyStored() for async entity ref validation
+          if (this.afterDocumentElement()) {
+            this.message(ParserMessages.afterDocumentElementEntityEnd);
+          }
+          if (this.sd().integrallyStored() &&
+              this.tagLevel() &&
+              this.currentElement().index() !== this.currentInputElementIndex()) {
+            this.message(ParserMessages.contentAsyncEntityRef);
+          }
           this.popInputStack();
           break;
 
@@ -1649,7 +1655,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenHcroHexDigit:
           // Numeric character reference
           {
-            // TODO: Check afterDocumentElement()
+            if (this.afterDocumentElement()) {
+              this.message(ParserMessages.characterReferenceAfterDocumentElement);
+            }
             const result = this.parseNumericCharRef(token === TokenEnum.tokenHcroHexDigit);
             if (result.valid && result.char !== undefined && result.location) {
               // TODO: acceptPcdata(result.location)
@@ -1669,7 +1677,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenCroNameStart:
           // Named character reference
-          // TODO: Check afterDocumentElement()
+          if (this.afterDocumentElement()) {
+            this.message(ParserMessages.characterReferenceAfterDocumentElement);
+          }
           this.parseNamedCharRef();
           break;
 
@@ -1677,7 +1687,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenEroNameStart:
           // Entity reference
           {
-            // TODO: Check afterDocumentElement()
+            if (this.afterDocumentElement()) {
+              this.message(ParserMessages.entityReferenceAfterDocumentElement);
+            }
             const result = this.parseEntityReference(false, token === TokenEnum.tokenEroGrpo ? 1 : 0);
             // TODO: Handle entity content/rcdata reference
             // if (!result.entity.isNull()) {
@@ -1724,8 +1736,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenMdoNameStart:
           // Declaration (DOCTYPE, USEMAP, USELINK, etc.)
           {
-            // TODO: startMarkup(eventsWanted().wantInstanceMarkup(), currentLocation())
-            // TODO: if (markup) markup.addDelim(Syntax.dMDO)
+            const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+            if (markup) {
+              markup.addDelim(Syntax.DelimGeneral.dMDO);
+            }
 
             const startLevel = this.inputLevel();
             const result = this.parseDeclarationName();
@@ -1759,7 +1773,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenMdoDso:
           // Marked section start
           if (this.afterDocumentElement()) {
-            // TODO: message(ParserMessages.markedSectionAfterDocumentElement)
+            this.message(ParserMessages.markedSectionAfterDocumentElement);
           }
           this.parseMarkedSectionDeclStart();
           this.noteMarkup();
@@ -1814,7 +1828,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenCharDelim:
           // Data character that starts a delimiter
-          // TODO: message(ParserMessages.dataCharDelim, StringMessageArg(...))
+          // Port of tokenCharDelim case from parseInstance.cxx lines 285-287
+          {
+            const input = this.currentInput();
+            if (input) {
+              const start = input.currentTokenStart();
+              const len = input.currentTokenLength();
+              const str = new String<Char>(start, len);
+              this.message(ParserMessages.dataCharDelim, new StringMessageArg(str));
+            }
+          }
           // Fall through to tokenChar
           this.parsePcdata();
           break;
@@ -2017,13 +2040,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const rankStem = this.currentDtd().lookupRankStem(name);
     if (rankStem) {
       const completeName = rankStem.name();
-      // TODO: Implement appendCurrentRank
-      // if (!this.appendCurrentRank(completeName, rankStem)) {
-      //   this.message(ParserMessages.noCurrentRank, new StringMessageArg(completeName));
-      // } else {
-      //   return this.currentDtdNonConst().lookupElementType(completeName);
-      // }
-      this.message(ParserMessages.noCurrentRank, new StringMessageArg(completeName));
+      if (!this.appendCurrentRank(completeName, rankStem)) {
+        this.message(ParserMessages.noCurrentRank, new StringMessageArg(completeName));
+      } else {
+        return this.currentDtdNonConst().lookupElementType(completeName);
+      }
     }
     return null;
   }
@@ -2044,8 +2065,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       for (let j = 0; j < elementDef.nRankStems(); j++) {
         const stem = elementDef.rankStem(j);
-        // TODO: Implement setCurrentRank
-        // this.setCurrentRank(stem, rankSuffix);
+        this.setCurrentRank(stem, rankSuffix);
       }
     }
   }
@@ -2174,8 +2194,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         if (c <= charMax / 16 && (c *= 16) <= charMax - val) {
           c += val;
         } else {
-          // TODO: Add characterNumber message to ParserMessages
-          // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+          this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
           valid = false;
           break;
         }
@@ -2192,8 +2211,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         if (c <= charMax / 10 && (c *= 10) <= charMax - val) {
           c += val;
         } else {
-          // TODO: Add characterNumber message to ParserMessages
-          // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+          this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
           valid = false;
           break;
         }
@@ -2203,8 +2221,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Check if character is declared in document charset
     if (valid && !this.sd().docCharsetDecl().charDeclared(c)) {
       valid = false;
-      // TODO: Add characterNumber message to ParserMessages
-      // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+      this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
     }
 
     // TODO: Handle markup tracking with Markup class
@@ -2223,8 +2240,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected parseNamedCharRef(): boolean {
     // Port of parseNamedCharRef from parseCommon.cxx (lines 239-280)
     if (this.options().warnNamedCharRef) {
-      // TODO: Add namedCharRef message to ParserMessages
-      // this.message(ParserMessages.namedCharRef);
+      this.message(ParserMessages.namedCharRef);
     }
 
     const input = this.currentInput();
@@ -2232,19 +2248,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     const startIndex = this.currentLocation().index();
     input.discardInitial();
-    // TODO: Add nameLength message to ParserMessages
-    // this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
 
     let c: Char = 0;
     let valid = false;
     const name = new String<Char>();
 
-    // TODO: getCurrentToken(syntax().generalSubstTable(), name)
+    this.getCurrentToken(this.syntax().generalSubstTable(), name);
     // TODO: syntax().lookupFunctionChar(name, &c)
     // This requires:
-    // - getCurrentToken method
     // - Syntax.lookupFunctionChar method
-    // - SubstTable support
 
     // TODO: Handle refMode tokens (tokenRefc, tokenRe)
     // TODO: NamedCharRef class for tracking reference type
@@ -2260,8 +2273,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     if (this.sd().internalCharsetIsDocCharset()) {
       if (this.options().warnNonSgmlCharRef && !this.syntax().isSgmlChar(ch)) {
-        // TODO: Add nonSgmlCharRef message to ParserMessages
-        // this.message(ParserMessages.nonSgmlCharRef);
+        this.message(ParserMessages.nonSgmlCharRef);
       }
       return { valid: true, char: ch, isSgmlChar: true };
     }
@@ -2367,7 +2379,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Port of parsePcdata from parseInstance.cxx (lines 397-409)
     this.extendData();
     // TODO: acceptPcdata(currentLocation())
-    // TODO: noteData()
+    this.noteData();
     // TODO: Fire ImmediateDataEvent with character data
     // eventHandler().data(new ImmediateDataEvent(
     //   Event.characterData,
@@ -2425,11 +2437,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Handle ranked elements (SGML rank feature)
     if (this.sd().rank()) {
       if (!elementType) {
-        // TODO: Implement completeRankStem
-        // elementType = this.completeRankStem(name);
+        elementType = this.completeRankStem(name);
       } else if (elementType.isRankedElement()) {
-        // TODO: Implement handleRankedElement
-        // this.handleRankedElement(elementType);
+        this.handleRankedElement(elementType);
       }
     }
 
@@ -2456,8 +2466,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (closeToken === TokenEnum.tokenTagc) {
       // Simple tag with no attributes: <name>
       if (name.size() > this.syntax().taglen()) {
-        // TODO: Implement checkTaglen
-        // this.checkTaglen(this.markupLocation().index());
+        this.checkTaglen(this.markupLocation().index());
       }
       // TODO: Implement attributes.finish()
       // attributes.finish(this);
@@ -2475,8 +2484,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         const currentLoc = input.currentLocation();
         const markupLoc = this.markupLocation();
         if (currentLoc.index() - markupLoc.index() > this.syntax().taglen()) {
-          // TODO: Implement checkTaglen
-          // this.checkTaglen(markupLoc.index());
+          this.checkTaglen(markupLoc.index());
         }
       } else {
         netEnabling.value = false;
@@ -2791,26 +2799,33 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Port of emptyCommentDecl from parseDecl.cxx (lines 3568-3579)
     // Empty comment declaration <!-- -->
 
-    // TODO: if (startMarkup(eventsWanted().wantCommentDecls(), currentLocation())) {
-    //   currentMarkup().addDelim(Syntax.dMDO);
-    //   currentMarkup().addDelim(Syntax.dMDC);
-    //   eventHandler().commentDecl(new CommentDeclEvent(...));
-    // }
-    // TODO: if (options().warnEmptyCommentDecl)
-    //   message(ParserMessages.emptyCommentDecl);
+    const markup = this.startMarkup(this.eventsWanted().wantCommentDecls(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dMDO);
+      markup.addDelim(Syntax.DelimGeneral.dMDC);
+      // TODO: eventHandler().commentDecl(new CommentDeclEvent(...));
+    }
+    if (this.options().warnEmptyCommentDecl) {
+      this.message(ParserMessages.emptyCommentDecl);
+    }
   }
 
   protected parseCommentDecl(): boolean {
     // Port of parseCommentDecl from parseDecl.cxx (lines 3580-3638)
     // Comment declaration with one or more comments
 
-    // TODO: Start markup tracking
-    // if (startMarkup(inInstance() ? eventsWanted().wantCommentDecls() : eventsWanted().wantPrologMarkup(), currentLocation()))
-    //   currentMarkup().addDelim(Syntax.dMDO);
+    const markup = this.startMarkup(
+      this.inInstance() ? this.eventsWanted().wantCommentDecls() : this.eventsWanted().wantPrologMarkup(),
+      this.currentLocation()
+    );
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dMDO);
+    }
 
     // Parse first comment
-    // TODO: Get comMode from Mode
-    // if (!this.parseComment(comMode)) return false;
+    if (!this.parseComment(Mode.comMode)) {
+      return false;
+    }
 
     // Parse additional comments and closing
     // for (;;) {
@@ -2919,7 +2934,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
 
     const name = this.nameBuffer();
-    // TODO: getCurrentToken(syntax().generalSubstTable(), name)
+    this.getCurrentToken(this.syntax().generalSubstTable(), name);
 
     // TODO: syntax().lookupReservedName(name, result)
     // This requires Syntax.ReservedName enum and lookup method
@@ -3112,12 +3127,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     // Check total attribute specification length
     if (specLengthObj.value > this.syntax().attsplen()) {
-      // TODO: Add attsplen message to ParserMessages
-      // this.message(
-      //   ParserMessages.attsplen,
-      //   new NumberMessageArg(this.syntax().attsplen()),
-      //   new NumberMessageArg(specLengthObj.value)
-      // );
+      this.message(
+        ParserMessages.attsplen,
+        new NumberMessageArg(this.syntax().attsplen()),
+        new NumberMessageArg(specLengthObj.value)
+      );
     }
 
     return true;
@@ -3137,19 +3151,15 @@ export class ParserState extends ContentState implements ParserStateInterface {
         return false;
       }
       atts.noteInvalidSpec();
-      // TODO: Add noSuchAttributeToken to ParserMessages
-      // this.message(ParserMessages.noSuchAttributeToken, new StringMessageArg(text.string()));
+      this.message(ParserMessages.noSuchAttributeToken, new StringMessageArg(text.string()));
     } else if (this.sd().www() && !atts.tokenIndexUnique(text.string(), indexResult.value)) {
       atts.noteInvalidSpec();
-      // TODO: Add attributeTokenNotUnique to ParserMessages
-      // this.message(ParserMessages.attributeTokenNotUnique, new StringMessageArg(text.string()));
+      this.message(ParserMessages.attributeTokenNotUnique, new StringMessageArg(text.string()));
     } else {
       if (!this.sd().attributeOmitName()) {
-        // TODO: Add attributeNameShorttag to ParserMessages
-        // this.message(ParserMessages.attributeNameShorttag);
+        this.message(ParserMessages.attributeNameShorttag);
       } else if (this.options().warnMissingAttributeName) {
-        // TODO: Add missingAttributeName to ParserMessages
-        // this.message(ParserMessages.missingAttributeName);
+        this.message(ParserMessages.missingAttributeName);
       }
       atts.setSpec(indexResult.value, this);
       atts.setValueToken(indexResult.value, text, this, specLength);
@@ -3210,8 +3220,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       case TokenEnum.tokenEtago:
       case TokenEnum.tokenStago:
       case TokenEnum.tokenNestc:
-        // TODO: Add unquotedAttributeValue to ParserMessages
-        // this.message(ParserMessages.unquotedAttributeValue);
+        this.message(ParserMessages.unquotedAttributeValue);
         this.extendUnquotedAttributeValue();
         if (markup) {
           const input = this.currentInput();
@@ -3230,33 +3239,29 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       case TokenEnum.tokenEe:
         if (mode !== Mode.piPasMode) {
-          // TODO: Add attributeSpecEntityEnd to ParserMessages
-          // this.message(ParserMessages.attributeSpecEntityEnd);
+          this.message(ParserMessages.attributeSpecEntityEnd);
           return false;
         }
         // fall through
       case TokenEnum.tokenTagc:
       case TokenEnum.tokenDsc:
       case TokenEnum.tokenVi:
-        // TODO: Add attributeValueExpected to ParserMessages
-        // this.message(ParserMessages.attributeValueExpected);
+        this.message(ParserMessages.attributeValueExpected);
         return false;
 
       case TokenEnum.tokenNameStart:
       case TokenEnum.tokenDigit:
       case TokenEnum.tokenLcUcNmchar:
         if (!this.sd().attributeValueNotLiteral()) {
-          // TODO: Add attributeValueShorttag to ParserMessages
-          // this.message(ParserMessages.attributeValueShorttag);
+          this.message(ParserMessages.attributeValueShorttag);
         } else if (this.options().warnAttributeValueNotLiteral) {
-          // TODO: Add warnAttributeValueNotLiteral option and message
-          // this.message(ParserMessages.attributeValueNotLiteral);
+          this.message(ParserMessages.attributeValueNotLiteral);
         }
         this.extendNameToken(
           this.syntax().litlen() >= this.syntax().normsep()
             ? this.syntax().litlen() - this.syntax().normsep()
             : 0,
-          ParserMessages.nameTokenLength // TODO: Should be attributeValueLength
+          ParserMessages.attributeValueLength
         );
         if (markup) {
           const input = this.currentInput();
@@ -3277,8 +3282,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       case TokenEnum.tokenLita:
         {
           const lita = token === TokenEnum.tokenLita;
-          // TODO: Check if attribute is tokenized
-          const tokenized = false; // atts.tokenized(indexResult.value);
+          const tokenized = atts.tokenized(indexResult.value);
           if (tokenized) {
             if (!this.parseTokenizedAttributeValueLiteral(lita, text)) {
               return false;
@@ -3323,10 +3327,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
             if (!this.parseComment(Mode.comMode)) {
               return false;
             }
-            // TODO: Add warnPsComment option and psComment message
-            // if (this.options().warnPsComment) {
-            //   this.message(ParserMessages.psComment);
-            // }
+            if (this.options().warnPsComment) {
+              this.message(ParserMessages.psComment);
+            }
             // fall through
           case TokenEnum.tokenS:
             token = this.getToken(mode);
@@ -3361,8 +3364,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       case TokenEnum.tokenEe:
         if (mode !== Mode.piPasMode) {
-          // TODO: Add attributeSpecEntityEnd to ParserMessages
-          // this.message(ParserMessages.attributeSpecEntityEnd);
+          this.message(ParserMessages.attributeSpecEntityEnd);
           return false;
         }
         result.value = AttributeParameterType.end;
@@ -3371,8 +3373,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       case TokenEnum.tokenEtago:
       case TokenEnum.tokenStago:
         if (!this.sd().startTagUnclosed()) {
-          // TODO: Add unclosedStartTagShorttag to ParserMessages
-          // this.message(ParserMessages.unclosedStartTagShorttag);
+          this.message(ParserMessages.unclosedStartTagShorttag);
         }
         result.value = AttributeParameterType.end;
         const input = this.currentInput();
@@ -3385,20 +3386,19 @@ export class ParserState extends ContentState implements ParserStateInterface {
           markup.addDelim(Syntax.DelimGeneral.dNESTC);
         }
         // Handle NET enabling based on SGML declaration
-        // TODO: Add Sd.netEnableNo, netEnableImmednet, netEnableAll constants
-        // switch (this.sd().startTagNetEnable()) {
-        //   case Sd.netEnableNo:
-        //     this.message(ParserMessages.netEnablingStartTagShorttag);
-        //     break;
-        //   case Sd.netEnableImmednet:
-        //     if (this.getToken(Mode.econnetMode) !== TokenEnum.tokenNet) {
-        //       this.message(ParserMessages.nestcWithoutNet);
-        //     }
-        //     this.currentInput()?.ungetToken();
-        //     break;
-        //   case Sd.netEnableAll:
-        //     break;
-        // }
+        switch (this.sd().startTagNetEnable()) {
+          case Sd.NetEnable.netEnableNo:
+            this.message(ParserMessages.netEnablingStartTagShorttag);
+            break;
+          case Sd.NetEnable.netEnableImmednet:
+            if (this.getToken(Mode.econnetMode) !== TokenEnum.tokenNet) {
+              this.message(ParserMessages.nestcWithoutNet);
+            }
+            this.currentInput()?.ungetToken();
+            break;
+          case Sd.NetEnable.netEnableAll:
+            break;
+        }
         netEnabling.value = true;
         result.value = AttributeParameterType.end;
         break;
@@ -3439,16 +3439,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       case TokenEnum.tokenLit:
       case TokenEnum.tokenLita:
-        // TODO: Add attributeSpecLiteral and attributeSpecNameTokenExpected to ParserMessages
-        // this.message(allowVi
-        //   ? ParserMessages.attributeSpecLiteral
-        //   : ParserMessages.attributeSpecNameTokenExpected);
+        this.message(allowVi
+          ? ParserMessages.attributeSpecLiteral
+          : ParserMessages.attributeSpecNameTokenExpected);
         return false;
 
       case TokenEnum.tokenVi:
         if (!allowVi) {
-          // TODO: Add attributeSpecNameTokenExpected to ParserMessages
-          // this.message(ParserMessages.attributeSpecNameTokenExpected);
+          this.message(ParserMessages.attributeSpecNameTokenExpected);
           return false;
         }
         if (markup) {
@@ -3497,7 +3495,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const literalFlags = ParserState.literalNonSgml |
       (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
 
-    // TODO: Add attributeValueLength and attributeValueLengthNeg to ParserMessages
     // TODO: Uncomment when parseLiteral fully implemented
     /*
     if (this.parseLiteral(
@@ -3532,7 +3529,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const literalFlags = ParserState.literalSingleSpace |
       (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
 
-    // TODO: Add tokenizedAttributeValueLength and tokenizedAttributeValueLengthNeg to ParserMessages
     // TODO: Uncomment when parseLiteral fully implemented
     /*
     if (this.parseLiteral(
