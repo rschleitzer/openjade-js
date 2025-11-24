@@ -528,14 +528,156 @@ export class DataTagElementToken extends ElementToken {
   }
 }
 
+// AndInfo - information for AND group transitions
+export class AndInfo {
+  andAncestor: AndModelGroup | null;
+  andGroupIndex: number;
+  follow: Vector<Transition>;
+
+  constructor() {
+    this.andAncestor = null;
+    this.andGroupIndex = 0;
+    this.follow = new Vector<Transition>();
+  }
+}
+
+// AndState - tracks state of AND group processing
+export class AndState {
+  private v_: Vector<PackedBoolean>;
+  private clearFrom_: number;
+
+  constructor(n: number) {
+    this.v_ = new Vector<PackedBoolean>();
+    this.v_.resize(n);
+    for (let i = 0; i < n; i++) {
+      this.v_.set(i, false);
+    }
+    this.clearFrom_ = 0;
+  }
+
+  isClear(i: number): Boolean {
+    return i >= this.clearFrom_ || !this.v_.get(i);
+  }
+
+  clearFrom(i: number): void {
+    this.clearFrom1(i);
+  }
+
+  set(i: number): void {
+    this.v_.set(i, true);
+    if (i >= this.clearFrom_) {
+      this.clearFrom_ = i + 1;
+    }
+  }
+
+  equals(state: AndState): Boolean {
+    // ASSERT(this.v_.size() === state.v_.size());
+    for (let i = 0; i < this.v_.size(); i++) {
+      if (i >= this.clearFrom_ && i >= state.clearFrom_) {
+        break;
+      }
+      if (this.v_.get(i) !== state.v_.get(i)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  notEquals(state: AndState): Boolean {
+    return !this.equals(state);
+  }
+
+  private clearFrom1(i: number): void {
+    while (this.clearFrom_ > i) {
+      this.v_.set(--this.clearFrom_, false);
+    }
+  }
+}
+
+// MatchState - tracks current position in content model matching
+export class MatchState {
+  private pos_: LeafContentToken | null;
+  private andState_: AndState;
+  private minAndDepth_: number;
+
+  constructor(model?: CompiledModelGroup | null) {
+    if (model === undefined || model === null) {
+      this.pos_ = null;
+      this.andState_ = new AndState(0);
+      this.minAndDepth_ = 0;
+    } else {
+      this.pos_ = model.initial();
+      this.andState_ = new AndState(model.andStateSize());
+      this.minAndDepth_ = 0;
+    }
+  }
+
+  tryTransition(e: ElementType): Boolean {
+    // TODO: Implement transition logic
+    return false;
+  }
+
+  tryTransitionPcdata(): Boolean {
+    // TODO: Implement PCDATA transition logic
+    return false;
+  }
+
+  possibleTransitions(result: Vector<ElementType>): void {
+    // TODO: Implement possible transitions enumeration
+  }
+
+  isFinished(): Boolean {
+    return this.pos_ === null || (this.pos_ as any).isFinal?.() === true;
+  }
+
+  impliedStartTag(): LeafContentToken | null {
+    // TODO: Implement implied start tag logic
+    return null;
+  }
+
+  invalidExclusion(e: ElementType): LeafContentToken | null {
+    if (!this.pos_) {
+      return null;
+    }
+    // TODO: Complete implementation when transitionToken is available
+    // const token = this.pos_.transitionToken(e, this.andState_, this.minAndDepth_);
+    // if (token && !token.inherentlyOptional() && !token.orGroupMember()) {
+    //   return token;
+    // }
+    return null;
+  }
+
+  doRequiredTransition(): void {
+    // TODO: Implement required transition
+  }
+
+  currentPosition(): LeafContentToken | null {
+    return this.pos_;
+  }
+
+  equals(state: MatchState): Boolean {
+    return (
+      this.pos_ === state.pos_ &&
+      this.andState_.equals(state.andState_) &&
+      this.minAndDepth_ === state.minAndDepth_
+    );
+  }
+
+  notEquals(state: MatchState): Boolean {
+    return !this.equals(state);
+  }
+}
+
 // CompiledModelGroup - compiled/optimized content model
 export class CompiledModelGroup {
   private initial_: Owner<LeafContentToken>;
   private pcdataUnreachable_: Boolean;
+  private andStateSize_: number;
 
   constructor() {
     this.initial_ = new Owner<LeafContentToken>();
     this.pcdataUnreachable_ = true;
+    this.andStateSize_ = 0;
   }
 
   initial(): LeafContentToken | null {
@@ -550,6 +692,10 @@ export class CompiledModelGroup {
     return this.pcdataUnreachable_;
   }
 
+  andStateSize(): number {
+    return this.andStateSize_;
+  }
+
   compile(
     andStateSize: number,
     modelGroup: Owner<ModelGroup>,
@@ -557,6 +703,7 @@ export class CompiledModelGroup {
     pcdataToken: Owner<PcdataToken>
   ): void {
     // TODO: Implement compilation
+    this.andStateSize_ = andStateSize;
     this.pcdataUnreachable_ = true;
   }
 }

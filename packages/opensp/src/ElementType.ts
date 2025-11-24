@@ -15,14 +15,7 @@ import { ConstPtr } from './Ptr';
 import { Mode } from './Mode';
 import { CANNOT_HAPPEN } from './macros';
 import { ShortReferenceMap } from './ShortReferenceMap';
-
-// Forward declarations
-export class CompiledModelGroup {
-  containsPcdata(): Boolean {
-    // TODO: Implement
-    return false;
-  }
-}
+import { CompiledModelGroup } from './ContentToken';
 
 // ElementDefinition - defines an element's content model and properties
 export class ElementDefinition extends Resource {

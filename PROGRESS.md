@@ -168,15 +168,17 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - RankStem for ranked elements
   - ShortReferenceMap stub
   - Inclusions/exclusions, omitted tag minimization
-- ✅ **ContentToken.ts** - Content model token hierarchy (562 lines - partial)
+- ✅ **ContentToken.ts** - Content model token hierarchy (709 lines - mostly complete)
   - ContentToken abstract base with occurrence indicators (?, +, *)
   - ModelGroup hierarchy (AndModelGroup, OrModelGroup, SeqModelGroup) with connectors (&, |, ,)
-  - LeafContentToken hierarchy (PcdataToken, InitialPseudoToken, ElementToken) - partial
+  - LeafContentToken hierarchy (PcdataToken, InitialPseudoToken, ElementToken)
   - DataTagGroup and DataTagElementToken for data tag patterns
   - CompiledModelGroup for DFA-based content model compilation
   - Transition tracking with FirstSet/LastSet analysis
   - GroupInfo for content model analysis state
-  - **Note**: Missing AndState, MatchState, and complete LeafContentToken implementation
+  - AndInfo, AndState for AND group state tracking
+  - MatchState for content model position tracking
+  - **Note**: Some transition logic methods still need implementation (marked with TODO)
 - ✅ **ShortReferenceMap.ts** - Short reference map management (91 lines)
   - Named short reference maps with entity mapping
   - Lookup by index with name/entity resolution
@@ -193,6 +195,12 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - InputSource subclass for in-memory string content
   - Character reference handling with buffer management
   - Rewind support for entity expansion
+- ✅ **OpenElement.ts** - Open element tracking (154 lines)
+  - Tracks open elements in the element stack
+  - Content model matching with MatchState integration
+  - Tag omission support (omitted start/end tags)
+  - Special parsing modes (CDATA, RCDATA, ANY)
+  - Short reference map management per element
 
 ## Next Steps (Priority Order)
 
@@ -274,8 +282,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~12,635 lines (74 modules out of 120 headers)
-- **Progress: ~25%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~12,927 lines (75 modules out of 120 headers)
+- **Progress: ~26%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 

@@ -119,10 +119,10 @@ export { Dtd, Syntax as DtdSyntax, ParserState as DtdParserState } from './Dtd';
 export {
   ElementType as ElementTypeFromElementType,
   ElementDefinition,
-  RankStem,
-  CompiledModelGroup as CompiledModelGroupFromElementType
+  RankStem
 } from './ElementType';
 export { ShortReferenceMap } from './ShortReferenceMap';
+export { OpenElement } from './OpenElement';
 export {
   ContentToken,
   ModelGroup,
@@ -141,6 +141,9 @@ export {
   LastSet,
   ContentModelAmbiguity,
   GroupInfo,
+  AndInfo,
+  AndState,
+  MatchState,
   ElementType as ElementTypeFromContentToken
 } from './ContentToken';
 
