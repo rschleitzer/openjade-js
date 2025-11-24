@@ -2396,14 +2396,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!input) return;
 
     // Start markup tracking
-    // TODO: Implement startMarkup
-    // const markup = this.startMarkup(
-    //   this.eventsWanted().wantInstanceMarkup(),
-    //   input.currentLocation()
-    // );
-    // if (markup) {
-    //   markup.addDelim(Syntax.DelimGeneral.dSTAGO);
-    // }
+    const markup = this.startMarkup(
+      this.eventsWanted().wantInstanceMarkup(),
+      input.currentLocation()
+    );
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dSTAGO);
+    }
 
     const netEnabling = { value: false };
     const event = this.doParseStartTag(netEnabling);
@@ -2515,9 +2514,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   protected parseEndTag(): any {
     // Port of parseEndTag from parseInstance.cxx (lines 1003-1010)
-    // TODO: Start markup tracking
-    // const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
-    // if (markup) markup.addDelim(Syntax.dETAGO);
+    const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dETAGO);
+    }
 
     return this.doParseEndTag();
   }
@@ -2828,19 +2828,58 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     // Parse additional comments and closing
-    // for (;;) {
-    //   const token = this.getToken(mdMode);
-    //   switch (token) {
-    //     case TokenEnum.tokenS: handle whitespace with warning
-    //     case TokenEnum.tokenCom: parse another comment with warning
-    //     case TokenEnum.tokenMdc: close and fire event, return true
-    //     case TokenEnum.tokenEe: entity end error
-    //     case TokenEnum.tokenUnrecognized: non-SGML char error
-    //     default: invalid token error
-    //   }
-    // }
+    for (;;) {
+      const token = this.getToken(Mode.mdMode);
+      switch (token) {
+        case TokenEnum.tokenS:
+          if (markup) {
+            markup.addS(this.currentChar());
+          }
+          if (this.options().warnCommentDeclS) {
+            this.message(ParserMessages.commentDeclS);
+          }
+          break;
 
-    return false;
+        case TokenEnum.tokenCom:
+          if (!this.parseComment(Mode.comMode)) {
+            return false;
+          }
+          if (this.options().warnCommentDeclMultiple) {
+            this.message(ParserMessages.commentDeclMultiple);
+          }
+          break;
+
+        case TokenEnum.tokenMdc:
+          if (markup) {
+            markup.addDelim(Syntax.DelimGeneral.dMDC);
+          }
+          // TODO: eventHandler().commentDecl(new CommentDeclEvent(...))
+          return true;
+
+        case TokenEnum.tokenEe:
+          this.message(ParserMessages.declarationLevel);
+          return false;
+
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.commentDeclarationCharacter,
+            new StringMessageArg(this.currentToken()),
+            this.markupLocation()
+          );
+          return false;
+
+        default:
+          this.message(
+            ParserMessages.commentDeclInvalidToken,
+            new TokenMessageArg(token, Mode.mdMode, this.syntaxPointer(), this.sdPointer()),
+            this.markupLocation()
+          );
+          return false;
+      }
+    }
   }
 
   protected parseMarkedSectionDeclStart(): boolean {
