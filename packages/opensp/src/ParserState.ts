@@ -1784,4 +1784,57 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Extend whitespace in content
     this.extendS();
   }
+
+  protected reportNonSgmlCharacter(): boolean {
+    // Port of reportNonSgmlCharacter from parseCommon.cxx
+    const input = this.currentInput();
+    if (!input) return false;
+
+    // Get current character - either from current token or read next
+    const c = input.currentTokenLength() ? this.currentChar() : this.getChar();
+
+    if (!this.syntax().isSgmlChar(c)) {
+      this.message(ParserMessages.nonSgmlCharacter, new NumberMessageArg(c));
+      return true;
+    }
+
+    return false;
+  }
+
+  protected parseComment(mode: Mode): boolean {
+    // Port of parseComment from parseCommon.cxx
+    const startLoc = this.currentLocation();
+    const markup = this.currentMarkup();
+
+    if (markup) {
+      markup.addCommentStart();
+    }
+
+    let token: Token;
+    const tokenCom = 0; // TODO: Import actual token constants
+
+    while ((token = this.getToken(mode)) !== tokenCom) {
+      switch (token) {
+        case 0: // tokenUnrecognized - TODO: Use actual constant
+          if (!this.reportNonSgmlCharacter()) {
+            // TODO: Add sdCommentSignificant message
+            // this.message(ParserMessages.sdCommentSignificant, new StringMessageArg(this.currentToken()));
+          }
+          break;
+
+        case -1: // tokenEe - TODO: Use actual constant
+          // TODO: Add commentEntityEnd message
+          // this.message(ParserMessages.commentEntityEnd, startLoc);
+          return false;
+
+        default:
+          if (markup) {
+            markup.addCommentChar(this.currentChar());
+          }
+          break;
+      }
+    }
+
+    return true;
+  }
 }
