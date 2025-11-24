@@ -4,6 +4,11 @@
 import { StringC } from './StringC';
 import { Vector } from './Vector';
 import { MessageBuilder } from './MessageBuilder';
+import { Token } from './Token';
+import { Mode } from './Mode';
+import { Syntax } from './Syntax';
+import { Sd } from './Sd';
+import { Ptr, ConstPtr } from './Ptr';
 
 export abstract class MessageArg {
   abstract copy(): MessageArg;
@@ -94,5 +99,39 @@ export class StringVectorMessageArg extends MessageArg {
       const item = this.v_.get(i);
       builder.appendChars(item.data(), item.size());
     }
+  }
+}
+
+export class TokenMessageArg extends MessageArg {
+  // Port of TokenMessageArg from TokenMessageArg.h/cxx
+  private token_: Token;
+  private mode_: Mode;
+  private syntax_: ConstPtr<Syntax>;
+  private sd_: ConstPtr<Sd>;
+
+  constructor(token: Token, mode: Mode, syntax: ConstPtr<Syntax>, sd: ConstPtr<Sd>) {
+    super();
+    this.token_ = token;
+    this.mode_ = mode;
+    this.syntax_ = syntax;
+    this.sd_ = sd;
+  }
+
+  copy(): MessageArg {
+    return new TokenMessageArg(this.token_, this.mode_, this.syntax_, this.sd_);
+  }
+
+  append(builder: MessageBuilder): void {
+    // Port of TokenMessageArg::append from TokenMessageArg.cxx
+    // TODO: Implement full token description logic
+    // This would involve:
+    // - Checking if token is shortref (tokenFirstShortref)
+    // - Checking if token is entity end (tokenEe)
+    // - Using ModeInfo to get TokenInfo for the token
+    // - Appending appropriate message fragments based on token type
+    // For now, append a placeholder
+    const placeholder = `[token ${this.token_} in mode ${this.mode_}]`;
+    const chars = Array.from(placeholder).map(c => c.charCodeAt(0));
+    builder.appendChars(chars, chars.length);
   }
 }

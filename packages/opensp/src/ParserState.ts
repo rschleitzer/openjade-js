@@ -22,7 +22,7 @@ import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
 import { Location } from './Location';
 import { Message, Messenger } from './Message';
-import { StringMessageArg, NumberMessageArg } from './MessageArg';
+import { StringMessageArg, NumberMessageArg, TokenMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
 import { Token as TokenEnum } from './Token';
 import { OpenElement } from './OpenElement';
@@ -2279,50 +2279,130 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected parseStartTag(): void {
-    // Port of parseStartTag from parseInstance.cxx (lines 410-418)
+    // Port of parseStartTag from parseInstance.cxx lines 410-420
     const input = this.currentInput();
     if (!input) return;
 
-    // TODO: Start markup tracking
-    // const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), input.currentLocation());
-    // if (markup) markup.addDelim(Syntax.dSTAGO);
+    // Start markup tracking
+    // TODO: Implement startMarkup
+    // const markup = this.startMarkup(
+    //   this.eventsWanted().wantInstanceMarkup(),
+    //   input.currentLocation()
+    // );
+    // if (markup) {
+    //   markup.addDelim(Syntax.DelimGeneral.dSTAGO);
+    // }
 
-    // TODO: Parse the start tag details
-    // const result = this.doParseStartTag();
-    // const netEnabling = result.netEnabling;
-    // const event = result.event;
+    const netEnabling = { value: false };
+    const event = this.doParseStartTag(netEnabling);
 
-    // TODO: Accept and process the start tag
-    // this.acceptStartTag(event.elementType(), event, netEnabling);
+    if (event) {
+      // TODO: Implement acceptStartTag
+      // this.acceptStartTag(event.elementType(), event, netEnabling.value);
+    }
   }
 
-  protected doParseStartTag(): any {
-    // Port of doParseStartTag from parseInstance.cxx (lines 420-485)
-    // TODO: This is a complex ~65 line method that:
-    // - Extracts element name
-    // - Looks up element type in DTD
-    // - Handles ranked elements
-    // - Parses attribute specifications
-    // - Handles NET enabling (empty tags)
-    // - Creates StartElementEvent
-    // Requires:
-    // - ElementType class
-    // - AttributeList class
-    // - parseAttributeSpec method
-    // - DTD lookup methods
-    // - Event classes
-
+  protected doParseStartTag(netEnabling: { value: boolean }): any {
+    // Port of doParseStartTag from parseInstance.cxx lines 422-473
+    const markup = this.currentMarkup();
     const input = this.currentInput();
     if (!input) return null;
 
     input.discardInitial();
-    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameTokenLength);
 
-    // TODO: Extract name and lookup element type
-    // TODO: Handle attributes
-    // TODO: Return StartElementEvent
+    if (markup) {
+      markup.addName(input);
+    }
 
-    return null;
+    // Get element name
+    const name = this.nameBuffer();
+    this.getCurrentToken(this.syntax().generalSubstTable(), name);
+
+    // Lookup element type in DTD
+    let elementType = this.currentDtdNonConst().lookupElementType(name);
+
+    // Handle ranked elements (SGML rank feature)
+    if (this.sd().rank()) {
+      if (!elementType) {
+        // TODO: Implement completeRankStem
+        // elementType = this.completeRankStem(name);
+      } else if (elementType.isRankedElement()) {
+        // TODO: Implement handleRankedElement
+        // this.handleRankedElement(elementType);
+      }
+    }
+
+    // Create undefined element if not found
+    if (!elementType) {
+      // TODO: Implement lookupCreateUndefinedElement
+      // elementType = this.lookupCreateUndefinedElement(
+      //   name,
+      //   this.currentLocation(),
+      //   this.currentDtdNonConst(),
+      //   this.implydefElement() !== Sd.implydefElementAnyother
+      // );
+      return null; // Stub for now
+    }
+
+    // Allocate attribute list
+    // TODO: Implement allocAttributeList
+    // const attributes = this.allocAttributeList(elementType.attributeDef(), 0);
+    const attributes = new AttributeList(); // Stub
+
+    // Parse closing token or attributes
+    const closeToken = this.getToken(Mode.tagMode);
+
+    if (closeToken === TokenEnum.tokenTagc) {
+      // Simple tag with no attributes: <name>
+      if (name.size() > this.syntax().taglen()) {
+        // TODO: Implement checkTaglen
+        // this.checkTaglen(this.markupLocation().index());
+      }
+      // TODO: Implement attributes.finish()
+      // attributes.finish(this);
+      netEnabling.value = false;
+      if (markup) {
+        markup.addDelim(Syntax.DelimGeneral.dTAGC);
+      }
+    } else {
+      // Tag with attributes or NET
+      input.ungetToken();
+      const newAttDef = new Ptr<AttributeDefinitionList>(null);
+
+      if (this.parseAttributeSpec(Mode.tagMode, attributes, netEnabling, newAttDef)) {
+        // Check tag length
+        const currentLoc = input.currentLocation();
+        const markupLoc = this.markupLocation();
+        if (currentLoc.index() - markupLoc.index() > this.syntax().taglen()) {
+          // TODO: Implement checkTaglen
+          // this.checkTaglen(markupLoc.index());
+        }
+      } else {
+        netEnabling.value = false;
+      }
+
+      // Set new attribute definition if created
+      if (!newAttDef.isNull()) {
+        const newDef = newAttDef.pointer();
+        if (newDef) {
+          // TODO: Implement setIndex and setAttributeDef
+          // newDef.setIndex(this.currentDtdNonConst().allocAttributeDefinitionListIndex());
+          // elementType.setAttributeDef(newAttDef);
+        }
+      }
+    }
+
+    // Create StartElementEvent
+    // TODO: Implement eventAllocator and StartElementEvent
+    // return new StartElementEvent(
+    //   elementType,
+    //   this.currentDtdPointer(),
+    //   attributes,
+    //   this.markupLocation(),
+    //   markup
+    // );
+    return null; // Stub for now
   }
 
   protected parseEndTag(): any {
@@ -2336,38 +2416,102 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   protected doParseEndTag(): any {
     // Port of doParseEndTag from parseInstance.cxx (lines 1012-1034)
+    const markup = this.currentMarkup();
     const input = this.currentInput();
     if (!input) return null;
 
     input.discardInitial();
-    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
 
-    // TODO: Extract name using getCurrentToken
-    // TODO: Lookup element type in DTD
-    // TODO: Handle ranked elements
-    // TODO: Call parseEndTagClose()
-    // TODO: Create EndElementEvent
+    if (markup) {
+      markup.addName(input);
+    }
 
-    // this.parseEndTagClose();
+    // Get element name
+    const name = this.nameBuffer();
+    this.getCurrentToken(this.syntax().generalSubstTable(), name);
 
-    return null;
+    // Lookup element type in DTD
+    let elementType = this.currentDtd().lookupElementType(name);
+
+    // Handle ranked elements (SGML rank feature)
+    if (this.sd().rank()) {
+      if (!elementType) {
+        // TODO: Implement completeRankStem
+        // elementType = this.completeRankStem(name);
+      }
+    }
+
+    if (!elementType) {
+      // TODO: Implement lookupCreateUndefinedElement
+      // elementType = this.lookupCreateUndefinedElement(
+      //   name,
+      //   this.currentLocation(),
+      //   this.currentDtdNonConst(),
+      //   this.implydefElement() !== Sd.ImplydefElement.implydefElementAnyother
+      // );
+      return null; // Stub for now
+    }
+
+    this.parseEndTagClose();
+
+    // TODO: Create EndElementEvent - needs event allocator
+    // return new EndElementEvent(
+    //   elementType,
+    //   this.currentDtdPointer(),
+    //   this.markupLocation(),
+    //   markup
+    // );
+    return null; // Stub for now
   }
 
   protected parseEndTagClose(): void {
-    // Port of parseEndTagClose from parseInstance.cxx (lines 1036-1080)
+    // Port of parseEndTagClose from parseInstance.cxx (lines 1036-1063)
     // Parses the closing portion of an end tag (whitespace and TAGC delimiter)
 
-    // TODO: Loop through tokens until TAGC or error
-    // for (;;) {
-    //   const token = this.getToken(tagMode);
-    //   switch (token) {
-    //     case tokenUnrecognized: handle non-SGML char
-    //     case tokenEe: entity end in end tag
-    //     case tokenEtago/tokenStago: unclosed end tag
-    //     case tokenTagc: proper close, add delimiter
-    //     case tokenS: whitespace in end tag
-    //   }
-    // }
+    for (;;) {
+      const token = this.getToken(Mode.tagMode);
+
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          if (!this.reportNonSgmlCharacter()) {
+            this.message(ParserMessages.endTagCharacter,
+              new StringMessageArg(this.currentToken()));
+          }
+          return;
+
+        case TokenEnum.tokenEe:
+          this.message(ParserMessages.endTagEntityEnd);
+          return;
+
+        case TokenEnum.tokenEtago:
+        case TokenEnum.tokenStago:
+          if (!this.sd().endTagUnclosed()) {
+            this.message(ParserMessages.unclosedEndTagShorttag);
+          }
+          this.currentInput()?.ungetToken();
+          return;
+
+        case TokenEnum.tokenTagc:
+          const markup = this.currentMarkup();
+          if (markup) {
+            markup.addDelim(Syntax.DelimGeneral.dTAGC);
+          }
+          return;
+
+        case TokenEnum.tokenS:
+          const markup2 = this.currentMarkup();
+          if (markup2) {
+            markup2.addS(this.currentChar());
+          }
+          break;
+
+        default:
+          this.message(ParserMessages.endTagInvalidToken,
+            new TokenMessageArg(token, Mode.tagMode, this.syntaxPointer(), this.sdPointer()));
+          return;
+      }
+    }
   }
 
   protected acceptStartTag(elementType: any, event: any, netEnabling: boolean): void {
