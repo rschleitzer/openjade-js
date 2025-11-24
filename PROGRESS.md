@@ -234,6 +234,14 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Entity lifecycle events (EntityStart, EntityEnd, EntityDefaulted)
   - SGML declaration events (SgmlDecl, SgmlDeclEntity)
   - Ignored markup event
+- ✅ **ErrorCountEventHandler.ts** - Error counting event handler (48 lines)
+  - Extends EventHandler with error limit tracking
+  - Cancel flag for halting parsing on error threshold
+  - Tracks error count and calls noteMessage on errors
+- ✅ **MessageEventHandler.ts** - Message dispatching event handler (41 lines)
+  - Extends ErrorCountEventHandler with Messenger integration
+  - Dispatches messages to Messenger for output
+  - Subdoc entity handling (stub for when SgmlParser is ported)
 
 ## Next Steps (Priority Order)
 
@@ -315,7 +323,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~14,752 lines (76 modules out of 120 headers)
+- TypeScript (ported so far): ~14,842 lines (78 modules out of 120 headers)
 - **Progress: ~30%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---

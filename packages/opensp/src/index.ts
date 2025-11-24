@@ -190,6 +190,8 @@ export {
   EntityDefaultedEvent,
   SgmlDeclEntityEvent
 } from './Event';
+export { ErrorCountEventHandler } from './ErrorCountEventHandler';
+export { MessageEventHandler, SgmlParser as SgmlParserInterface } from './MessageEventHandler';
 export {
   ContentToken,
   ModelGroup,
