@@ -175,9 +175,12 @@ export class StartElementEvent extends LocatedEvent {
     // handler.startElement(this);
   }
 
+  // Port of StartElementEvent::mustOmitEnd from Event.h (lines 942-947)
   mustOmitEnd(): Boolean {
-    // TODO: Implement
-    return false;
+    const def = this.elementType()?.definition();
+    if (!def) return false;
+    return (def.declaredContent() === 1 /* ElementDefinition::empty */) ||
+           (this.attributes_ ? this.attributes_.conref() : false);
   }
 
   setIncluded(): void {
@@ -204,12 +207,24 @@ export class StartElementEvent extends LocatedEvent {
     return this.attributes_ ?? new AttributeList();
   }
 
+  // Port of StartElementEvent::copyData from Event.cxx (lines 61-76)
   copyData(): void {
     if (this.copied_) {
       return;
     }
+    // Swap attributes into a new copy
+    if (this.attributes_) {
+      const p = new AttributeList();
+      this.attributes_.swap(p);
+      this.attributes_ = p;
+    }
+    // Swap markup into a new copy
+    if (this.markup_) {
+      const p = new Markup();
+      this.markup_.swap(p);
+      this.markup_ = p;
+    }
     this.copied_ = true;
-    // TODO: Deep copy attributes and markup
   }
 }
 
@@ -258,12 +273,18 @@ export class EndElementEvent extends LocatedEvent {
     return this.markup_;
   }
 
+  // Port of EndElementEvent::copyData from Event.cxx (lines 97-107)
   copyData(): void {
     if (this.copied_) {
       return;
     }
+    // Swap markup into a new copy
+    if (this.markup_) {
+      const p = new Markup();
+      this.markup_.swap(p);
+      this.markup_ = p;
+    }
     this.copied_ = true;
-    // TODO: Deep copy markup
   }
 }
 
@@ -327,17 +348,20 @@ export class ImmediateDataEvent extends DataEvent {
 }
 
 export class DataEntityEvent extends DataEvent {
+  // Port of DataEntityEvent constructor from Event.cxx (lines 161-168)
   constructor(type: number, entity: InternalEntity | null, origin: ConstPtr<EntityOrigin>) {
     // Extract data from entity
-    const data = null; // TODO: Extract from entity
-    const length = 0;
-    const location = origin.pointer() ? origin.pointer()!.location() : new Location();
+    const strData = entity ? entity.string().data() : null;
+    const data = strData ? new Uint32Array(strData) : null;
+    const length = entity ? entity.string().size() : 0;
+    const location = new Location(origin.pointer(), 0);
     super(type, data, length, location);
   }
 
+  // Port of DataEntityEvent::entity from Event.cxx (lines 170-173)
   entity(): Entity | null {
-    // TODO: Return entity
-    return null;
+    const entityOrigin = this.location().origin().pointer()?.asEntityOrigin();
+    return entityOrigin ? entityOrigin.entity() : null;
   }
 }
 
@@ -396,14 +420,19 @@ export class ImmediatePiEvent extends PiEvent {
 }
 
 export class PiEntityEvent extends PiEvent {
+  // Port of PiEntityEvent constructor from Event.cxx (lines 212-217)
   constructor(entity: PiEntity | null, origin: ConstPtr<EntityOrigin>) {
-    const location = origin.pointer() ? origin.pointer()!.location() : new Location();
-    super(null, 0, location);
+    const strData = entity ? entity.string().data() : null;
+    const data = strData ? new Uint32Array(strData) : null;
+    const length = entity ? entity.string().size() : 0;
+    const location = new Location(origin.pointer(), 0);
+    super(data, length, location);
   }
 
+  // Port of PiEntityEvent::entity from Event.cxx (lines 219-222)
   entity(): Entity | null {
-    // TODO: Return entity
-    return null;
+    const entityOrigin = this.location().origin().pointer()?.asEntityOrigin();
+    return entityOrigin ? entityOrigin.entity() : null;
   }
 }
 
@@ -503,9 +532,13 @@ export class AppinfoEvent extends LocatedEvent {
     // handler.appinfo(this);
   }
 
+  // Port of AppinfoEvent::literal from Event.h (lines 1035-1041)
   literal(strRef: { value: StringC | null }): Boolean {
-    // TODO: Implement
-    return false;
+    if (this.appinfoNone_) {
+      return false;
+    }
+    strRef.value = this.appinfo_.string();
+    return true;
   }
 }
 
