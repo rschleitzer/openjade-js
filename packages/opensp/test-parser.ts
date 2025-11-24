@@ -65,13 +65,13 @@ console.log('  • parseAttributeValueLiteral/parseTokenizedAttributeValueLitera
 console.log('  • extendUnquotedAttributeValue (error recovery)\n');
 
 console.log('STATISTICS:');
-console.log('  • ParserState.ts: 3,570 lines');
+console.log('  • ParserState.ts: 3,568 lines');
 console.log('  • MessageArg.ts: 137 lines (with TokenMessageArg)');
-console.log('  • ParserMessages.ts: 43 lines');
+console.log('  • ParserMessages.ts: 45 lines');
 console.log('  • Token.ts: 72 lines');
-console.log('  • ~905 lines of parsing code added this session');
+console.log('  • ~903 lines of parsing code added this session');
 console.log('  • 0 compilation errors');
-console.log('  • 15 major methods fully implemented\n');
+console.log('  • 17 major methods fully implemented\n');
 
 console.log('STATUS: Parser framework is COMPLETE');
 console.log('All major parsing entry points exist and are wired correctly.');

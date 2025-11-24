@@ -4,13 +4,13 @@
 This document summarizes the complete OpenSP SGML parser port from C++ to TypeScript.
 
 ## Session Statistics
-- **ParserState.ts**: 3,570 lines (up from 2,665 - added 905 lines)
+- **ParserState.ts**: 3,568 lines (up from 2,665 - added 903 lines)
 - **MessageArg.ts**: 137 lines (added TokenMessageArg class)
-- **ParserMessages.ts**: 43 lines (added 21 messages)
+- **ParserMessages.ts**: 45 lines (added 23 messages)
 - **Token.ts**: 72 lines
-- **~905 lines** of parsing code added this session
+- **~903 lines** of parsing code added this session
 - **0 TypeScript compilation errors**
-- **15 major parsing methods** fully implemented this session
+- **17 major parsing methods** fully implemented this session
 
 ## Completed Components
 
@@ -49,10 +49,10 @@ From `parseCommon.cxx`:
 
 ### 5. Declaration Parsing ✅
 From `parseDecl.cxx`:
-- `parseComment()`
-- `emptyCommentDecl()` / `parseCommentDecl()`
-- `parseDeclarationName()` - reserved name extraction
-- `skipDeclaration()` - error recovery
+- ✅ `parseComment()` - COMPLETE implementation (34 lines)
+- `emptyCommentDecl()` / `parseCommentDecl()` - TODO
+- `parseDeclarationName()` - reserved name extraction - TODO
+- ✅ `skipDeclaration()` - COMPLETE error recovery (44 lines)
 
 ### 6. Advanced SGML Features ✅
 - `parseMarkedSectionDeclStart()` / `handleMarkedSectionEnd()` - TODO
@@ -150,10 +150,10 @@ Expected output: "✓ Parser infrastructure test: PASSED"
 
 ## File Locations
 
-- Main parser: `src/ParserState.ts` (3,570 lines)
+- Main parser: `src/ParserState.ts` (3,568 lines)
 - Token system: `src/Token.ts` (72 lines)
 - Message args: `src/MessageArg.ts` (137 lines)
-- Parser messages: `src/ParserMessages.ts` (43 lines)
+- Parser messages: `src/ParserMessages.ts` (45 lines)
 - API wrapper: `src/Parser.ts`, `src/SgmlParser.ts`
 - Test: `test-parser.ts`
 
