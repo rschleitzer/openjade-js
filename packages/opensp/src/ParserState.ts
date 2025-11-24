@@ -2065,14 +2065,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
       switch (token) {
         case TokenEnum.tokenUnrecognized:
           if (!this.reportNonSgmlCharacter()) {
-            // TODO: Add sdCommentSignificant message
-            // this.message(ParserMessages.sdCommentSignificant, new StringMessageArg(this.currentToken()));
+            this.message(ParserMessages.sdCommentSignificant,
+              new StringMessageArg(this.currentToken()));
           }
           break;
 
         case TokenEnum.tokenEe:
-          // TODO: Add commentEntityEnd message
-          // this.message(ParserMessages.commentEntityEnd, startLoc);
+          this.message(ParserMessages.commentEntityEnd);
           return false;
 
         default:
