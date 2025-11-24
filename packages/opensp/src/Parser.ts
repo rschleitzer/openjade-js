@@ -225,16 +225,6 @@ export class Parser extends ParserState {
     }
   }
 
-  private giveUp(): void {
-    if (this.subdocLevel() > 0) {
-      // FIXME might be subdoc if level == 0
-      this.message(ParserMessages.subdocGiveUp);
-    } else {
-      this.message(ParserMessages.giveUp);
-    }
-    this.allDone();
-  }
-
   private static paramsSubdocLevel(params: SgmlParser.Params): number {
     if (!params.parent) {
       return 0;

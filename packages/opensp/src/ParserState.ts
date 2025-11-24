@@ -1467,8 +1467,68 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   // Parsing phase methods - to be implemented from parse*.cxx files
   protected doInit(): void {
-    // TODO: Port from parseInit section in parse*.cxx
-    throw new Error('doInit not yet implemented');
+    // Minimal implementation of doInit() - implies SGML declaration
+    // Full implementation from parseSd.cxx includes:
+    // - scanForSgmlDecl() to detect explicit SGML declaration
+    // - parseSgmlDecl() to parse explicit declaration
+    // - findMissingMinimum() to check character set completeness
+    // For now, we just imply a standard SGML declaration
+
+    if (this.cancelled()) {
+      this.allDone();
+      return;
+    }
+
+    // Check if document entity exists
+    const input = this.currentInput();
+    if (input) {
+      const c = input.get(this);
+      if (c === -1) { // InputSource.eE
+        if (input.accessError()) {
+          this.allDone();
+          return;
+        }
+      } else {
+        input.ungetToken();
+      }
+    }
+
+    // For now: always imply SGML declaration (skip explicit parsing)
+    // TODO: Implement full parseSgmlDecl() and scanForSgmlDecl()
+    if (!this.implySgmlDecl()) {
+      this.giveUp();
+      return;
+    }
+
+    // Mark that document charset won't be changed
+    if (input) {
+      input.willNotSetDocCharset();
+    }
+
+    // TODO: Queue an SGML declaration event
+
+    // Proceed to prolog phase
+    this.compilePrologModes();
+    this.setPhase(Phase.prologPhase);
+  }
+
+  private implySgmlDecl(): boolean {
+    // Simplified version of implySgmlDecl() from parseSd.cxx
+    // Full implementation would set up Syntax with proper character sets,
+    // delimiters, quantities, etc.
+    // For now, assume syntax is already set up
+    // TODO: Port full implySgmlDecl() implementation
+    return true;
+  }
+
+  protected giveUp(): void {
+    if (this.subdocLevel() > 0) {
+      // FIXME might be subdoc if level == 0
+      this.message(ParserMessages.subdocGiveUp);
+    } else {
+      this.message(ParserMessages.giveUp);
+    }
+    this.allDone();
   }
 
   protected doProlog(): void {
