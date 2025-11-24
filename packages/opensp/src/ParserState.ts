@@ -2768,45 +2768,93 @@ export class ParserState extends ContentState implements ParserStateInterface {
   // Port of parseAttribute.cxx lines 373-388
   // Extend unquoted attribute value for error recovery
   protected extendUnquotedAttributeValue(): void {
-    // TODO: Port full implementation from parseAttribute.cxx lines 373-388
-    // Algorithm:
-    // 1. Get current input source
-    // 2. Scan characters until whitespace, non-SGML, eE, or TAGC
-    // 3. End token with extended length
-    // Requires:
-    // - currentInput().tokenChar
-    // - syntax().isS, isSgmlChar
-    // - InputSource.endToken
+    const input = this.currentInput();
+    if (!input) return;
+
+    let length = input.currentTokenLength();
+    const syn = this.syntax();
+
+    for (;;) {
+      const c = input.tokenChar(this);
+      if (syn.isS(c) ||
+          !syn.isSgmlChar(c) ||
+          c === InputSource.eE ||
+          c === syn.delimGeneral(Syntax.DelimGeneral.dTAGC)[0]) {
+        break;
+      }
+      length++;
+    }
+    input.endToken(length);
   }
 
   // Port of parseAttribute.cxx lines 390-408
   // Parse attribute value literal (quoted attribute value)
   protected parseAttributeValueLiteral(lita: boolean, text: Text): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 390-408
-    // Algorithm:
-    // 1. Calculate max length (litlen - normsep)
-    // 2. Call parseLiteral with appropriate mode (alitMode or alitaMode)
-    // 3. Handle entity references, character references
-    // 4. Return success/failure
-    // Requires:
-    // - parseLiteral (already exists)
-    // - syntax().litlen(), normsep()
+    const syn = this.syntax();
+    const maxLength = syn.litlen() > syn.normsep()
+      ? syn.litlen() - syn.normsep()
+      : 0;
+
+    const literalFlags = ParserState.literalNonSgml |
+      (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
+
+    // TODO: Add attributeValueLength and attributeValueLengthNeg to ParserMessages
+    // TODO: Uncomment when parseLiteral fully implemented
+    /*
+    if (this.parseLiteral(
+      lita ? Mode.alitaMode : Mode.alitMode,
+      Mode.aliteMode,
+      maxLength,
+      ParserMessages.attributeValueLength,
+      literalFlags,
+      text
+    )) {
+      if (text.size() === 0 && syn.normsep() > syn.litlen()) {
+        this.message(
+          ParserMessages.attributeValueLengthNeg,
+          new NumberMessageArg(syn.normsep() - syn.litlen())
+        );
+      }
+      return true;
+    }
     return false;
+    */
+    return false; // Stub for now
   }
 
-  // Port of parseAttribute.cxx lines 410-455
+  // Port of parseAttribute.cxx lines 411-430
   // Parse tokenized attribute value literal
   protected parseTokenizedAttributeValueLiteral(lita: boolean, text: Text): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 410-455
-    // Algorithm:
-    // 1. Calculate max length
-    // 2. Parse literal in talitMode/talitaMode
-    // 3. Tokenize the value (split on whitespace)
-    // 4. Return success/failure
-    // Requires:
-    // - parseLiteral (already exists)
-    // - Text tokenization methods
+    const syn = this.syntax();
+    const maxLength = syn.litlen() > syn.normsep()
+      ? syn.litlen() - syn.normsep()
+      : 0;
+
+    const literalFlags = ParserState.literalSingleSpace |
+      (this.wantMarkup() ? ParserState.literalDelimInfo : 0);
+
+    // TODO: Add tokenizedAttributeValueLength and tokenizedAttributeValueLengthNeg to ParserMessages
+    // TODO: Uncomment when parseLiteral fully implemented
+    /*
+    if (this.parseLiteral(
+      lita ? Mode.talitaMode : Mode.talitMode,
+      Mode.taliteMode,
+      maxLength,
+      ParserMessages.tokenizedAttributeValueLength,
+      literalFlags,
+      text
+    )) {
+      if (text.size() === 0 && syn.normsep() > syn.litlen()) {
+        this.message(
+          ParserMessages.tokenizedAttributeValueLengthNeg,
+          new NumberMessageArg(syn.normsep() - syn.litlen())
+        );
+      }
+      return true;
+    }
     return false;
+    */
+    return false; // Stub for now
   }
 }
 
