@@ -1628,26 +1628,188 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       const token = this.getToken(this.currentMode());
 
-      if (token === TokenEnum.tokenEe) {
-        // Entity end
-        if (this.inputLevel() === 1) {
-          this.endInstance();
-          return;
-        }
-        // TODO: Handle other entity end cases
-        this.popInputStack();
-      } else {
-        // TODO: Add all other token cases from doContent
-        // Key token types to handle:
-        // - tokenCroDigit, tokenHcroHexDigit: numeric character refs
-        // - tokenCroNameStart: named character refs
-        // - tokenEroGrpo, tokenEroNameStart: entity refs
-        // - tokenEtagoNameStart: end tags
-        // - tokenStagoNameStart: start tags
-        // - tokenPio: processing instructions
-        // - tokenChar: character data
-        // - tokenRe, tokenRs: record boundaries
-        // - Many more...
+      switch (token) {
+        case TokenEnum.tokenEe:
+          // Entity end
+          if (this.inputLevel() === 1) {
+            this.endInstance();
+            return;
+          }
+          // TODO: Check specialParseInputLevel()
+          // TODO: Fire entityEnd event if eventsWanted().wantInstanceMarkup()
+          // TODO: Check afterDocumentElement()
+          // TODO: Check sd().integrallyStored() for async entity ref validation
+          this.popInputStack();
+          break;
+
+        case TokenEnum.tokenCroDigit:
+        case TokenEnum.tokenHcroHexDigit:
+          // Numeric character reference
+          {
+            // TODO: Check afterDocumentElement()
+            const result = this.parseNumericCharRef(token === TokenEnum.tokenHcroHexDigit);
+            if (result.valid && result.char !== undefined && result.location) {
+              // TODO: acceptPcdata(result.location)
+              this.noteData();
+              const translateResult = this.translateNumericCharRef(result.char);
+              if (translateResult.valid && translateResult.char !== undefined) {
+                // TODO: Fire data event or nonSgmlChar event based on isSgmlChar
+                // if (translateResult.isSgmlChar) {
+                //   eventHandler().data(new ImmediateDataEvent(...))
+                // } else {
+                //   eventHandler().nonSgmlChar(new NonSgmlCharEvent(...))
+                // }
+              }
+            }
+          }
+          break;
+
+        case TokenEnum.tokenCroNameStart:
+          // Named character reference
+          // TODO: Check afterDocumentElement()
+          this.parseNamedCharRef();
+          break;
+
+        case TokenEnum.tokenEroGrpo:
+        case TokenEnum.tokenEroNameStart:
+          // Entity reference
+          {
+            // TODO: Check afterDocumentElement()
+            const result = this.parseEntityReference(false, token === TokenEnum.tokenEroGrpo ? 1 : 0);
+            // TODO: Handle entity content/rcdata reference
+            // if (!result.entity.isNull()) {
+            //   if (entity.isCharacterData())
+            //     acceptPcdata(Location(result.origin.pointer(), 0));
+            //   entity.contentReference(*this, result.origin);
+            // }
+          }
+          break;
+
+        case TokenEnum.tokenEtagoNameStart:
+          // End tag
+          {
+            const event = this.parseEndTag();
+            this.acceptEndTag(event);
+          }
+          break;
+
+        case TokenEnum.tokenEtagoTagc:
+          // Empty end tag
+          // TODO: parseEmptyEndTag()
+          break;
+
+        case TokenEnum.tokenEtagoGrpo:
+          // Group end tag
+          // TODO: parseGroupEndTag()
+          break;
+
+        case TokenEnum.tokenStagoNameStart:
+          // Start tag
+          this.parseStartTag();
+          break;
+
+        case TokenEnum.tokenStagoTagc:
+          // Empty start tag
+          // TODO: parseEmptyStartTag()
+          break;
+
+        case TokenEnum.tokenStagoGrpo:
+          // Group start tag
+          // TODO: parseGroupStartTag()
+          break;
+
+        case TokenEnum.tokenMdoNameStart:
+          // Declaration (DOCTYPE, USEMAP, USELINK, etc.)
+          // TODO: Parse declaration name
+          // TODO: Handle different declaration types
+          // TODO: skipDeclaration() on error
+          // TODO: noteMarkup()
+          break;
+
+        case TokenEnum.tokenMdoMdc:
+          // Empty comment
+          // TODO: emptyCommentDecl()
+          // TODO: noteMarkup()
+          break;
+
+        case TokenEnum.tokenMdoCom:
+          // Comment declaration
+          // TODO: parseCommentDecl()
+          // TODO: noteMarkup()
+          break;
+
+        case TokenEnum.tokenMdoDso:
+          // Marked section start
+          // TODO: Check afterDocumentElement()
+          // TODO: parseMarkedSectionDeclStart()
+          // TODO: noteMarkup()
+          break;
+
+        case TokenEnum.tokenMscMdc:
+          // Marked section end
+          // TODO: handleMarkedSectionEnd()
+          // TODO: noteMarkup()
+          break;
+
+        case TokenEnum.tokenNet:
+          // Null end tag
+          // TODO: parseNullEndTag()
+          break;
+
+        case TokenEnum.tokenPio:
+          // Processing instruction
+          this.parseProcessingInstruction();
+          break;
+
+        case TokenEnum.tokenRe:
+          // Record end
+          // TODO: acceptPcdata(currentLocation())
+          // TODO: queueRe(currentLocation())
+          break;
+
+        case TokenEnum.tokenRs:
+          // Record start
+          // TODO: acceptPcdata(currentLocation())
+          // TODO: noteRs()
+          // TODO: Fire ignoredRs event if eventsWanted().wantInstanceMarkup()
+          break;
+
+        case TokenEnum.tokenS:
+          // Separator (whitespace)
+          this.extendContentS();
+          // TODO: Fire sSep event if eventsWanted().wantInstanceMarkup()
+          break;
+
+        case TokenEnum.tokenIgnoredChar:
+          // Character in ignored marked section
+          this.extendData();
+          // TODO: Fire ignoredChars event if eventsWanted().wantMarkedSections()
+          break;
+
+        case TokenEnum.tokenUnrecognized:
+          // Non-SGML character
+          this.reportNonSgmlCharacter();
+          this.parsePcdata();
+          break;
+
+        case TokenEnum.tokenCharDelim:
+          // Data character that starts a delimiter
+          // TODO: message(ParserMessages.dataCharDelim, StringMessageArg(...))
+          // Fall through to tokenChar
+          this.parsePcdata();
+          break;
+
+        case TokenEnum.tokenChar:
+          // Regular character data
+          this.parsePcdata();
+          break;
+
+        default:
+          // Shortref tokens start at tokenFirstShortref
+          if (token >= TokenEnum.tokenFirstShortref) {
+            // TODO: handleShortref(token - tokenFirstShortref)
+          }
+          break;
       }
     } while (this.eventQueueEmpty());
   }
