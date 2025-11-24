@@ -1618,30 +1618,40 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // - Character data (tokenChar, tokenRe, tokenRs, tokenS)
     // - Entity boundaries (tokenEe)
 
-    if (this.cancelled()) {
-      this.allDone();
-      return;
-    }
+    // Port of full doContent() from parseInstance.cxx (lines 82-300)
+    do {
+      if (this.cancelled()) {
+        this.allDone();
+        return;
+      }
 
-    // For now: immediately end the instance
-    // A real implementation would loop calling getToken(currentMode())
-    // and dispatching on token types
+      const token = this.getToken(this.currentMode());
 
-    // TODO: Implement full content parsing loop
-    // TODO: Parse start tags (parseStartTag)
-    // TODO: Parse end tags (parseEndTag)
-    // TODO: Parse character data (acceptPcdata)
-    // TODO: Parse entity references (parseEntityReference)
-    // TODO: Parse processing instructions (parseProcessingInstruction)
+      // TODO: Import actual token constants
+      const tokenEe = -1;
 
-    // Check if at document entity end
-    if (this.inputLevel() === 1) {
-      this.endInstance();
-      return;
-    }
-
-    // Otherwise continue (in a real implementation, this would loop)
-    this.allDone();
+      if (token === tokenEe) {
+        // Entity end
+        if (this.inputLevel() === 1) {
+          this.endInstance();
+          return;
+        }
+        // TODO: Handle other entity end cases
+        this.popInputStack();
+      } else {
+        // TODO: Add all other token cases from doContent
+        // Key token types to handle:
+        // - tokenCroDigit, tokenHcroHexDigit: numeric character refs
+        // - tokenCroNameStart: named character refs
+        // - tokenEroGrpo, tokenEroNameStart: entity refs
+        // - tokenEtagoNameStart: end tags
+        // - tokenStagoNameStart: start tags
+        // - tokenPio: processing instructions
+        // - tokenChar: character data
+        // - tokenRe, tokenRs: record boundaries
+        // - Many more...
+      }
+    } while (this.eventQueueEmpty());
   }
 
   private endInstance(): void {
