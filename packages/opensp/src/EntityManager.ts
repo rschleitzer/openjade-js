@@ -6,22 +6,13 @@ import { Resource } from './Resource';
 import { EntityCatalog } from './EntityCatalog';
 import { ConstPtr } from './Ptr';
 import { Boolean } from './Boolean';
+import { InputSource } from './InputSource';
+import { InputSourceOrigin } from './Location';
+import { CharsetInfo } from './CharsetInfo';
 
 // Forward declarations
 export interface Messenger {
   // Defined in Message.ts
-}
-
-export interface InputSourceOrigin {
-  // Defined in Location.ts
-}
-
-export interface CharsetInfo {
-  // Defined in CharsetInfo.ts
-}
-
-export interface InputSource {
-  // Defined in InputSource.ts
 }
 
 export abstract class EntityManager extends Resource {

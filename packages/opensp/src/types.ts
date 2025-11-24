@@ -54,5 +54,3 @@ export type EquivCode = number;
 
 // #ifdef SP_NAMESPACE
 // #endif
-
-

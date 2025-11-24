@@ -14,3 +14,6 @@ export const defaultEntityInAttribute = new MessageType1(MessageType.Severity.wa
 export const unstableLpdParameterEntity = new MessageType1(MessageType.Severity.error, null, -1, 'unstable LPD parameter entity: %1');
 export const unstableLpdGeneralEntity = new MessageType1(MessageType.Severity.error, null, -1, 'unstable LPD general entity: %1');
 export const concurrentInstances = new MessageType1(MessageType.Severity.error, null, -1, 'too many concurrent instances: %1');
+export const giveUp = new MessageType0(MessageType.Severity.error, null, -1, 'cannot continue because of previous errors');
+export const subdocGiveUp = new MessageType0(MessageType.Severity.error, null, -1, 'cannot continue with subdocument because of previous errors');
+export const subdocLevel = new MessageType1(MessageType.Severity.error, null, -1, 'number of open subdocuments exceeds quantity specified for SUBDOC parameter in SGML declaration (%1)');

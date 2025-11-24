@@ -1464,4 +1464,45 @@ export class ParserState extends ContentState implements ParserStateInterface {
   static freeEvent(ptr: any): void {
     // Static method for freeing events - handled by GC in TypeScript
   }
+
+  // Parsing phase methods - to be implemented from parse*.cxx files
+  protected doInit(): void {
+    // TODO: Port from parseInit section in parse*.cxx
+    throw new Error('doInit not yet implemented');
+  }
+
+  protected doProlog(): void {
+    // TODO: Port from parseProlog section in parse*.cxx
+    throw new Error('doProlog not yet implemented');
+  }
+
+  protected doDeclSubset(): void {
+    // TODO: Port from parseDeclSubset section in parse*.cxx
+    throw new Error('doDeclSubset not yet implemented');
+  }
+
+  protected doInstanceStart(): void {
+    // TODO: Port from parseInstanceStart section in parse*.cxx
+    throw new Error('doInstanceStart not yet implemented');
+  }
+
+  protected doContent(): void {
+    // TODO: Port from parseContent section in parse*.cxx
+    throw new Error('doContent not yet implemented');
+  }
+
+  protected compilePrologModes(): void {
+    // TODO: Port from Parser compilation methods
+    throw new Error('compilePrologModes not yet implemented');
+  }
+
+  protected compileInstanceModes(): void {
+    // TODO: Port from Parser compilation methods
+    throw new Error('compileInstanceModes not yet implemented');
+  }
+
+  protected compileSdModes(): void {
+    // TODO: Port from Parser compilation methods
+    throw new Error('compileSdModes not yet implemented');
+  }
 }
