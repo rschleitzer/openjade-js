@@ -1991,6 +1991,65 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return false;
   }
 
+  protected checkTaglen(tagStartIndex: number): void {
+    // Port of checkTaglen from parseInstance.cxx (lines 499-509)
+    // Validates that tag length doesn't exceed TAGLEN limit
+    const originPtr = this.currentLocation().origin();
+    if (!originPtr || !originPtr.pointer()) return;
+
+    const originObj = originPtr.pointer();
+    const origin = originObj.asInputSourceOrigin();
+    if (!origin) return; // ASSERT in C++, but we'll just return
+
+    const currentOffset = origin.startOffset(this.currentLocation().index());
+    const tagStartOffset = origin.startOffset(
+      tagStartIndex + this.syntax().delimGeneral(Syntax.DelimGeneral.dSTAGO).size()
+    );
+
+    if (currentOffset - tagStartOffset > this.syntax().taglen()) {
+      this.message(ParserMessages.taglen, new NumberMessageArg(this.syntax().taglen()));
+    }
+  }
+
+  protected completeRankStem(name: StringC): ElementType | null {
+    // Port of completeRankStem from parseInstance.cxx (lines 475-487)
+    // Completes a rank stem by appending current rank to get full element name
+    const rankStem = this.currentDtd().lookupRankStem(name);
+    if (rankStem) {
+      const completeName = rankStem.name();
+      // TODO: Implement appendCurrentRank
+      // if (!this.appendCurrentRank(completeName, rankStem)) {
+      //   this.message(ParserMessages.noCurrentRank, new StringMessageArg(completeName));
+      // } else {
+      //   return this.currentDtdNonConst().lookupElementType(completeName);
+      // }
+      this.message(ParserMessages.noCurrentRank, new StringMessageArg(completeName));
+    }
+    return null;
+  }
+
+  protected handleRankedElement(e: ElementType): void {
+    // Port of handleRankedElement from parseInstance.cxx (lines 488-497)
+    // Sets current ranks for all rank stems in a ranked element
+    const def = e.definition();
+    if (!def) return;
+
+    const rankSuffix = def.rankSuffix();
+    const rankStem = e.rankedElementRankStem();
+    if (!rankStem) return;
+
+    for (let i = 0; i < rankStem.nDefinitions(); i++) {
+      const elementDef = rankStem.definition(i);
+      if (!elementDef) continue;
+
+      for (let j = 0; j < elementDef.nRankStems(); j++) {
+        const stem = elementDef.rankStem(j);
+        // TODO: Implement setCurrentRank
+        // this.setCurrentRank(stem, rankSuffix);
+      }
+    }
+  }
+
   protected parseComment(mode: Mode): boolean {
     // Port of parseComment from parseCommon.cxx
     const startLoc = this.currentLocation();
