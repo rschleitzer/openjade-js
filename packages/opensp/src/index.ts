@@ -125,6 +125,17 @@ export { ShortReferenceMap } from './ShortReferenceMap';
 export { OpenElement } from './OpenElement';
 export { ContentState } from './ContentState';
 export {
+  Lpd,
+  SimpleLpd,
+  ComplexLpd,
+  ResultElementSpec,
+  SourceLinkRule,
+  SourceLinkRuleResource,
+  LinkSet,
+  IdLinkRule,
+  IdLinkRuleGroup
+} from './Lpd';
+export {
   ContentToken,
   ModelGroup,
   AndModelGroup,

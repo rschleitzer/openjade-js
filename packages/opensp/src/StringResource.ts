@@ -47,4 +47,9 @@ export class StringResource<T> extends Resource {
   getString(): String<T> {
     return this.string_;
   }
+
+  // Direct access to the underlying string (used by Lpd)
+  get value(): String<T> {
+    return this.string_;
+  }
 }
