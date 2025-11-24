@@ -283,6 +283,18 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Byte order mark (0xFEFF) and swapped BOM (0xFFFE) handling
   - UnicodeEncoder writes BOM and delegates to UTF-16 encoder
   - Supports optional sub-coding system for fallback
+- ✅ **SJISCodingSystem.ts** - Shift-JIS encoding for Japanese text (175 lines)
+  - SJISDecoder with multi-byte character support
+  - Handles JIS X 0201 and JIS X 0208 character sets
+  - SJISEncoder with proper byte pair generation
+- ✅ **EUCJPCodingSystem.ts** - EUC-JP encoding for Japanese text (107 lines)
+  - EUCJPDecoder with G0/G1/G2/G3 character set support
+  - Single-shift (SS2/SS3) escape sequence handling
+  - EUCJPEncoder with proper character set selection
+- ✅ **Big5CodingSystem.ts** - Big5 encoding for Traditional Chinese (82 lines)
+  - Big5Decoder with double-byte character support
+  - Simple high-bit detection for multi-byte sequences
+  - Big5Encoder with unencodable character handling
 
 ## Next Steps (Priority Order)
 
@@ -364,8 +376,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~16,197 lines (86 modules out of 120 headers)
-- **Progress: ~32%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~16,561 lines (89 modules out of 120 headers)
+- **Progress: ~33%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 

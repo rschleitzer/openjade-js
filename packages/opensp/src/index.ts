@@ -254,6 +254,9 @@ export { UTF16CodingSystem } from './UTF16CodingSystem';
 export { UnicodeCodingSystem } from './UnicodeCodingSystem';
 export { Fixed2CodingSystem } from './Fixed2CodingSystem';
 export { Fixed4CodingSystem } from './Fixed4CodingSystem';
+export { SJISCodingSystem } from './SJISCodingSystem';
+export { EUCJPCodingSystem } from './EUCJPCodingSystem';
+export { Big5CodingSystem } from './Big5CodingSystem';
 
 // Message system
 export { MessageBuilder } from './MessageBuilder';
