@@ -144,14 +144,32 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
 ### Phase 11: Parser Core (In Progress)
 - ✅ **Syntax.ts** - SGML syntax definition core (875 lines) - delimiters, character sets, quantities
 - ✅ **Sd.ts** - SGML declaration configuration (563 lines) - features, capacities, reserved names
+- ✅ **Markup.ts** - Markup handling with item types (494 lines) - reserves names, delimiters, literals, entity tracking
+- ✅ **Attribute.ts** - Complete attribute value and definition system (1,100 lines)
+  - AttributeValue hierarchy (Implied, Cdata, Tokenized, Data)
+  - DeclaredValue hierarchy (Cdata, Tokenized, Group, Notation, Entity, Id, Idref)
+  - AttributeDefinition hierarchy (Required, Current, Implied, Conref, Default, Fixed)
+  - AttributeDefinitionList with token/attribute indexing
+  - AttributeSemantics (Entity, Notation)
+  - AttributeContext abstract base
+- ✅ **Entity.ts** - Complete entity system (551 lines)
+  - Entity base class with reference handling (literal, declaration, content, rcdata)
+  - InternalEntity hierarchy (Pi, Cdata, Sdata, Text, Predefined)
+  - ExternalEntity hierarchy (Text, Data, Subdoc)
+  - IgnoredEntity for undefined entities
+- ✅ **Dtd.ts** - Document Type Definition system (353 lines)
+  - Dtd class managing entities, element types, notations, short reference maps
+  - ElementType, RankStem, ShortReferenceMap stub classes
+  - General and parameter entity tables
+  - Element type and notation management
+  - Short reference indexing
 
 ## Next Steps (Priority Order)
 
 ### Phase 11 Continuation: Parser Core Components
-1. Port Markup.h/cxx → Markup.ts (markup handling with Syntax and Sd)
-2. Port Attribute.h/cxx → Attribute.ts (attribute definitions - large ~1400 lines)
-3. Port Entity.h/cxx → Entity.ts (entity management)
-4. Port Dtd.h/cxx → Dtd.ts (document type definition)
+1. Port Dtd.h/cxx → Dtd.ts (document type definition - ~800 lines)
+2. Port ElementType.h/cxx → ElementType.ts (element type definitions)
+3. Port ContentToken.h/cxx → ContentToken.ts (content model tokens)
 
 ### Phase 12: SGML Tokenization
 7. Port Syntax.h/cxx → Syntax.ts
@@ -226,8 +244,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~8,986 lines (65 modules out of 120 headers)
-- **Progress: ~18%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~11,456 lines (68 modules out of 120 headers)
+- **Progress: ~23%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 

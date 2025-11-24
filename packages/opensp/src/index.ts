@@ -66,6 +66,62 @@ export { Notation } from './Notation';
 // SGML syntax
 export { Syntax } from './Syntax';
 export { Sd } from './Sd';
+export { Markup, MarkupItem, MarkupIter } from './Markup';
+export {
+  AttributeValue,
+  AttributeDefinitionDesc,
+  DeclaredValue,
+  CdataDeclaredValue,
+  TokenizedDeclaredValue,
+  GroupDeclaredValue,
+  NameTokenGroupDeclaredValue,
+  NotationDeclaredValue,
+  EntityDeclaredValue,
+  IdDeclaredValue,
+  IdrefDeclaredValue,
+  ImpliedAttributeValue,
+  CdataAttributeValue,
+  TokenizedAttributeValue,
+  AttributeSemantics,
+  EntityAttributeSemantics,
+  NotationAttributeSemantics,
+  AttributeContext,
+  AttributeDefinition,
+  RequiredAttributeDefinition,
+  CurrentAttributeDefinition,
+  ImpliedAttributeDefinition,
+  ConrefAttributeDefinition,
+  DefaultAttributeDefinition,
+  FixedAttributeDefinition,
+  AttributeDefinitionList,
+  DataDeclaredValue,
+  DataAttributeValue,
+  AttributeList
+} from './Attribute';
+export {
+  Entity,
+  InternalEntity,
+  PiEntity,
+  InternalDataEntity,
+  InternalCdataEntity,
+  PredefinedEntity,
+  InternalSdataEntity,
+  InternalTextEntity,
+  ExternalEntity,
+  ExternalTextEntity,
+  ExternalNonTextEntity,
+  ExternalDataEntity,
+  SubdocEntity,
+  IgnoredEntity,
+  ParserState
+} from './Entity';
+export {
+  Dtd,
+  ElementType,
+  RankStem,
+  ShortReferenceMap,
+  Syntax as DtdSyntax
+} from './Dtd';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
