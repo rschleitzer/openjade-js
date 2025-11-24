@@ -258,6 +258,12 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Generic HashTableItemBase<K> with abstract copy() method
   - HashTableKeyFunction for key extraction
   - Used by specialized hash table implementations
+- ✅ **UTF8CodingSystem.ts** - UTF-8 character encoding/decoding (360 lines)
+  - UTF8Decoder with multi-byte sequence handling (1-6 bytes)
+  - Byte-order mark (BOM) detection and handling
+  - Error recovery for invalid UTF-8 sequences
+  - UTF8Encoder with proper multi-byte encoding
+  - Full Unicode support up to 31-bit characters
 
 ## Next Steps (Priority Order)
 
@@ -339,7 +345,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~15,373 lines (81 modules out of 120 headers)
+- TypeScript (ported so far): ~15,733 lines (82 modules out of 120 headers)
 - **Progress: ~31%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---

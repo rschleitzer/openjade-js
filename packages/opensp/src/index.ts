@@ -249,6 +249,7 @@ export { MarkupScan } from './MarkupScan';
 // Coding systems
 export { Decoder, Encoder, RecoveringEncoder, InputCodingSystem, OutputCodingSystem, CodingSystem } from './CodingSystem';
 export { IdentityCodingSystem } from './IdentityCodingSystem';
+export { UTF8CodingSystem } from './UTF8CodingSystem';
 
 // Message system
 export { MessageBuilder } from './MessageBuilder';
