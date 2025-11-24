@@ -130,4 +130,26 @@ export abstract class OutputCodingSystem {
 
 export abstract class CodingSystem extends InputCodingSystem {
   abstract makeEncoder(): Encoder;
+
+  fixedBytesPerChar(): number {
+    return 0;
+  }
+
+  convertOut(str: StringC): StringOf<number> {
+    const encoder = this.makeEncoder();
+    const stream = new StrOutputByteStream();
+    const data = str.data();
+    if (data) {
+      encoder.output(data, str.size(), stream);
+    }
+    const result = new StringOf<number>();
+    stream.extractString(result);
+    // Add null terminator
+    const resultData = result.data();
+    if (resultData) {
+      resultData.push(0);
+      result.resize(result.size() + 1);
+    }
+    return result;
+  }
 }

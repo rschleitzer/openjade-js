@@ -2,6 +2,8 @@
 
 ## Current Status
 
+**103 modules ported (~19,711 lines, ~23% of ~84,000 lines)**
+
 We've successfully initiated the 1:1 mechanical port of OpenSP from C++ to TypeScript. The porter tool and fundamental data structures are complete and tested.
 
 ## Completed ✅
@@ -302,6 +304,93 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Escape sequence table for ISO 646, ISO 8859, JIS, GB2312, KSC5601, Big5, UCS-2/4
   - Range and descriptor-based charset iteration
   - Foundation for TranslateCodingSystem character mapping
+- ✅ **TranslateCodingSystem.ts** - Character set translation layer (238 lines)
+  - TranslateDecoder wraps underlying decoder with character mapping
+  - TranslateEncoder wraps underlying encoder with character mapping
+  - makeDecoder()/makeEncoder() build character mapping tables from CharsetRegistry
+  - Desc interface describes character sets with ISO registration numbers
+  - Maps between registered ISO character sets and system character set
+  - Uses CharsetInfo.univToDesc() for universal character code conversion
+- ✅ **CodingSystemKit.ts** - Coding system factory and registry (609 lines)
+  - InputCodingSystemKit abstract base with system charset management
+  - CodingSystemKit extends InputCodingSystemKit with full encoding support
+  - CodingSystemKitImpl implementation with 30+ coding systems
+  - BCTF table: IDENTITY, FIXED-2, FIXED-4, UTF-8, EUC, SJIS, BIG5
+  - Encoding table: UTF-8, UCS-2/4, UTF-16/32, UNICODE, ISO-8859-* (1-9), KOI8-R, EUC-JP/CN/KR, SJIS, BIG5
+  - Character set descriptors for Japanese (JIS), Chinese (GB2312, Big5, KSC5601), Latin (ISO-8859), Cyrillic (KOI8-R)
+  - Case-insensitive encoding name matching
+  - Automatic system charset initialization from descriptors
+  - Factory method make() creates kit with specified system charset
+- ✅ **XMLCodingSystem.ts** - XML encoding auto-detection (478 lines)
+  - XMLDecoder automatically detects encoding from BOM or XML processing instruction
+  - Three-phase detection: Init (BOM/initial bytes) → PI (parse <?xml...?>) → Finish (use detected decoder)
+  - BOM detection for UTF-16 (0xFEFF, 0xFFFE) with LSB/MSB byte order
+  - Initial byte pattern matching for UTF-32 (4-byte) and UTF-16 (2-byte) with various byte orders
+  - XML PI parsing extracts encoding="..." attribute from <?xml...?> declaration
+  - Falls back to UTF-8 for 1-byte, UTF-16 for 2-byte, UTF-32 for 4-byte if no encoding specified
+  - Character-by-character PI accumulation with literal quote tracking
+  - convertOffset() translates byte offsets accounting for BOM and multi-byte characters
+  - makeEncoder() always uses UTF-8 for output
+- ✅ **Win32CodingSystem.ts** - Windows code page support (345 lines)
+  - SpecialCodePage enum for ANSI and OEM code pages
+  - SingleByteWin32Decoder for single-byte encodings with mapping table
+  - MultiByteWin32Decoder for multi-byte encodings (SJIS, GBK, Big5, EUC-KR) with lead byte detection
+  - Win32Encoder converts to code page using TextEncoder fallback
+  - Code page mappings for common Windows encodings (1250-1258, 932, 936, 949, 950, 437, 850, 866)
+  - Node.js TextDecoder/TextEncoder used for cross-platform compatibility
+  - Fallback to ASCII + default char for unsupported code pages
+  - Lead byte range tracking for multi-byte character boundaries
+
+### Parser Infrastructure (Phase 11)
+- ✅ **EventQueue.ts** - Event queue for parser event buffering (299 lines)
+  - EventQueue extends EventHandler and IQueue<Event>
+  - Implements all event handler methods to queue events
+  - Pass1EventHandler extends EventQueue with error tracking
+  - Tracks hadError_ flag for message events with severity > 0
+  - Stores origHandler_ for event forwarding
+  - Used for two-pass parsing in LPD processing
+- ✅ **Id.ts** - ID/IDREF tracking (42 lines)
+  - Named subclass tracking SGML ID definitions
+  - defLocation_ tracks where ID was defined
+  - pendingRefs_ vector tracks forward references
+  - define() clears pending references after definition
+  - Used for ID/IDREF validation in DTD processing
+- ✅ **LpdEntityRef.ts** - Link Process Definition entity reference tracking (47 lines)
+  - Tracks entity references using LPD definitions
+  - entity: ConstPtr<Entity> for referenced entity
+  - lookedAtDefault/foundInPass1Dtd flags for two-pass processing
+  - Static hash() and key() for hash table usage
+  - equals()/notEquals() for comparison
+- ✅ **OutputState.ts** - RE (Record End) output state tracking (188 lines)
+  - OutputStateLevel tracks state per element nesting level
+  - State enum: afterStartTag, afterRsOrRe, afterData, pendingAfterRsOrRe, pendingAfterMarkup
+  - handleRe() manages RE suppression rules (first RE after start tag ignored, last RE before end tag ignored)
+  - noteRs/noteMarkup/noteData track document structure for RE handling
+  - noteStartElement/noteEndElement manage element stack
+  - Pending RE tracking with location and serial number
+  - Used by parser to determine which REs are significant vs. ignorable whitespace
+- ✅ **Priority.ts** - Token priority classification (21 lines)
+  - Priority type enumeration for token recognition
+  - data, dataDelim, function, delim constants
+  - blank(n) calculates blank priority levels
+  - isBlank(t) tests if priority represents blank/whitespace
+  - Used by Trie for delimiter recognition
+- ✅ **Trie.ts** - Token recognition trie data structure (115 lines)
+  - Trie class with next_ array for character transitions
+  - token_, tokenLength_, priority_ for recognition results
+  - BlankTrie subclass handles whitespace-delimited tokens
+  - codeIsBlank_ vector tracks which codes are blanks
+  - maxBlanksToScan_ limits lookahead for blank-delimited tokens
+  - additionalLength_ adjusts token length for blank handling
+  - Used by Recognizer for SGML delimiter and name token recognition
+- ✅ **Recognizer.ts** - SGML token recognition engine (91 lines)
+  - Resource subclass managing Trie and character mapping
+  - multicode_ flag enables multi-byte character support
+  - suppressTokens_ for handling suppressed delimiters
+  - recognize() walks Trie to match input against token patterns
+  - Handles blank-delimited tokens with lookahead
+  - Returns Token for matched delimiter or name
+  - Used by Scanner for tokenizing SGML markup
 
 ## Next Steps (Priority Order)
 

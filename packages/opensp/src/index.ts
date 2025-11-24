@@ -258,6 +258,10 @@ export { Fixed4CodingSystem } from './Fixed4CodingSystem';
 export { SJISCodingSystem } from './SJISCodingSystem';
 export { EUCJPCodingSystem } from './EUCJPCodingSystem';
 export { Big5CodingSystem } from './Big5CodingSystem';
+export { TranslateCodingSystem } from './TranslateCodingSystem';
+export { InputCodingSystemKit, CodingSystemKit } from './CodingSystemKit';
+export { XMLCodingSystem } from './XMLCodingSystem';
+export { Win32CodingSystem, SpecialCodePage } from './Win32CodingSystem';
 
 // Message system
 export { MessageBuilder } from './MessageBuilder';
@@ -305,3 +309,12 @@ export { PointerTable, PointerTableIter, HashFunction, KeyFunction } from './Poi
 export { OwnerTable, OwnerTableIter, CopyOwnerTable } from './OwnerTable';
 export { NamedTable, NamedTableIter, ConstNamedTableIter, NamedTableKeyFunction } from './NamedTable';
 export { NamedResourceTable, NamedResourceTableIter, ConstNamedResourceTableIter, NamedResourceKeyFunction } from './NamedResourceTable';
+
+// Parser infrastructure
+export { EventQueue, Pass1EventHandler } from './EventQueue';
+export { Id } from './Id';
+export { LpdEntityRef } from './LpdEntityRef';
+export { OutputState, OutputStateLevel } from './OutputState';
+export { Priority, PriorityType } from './Priority';
+export { Trie, BlankTrie } from './Trie';
+export { Recognizer } from './Recognizer';
