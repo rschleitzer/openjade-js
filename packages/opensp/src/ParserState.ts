@@ -2758,25 +2758,156 @@ export class ParserState extends ContentState implements ParserStateInterface {
     result: { value: AttributeParameterType },
     netEnabling: { value: boolean }
   ): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 253-371
-    // Algorithm:
-    // 1. Get token in specified mode
-    // 2. Skip whitespace and comments (if piPasMode)
-    // 3. Determine parameter type based on token:
-    //    - tokenNameStart: name
-    //    - tokenDigit/tokenLcUcNmchar: nameToken
-    //    - tokenVi: vi (if allowed)
-    //    - tokenTagc/tokenNestc/tokenDsc: end
-    //    - tokenEtago/tokenStago: end (with unget)
-    //    - tokenUnrecognized: recoverUnquoted
-    // 4. Handle NET enabling logic
-    // 5. Add markup if tracking
-    // Requires:
-    // - getToken
-    // - extendNameToken
-    // - reportNonSgmlCharacter
-    // - currentMarkup().addS, addName, addDelim
-    return false;
+    let token = this.getToken(mode);
+    const markup = this.currentMarkup();
+
+    // Handle piPasMode: skip whitespace and comments
+    if (mode === Mode.piPasMode) {
+      for (;;) {
+        switch (token) {
+          case TokenEnum.tokenCom:
+            if (!this.parseComment(Mode.comMode)) {
+              return false;
+            }
+            // TODO: Add warnPsComment option and psComment message
+            // if (this.options().warnPsComment) {
+            //   this.message(ParserMessages.psComment);
+            // }
+            // fall through
+          case TokenEnum.tokenS:
+            token = this.getToken(mode);
+            continue;
+          default:
+            break;
+        }
+        break;
+      }
+    } else if (markup) {
+      // Skip whitespace and add to markup
+      while (token === TokenEnum.tokenS) {
+        markup.addS(this.currentChar());
+        token = this.getToken(mode);
+      }
+    } else {
+      // Skip whitespace
+      while (token === TokenEnum.tokenS) {
+        token = this.getToken(mode);
+      }
+    }
+
+    // Determine parameter type based on token
+    switch (token) {
+      case TokenEnum.tokenUnrecognized:
+        if (this.reportNonSgmlCharacter()) {
+          return false;
+        }
+        this.extendUnquotedAttributeValue();
+        result.value = AttributeParameterType.recoverUnquoted;
+        break;
+
+      case TokenEnum.tokenEe:
+        if (mode !== Mode.piPasMode) {
+          // TODO: Add attributeSpecEntityEnd to ParserMessages
+          // this.message(ParserMessages.attributeSpecEntityEnd);
+          return false;
+        }
+        result.value = AttributeParameterType.end;
+        break;
+
+      case TokenEnum.tokenEtago:
+      case TokenEnum.tokenStago:
+        if (!this.sd().startTagUnclosed()) {
+          // TODO: Add unclosedStartTagShorttag to ParserMessages
+          // this.message(ParserMessages.unclosedStartTagShorttag);
+        }
+        result.value = AttributeParameterType.end;
+        const input = this.currentInput();
+        if (input) input.ungetToken();
+        netEnabling.value = false;
+        break;
+
+      case TokenEnum.tokenNestc:
+        if (markup) {
+          markup.addDelim(Syntax.DelimGeneral.dNESTC);
+        }
+        // Handle NET enabling based on SGML declaration
+        // TODO: Add Sd.netEnableNo, netEnableImmednet, netEnableAll constants
+        // switch (this.sd().startTagNetEnable()) {
+        //   case Sd.netEnableNo:
+        //     this.message(ParserMessages.netEnablingStartTagShorttag);
+        //     break;
+        //   case Sd.netEnableImmednet:
+        //     if (this.getToken(Mode.econnetMode) !== TokenEnum.tokenNet) {
+        //       this.message(ParserMessages.nestcWithoutNet);
+        //     }
+        //     this.currentInput()?.ungetToken();
+        //     break;
+        //   case Sd.netEnableAll:
+        //     break;
+        // }
+        netEnabling.value = true;
+        result.value = AttributeParameterType.end;
+        break;
+
+      case TokenEnum.tokenTagc:
+        if (markup) {
+          markup.addDelim(Syntax.DelimGeneral.dTAGC);
+        }
+        netEnabling.value = false;
+        result.value = AttributeParameterType.end;
+        break;
+
+      case TokenEnum.tokenDsc:
+        if (markup) {
+          markup.addDelim(Syntax.DelimGeneral.dDSC);
+        }
+        result.value = AttributeParameterType.end;
+        break;
+
+      case TokenEnum.tokenNameStart:
+        this.extendNameToken(this.syntax().namelen(), ParserMessages.nameTokenLength);
+        if (markup) {
+          const input2 = this.currentInput();
+          if (input2) markup.addName(input2);
+        }
+        result.value = AttributeParameterType.name;
+        break;
+
+      case TokenEnum.tokenDigit:
+      case TokenEnum.tokenLcUcNmchar:
+        this.extendNameToken(this.syntax().namelen(), ParserMessages.nameTokenLength);
+        if (markup) {
+          const input3 = this.currentInput();
+          if (input3) markup.addName(input3);
+        }
+        result.value = AttributeParameterType.nameToken;
+        break;
+
+      case TokenEnum.tokenLit:
+      case TokenEnum.tokenLita:
+        // TODO: Add attributeSpecLiteral and attributeSpecNameTokenExpected to ParserMessages
+        // this.message(allowVi
+        //   ? ParserMessages.attributeSpecLiteral
+        //   : ParserMessages.attributeSpecNameTokenExpected);
+        return false;
+
+      case TokenEnum.tokenVi:
+        if (!allowVi) {
+          // TODO: Add attributeSpecNameTokenExpected to ParserMessages
+          // this.message(ParserMessages.attributeSpecNameTokenExpected);
+          return false;
+        }
+        if (markup) {
+          markup.addDelim(Syntax.DelimGeneral.dVI);
+        }
+        result.value = AttributeParameterType.vi;
+        break;
+
+      default:
+        throw new Error('CANNOT_HAPPEN in parseAttributeParameter');
+    }
+
+    return true;
   }
 
   // Port of parseAttribute.cxx lines 373-388

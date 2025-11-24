@@ -18,4 +18,5 @@ export const giveUp = new MessageType0(MessageType.Severity.error, null, -1, 'ca
 export const subdocGiveUp = new MessageType0(MessageType.Severity.error, null, -1, 'cannot continue with subdocument because of previous errors');
 export const subdocLevel = new MessageType1(MessageType.Severity.error, null, -1, 'number of open subdocuments exceeds quantity specified for SUBDOC parameter in SGML declaration (%1)');
 export const numberLength = new MessageType1(MessageType.Severity.error, null, -1, 'number token exceeds NAMELEN limit (%1)');
+export const nameTokenLength = new MessageType1(MessageType.Severity.error, null, -1, 'name token exceeds NAMELEN limit (%1)');
 export const nonSgmlCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'non-SGML character number %1');
