@@ -1743,14 +1743,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenMdoDso:
           // Marked section start
-          // TODO: Check afterDocumentElement()
-          // TODO: parseMarkedSectionDeclStart()
+          if (this.afterDocumentElement()) {
+            // TODO: message(ParserMessages.markedSectionAfterDocumentElement)
+          }
+          this.parseMarkedSectionDeclStart();
           this.noteMarkup();
           break;
 
         case TokenEnum.tokenMscMdc:
           // Marked section end
-          // TODO: handleMarkedSectionEnd()
+          this.handleMarkedSectionEnd();
           this.noteMarkup();
           break;
 
@@ -2482,5 +2484,39 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // }
 
     return false;
+  }
+
+  protected parseMarkedSectionDeclStart(): boolean {
+    // Port of parseMarkedSectionDeclStart from parseDecl.cxx (lines 3402-3523)
+    // Marked section declaration: <![ status-keyword [ ... ]]>
+    // This is a complex ~120 line method that:
+    // - Checks marked section nesting level
+    // - Handles special marked sections (inside IGNORE/CDATA/RCDATA)
+    // - Parses status keywords (CDATA, RCDATA, IGNORE, INCLUDE, TEMP)
+    // - Validates and sets appropriate parsing mode
+    // - Fires MarkedSectionStartEvent
+    // TODO: Full implementation requires:
+    // - parseParam method for parsing keywords
+    // - startMarkedSection/endMarkedSection state management
+    // - markedSectionLevel/markedSectionSpecialLevel tracking
+    // - Mode switching based on status (cmsMode, rcmsMode, imsMode)
+    // - MarkedSectionEvent class
+
+    return false;
+  }
+
+  protected handleMarkedSectionEnd(): void {
+    // Port of handleMarkedSectionEnd from parseDecl.cxx (lines 3525-3565)
+    // Handles marked section close: ]]>
+    // - Validates marked section is open
+    // - Determines status (cdata, rcdata, ignore, include)
+    // - Fires MarkedSectionEndEvent
+    // - Calls endMarkedSection() to pop state
+    // TODO: Full implementation requires:
+    // - markedSectionLevel() accessor
+    // - markedSectionSpecialLevel() accessor
+    // - endMarkedSection() state management
+    // - MarkedSectionEndEvent class
+    // - Mode detection for status
   }
 }
