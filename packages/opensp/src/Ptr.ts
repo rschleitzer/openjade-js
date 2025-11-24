@@ -112,6 +112,10 @@ export class Ptr<T extends Resource> {
   notEquals(p: Ptr<T> | T | null): Boolean {
     return !this.equals(p);
   }
+
+  asConst(): ConstPtr<T> {
+    return new ConstPtr<T>(this);
+  }
 }
 
 export class ConstPtr<T extends Resource> {

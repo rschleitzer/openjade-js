@@ -1001,9 +1001,22 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   // Inline methods from header
 
-  messenger(): Messenger {
-    return this;
+  messenger(): any {
+    return this; // Stub - should implement Messenger interface
   }
+
+  message(...args: any[]): void {
+    // Stub - should properly dispatch messages
+    console.warn('ParserState.message() stub called');
+  }
+
+  validate(): Boolean {
+    // Stub - from ContentState
+    return this.validate_ || false;
+  }
+
+  private validate_: Boolean = false;
+  private mayDefaultAttribute_: Boolean = false;
 
   wantMarkup(): Boolean {
     return this.inInstance_
