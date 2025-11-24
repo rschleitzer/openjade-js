@@ -208,6 +208,23 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Element creation for undefined elements
   - Implication loop detection
   - Content mode determination
+- ✅ **Lpd.ts** - Link Process Definition system (473 lines)
+  - Lpd base class (simple, implicit, explicit link types)
+  - SimpleLpd and ComplexLpd with DTD management
+  - ResultElementSpec for link result elements
+  - SourceLinkRule for link rule specifications
+  - SourceLinkRuleResource with Resource tracking
+  - LinkSet with link rule management
+  - IdLinkRule for ID link associations
+  - IdLinkRuleGroup for ID link collections
+  - Link attribute definition management
+- 🚧 **Event.ts** - Parser event system (348 lines, partial, 11 of 54 classes)
+  - Event base class with type enumeration (39 event types)
+  - LocatedEvent, MarkupEvent abstract bases
+  - MessageEvent for error/warning messages
+  - StartElementEvent, EndElementEvent for element boundaries
+  - DataEvent, ImmediateDataEvent for character data
+  - **TODO**: Remaining 43 event classes (Pi, External entities, DTD/LPD events, etc.)
 
 ## Next Steps (Priority Order)
 
@@ -289,8 +306,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~13,255 lines (76 modules out of 120 headers)
-- **Progress: ~27%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~13,777 lines (76 modules out of 120 headers)
+- **Progress: ~28%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
