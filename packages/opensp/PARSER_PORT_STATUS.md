@@ -4,11 +4,13 @@
 This document summarizes the complete OpenSP SGML parser port from C++ to TypeScript.
 
 ## Session Statistics
-- **ParserState.ts**: 3,242 lines (up from 2,665 - added 577 lines)
+- **ParserState.ts**: 3,386 lines (up from 2,665 - added 721 lines)
+- **MessageArg.ts**: 137 lines (added TokenMessageArg class)
+- **ParserMessages.ts**: 27 lines (added 5 end tag messages)
 - **Token.ts**: 72 lines
-- **~577 lines** of attribute parsing code added this session
+- **~721 lines** of parsing code added this session
 - **0 TypeScript compilation errors**
-- **5 major attribute parsing methods** fully implemented
+- **8 major parsing methods** fully implemented this session
 
 ## Completed Components
 
@@ -30,8 +32,8 @@ Complete switch statement handling all token types:
 ### 3. Tag Parsing Methods ✅
 From `parseInstance.cxx`:
 - `parsePcdata()`
-- `parseStartTag()` / `doParseStartTag()`
-- `parseEndTag()` / `doParseEndTag()` / `parseEndTagClose()`
+- ✅ `parseStartTag()` / `doParseStartTag()` - COMPLETE implementation (125 lines)
+- ✅ `parseEndTag()` / `doParseEndTag()` / `parseEndTagClose()` - COMPLETE implementation (93 lines)
 - `parseEmptyStartTag()` / `parseEmptyEndTag()`
 - `parseNullEndTag()`
 - `parseGroupStartTag()` / `parseGroupEndTag()`
@@ -95,9 +97,12 @@ Remaining work is **filling in existing TODO comments**, not building new infras
 ### High Priority
 - ✅ DTD infrastructure (Dtd, ElementType, RankStem)
 - ✅ Event class implementations (StartElementEvent, EndElementEvent, etc.)
-- ✅ Attribute parsing method stubs (parseAttributeSpec, parseAttributeParameter, etc.)
+- ✅ Attribute parsing methods (parseAttributeSpec, parseAttributeParameter, parseAttributeValueSpec, etc.)
+- ✅ Start/End tag parsing (parseStartTag/doParseStartTag, parseEndTag/doParseEndTag/parseEndTagClose)
+- ✅ TokenMessageArg class for error messages
 - Entity expansion logic (fill in parseEntityReference TODO)
-- Attribute parsing implementations (fill in parseAttributeSpec TODOs)
+- Element creation (lookupCreateUndefinedElement, allocAttributeList)
+- Event allocation (StartElementEvent, EndElementEvent construction)
 
 ### Medium Priority
 - Mode enumeration completion
@@ -133,14 +138,18 @@ Expected output: "✓ Parser infrastructure test: PASSED"
 1. ✅ **DTD Infrastructure**: Dtd, ElementType, RankStem classes (COMPLETE)
 2. ✅ **Event Classes**: StartElementEvent, EndElementEvent, etc. (COMPLETE)
 3. ✅ **Mode System**: Complete Mode enum with all parsing modes (COMPLETE)
-4. **Attribute Parsing**: Port parseAttributeSpec, parseAttributeValueSpec from parseAttribute.cxx
-5. **Entity System**: Complete entity reference expansion
-6. **Real Document Test**: Create test with actual SGML document
+4. ✅ **Attribute Parsing**: parseAttributeSpec, parseAttributeValueSpec, etc. (COMPLETE)
+5. ✅ **Start/End Tag Parsing**: parseStartTag, parseEndTag with full implementations (COMPLETE)
+6. **Entity System**: Complete entity reference expansion
+7. **Element Creation**: lookupCreateUndefinedElement, allocAttributeList
+8. **Real Document Test**: Create test with actual SGML document
 
 ## File Locations
 
-- Main parser: `src/ParserState.ts` (2,665 lines)
+- Main parser: `src/ParserState.ts` (3,386 lines)
 - Token system: `src/Token.ts` (72 lines)
+- Message args: `src/MessageArg.ts` (137 lines)
+- Parser messages: `src/ParserMessages.ts` (27 lines)
 - API wrapper: `src/Parser.ts`, `src/SgmlParser.ts`
 - Test: `test-parser.ts`
 
