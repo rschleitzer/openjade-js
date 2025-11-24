@@ -233,6 +233,7 @@ export { CharMap, CharMapResource } from './CharMap';
 export { XcharMap } from './XcharMap';
 export { UnivCharsetDesc, UnivCharsetDescIter } from './UnivCharsetDesc';
 export { CharsetInfo } from './CharsetInfo';
+export { CharsetRegistry } from './CharsetRegistry';
 export { PublicId, ExternalId } from './ExternalId';
 export { CharsetDecl, CharsetDeclSection, CharsetDeclRange } from './CharsetDecl';
 

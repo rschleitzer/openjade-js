@@ -295,6 +295,13 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Big5Decoder with double-byte character support
   - Simple high-bit detection for multi-byte sequences
   - Big5Encoder with unencodable character handling
+- ✅ **CharsetRegistry.ts** - ISO character set registry and identification (287 lines)
+  - ISORegistrationNumber enum with 20+ registered character sets
+  - getRegistrationNumber() parses SGML escape sequences
+  - makeIter() creates iterators for charset range mappings
+  - Escape sequence table for ISO 646, ISO 8859, JIS, GB2312, KSC5601, Big5, UCS-2/4
+  - Range and descriptor-based charset iteration
+  - Foundation for TranslateCodingSystem character mapping
 
 ## Next Steps (Priority Order)
 
@@ -376,8 +383,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~16,561 lines (89 modules out of 120 headers)
-- **Progress: ~33%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~16,848 lines (90 modules out of 120 headers)
+- **Progress: ~34%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
