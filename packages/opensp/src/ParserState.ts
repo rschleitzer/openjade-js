@@ -1723,10 +1723,25 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenMdoNameStart:
           // Declaration (DOCTYPE, USEMAP, USELINK, etc.)
-          // TODO: Parse declaration name
-          // TODO: Handle different declaration types
-          // TODO: skipDeclaration() on error
-          this.noteMarkup();
+          {
+            // TODO: startMarkup(eventsWanted().wantInstanceMarkup(), currentLocation())
+            // TODO: if (markup) markup.addDelim(Syntax.dMDO)
+
+            const startLevel = this.inputLevel();
+            const result = this.parseDeclarationName();
+
+            if (result.valid) {
+              // TODO: Handle different declaration types based on result.name
+              // - Syntax.rUSEMAP: parseUsemapDecl()
+              // - Syntax.rUSELINK: parseUselinkDecl()
+              // - Syntax.rDOCTYPE, rELEMENT, rATTLIST, etc.: error in instance
+              // - default: noSuchDeclarationType error
+            } else {
+              this.skipDeclaration(startLevel);
+            }
+
+            this.noteMarkup();
+          }
           break;
 
         case TokenEnum.tokenMdoMdc:
@@ -2518,5 +2533,75 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // - endMarkedSection() state management
     // - MarkedSectionEndEvent class
     // - Mode detection for status
+  }
+
+  protected skipDeclaration(startLevel: number): void {
+    // Port of skipDeclaration from parseInstance.cxx (lines 301-332)
+    // Skips tokens until end of declaration for error recovery
+
+    const skipMax = 250;
+    let skipCount = 0;
+
+    for (;;) {
+      // TODO: Get mdMode from Mode
+      const token = this.getToken(this.currentMode());
+
+      if (this.inputLevel() === startLevel) {
+        skipCount++;
+      }
+
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          this.getChar();
+          break;
+
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() <= startLevel) {
+            return;
+          }
+          this.popInputStack();
+          return;
+
+        case TokenEnum.tokenMdc:
+          if (this.inputLevel() === startLevel) {
+            return;
+          }
+          break;
+
+        case TokenEnum.tokenS:
+          if (this.inputLevel() === startLevel &&
+              skipCount >= skipMax &&
+              this.currentChar() === this.syntax().standardFunction(0 /* Syntax::fRE */)) {
+            return;
+          }
+          break;
+
+        default:
+          break;
+      }
+    }
+  }
+
+  protected parseDeclarationName(allowAfdr: boolean = false): { valid: boolean; name?: any } {
+    // Port of parseDeclarationName from parseDecl.cxx (lines 515-534)
+    // Parses and validates a declaration name (DOCTYPE, ELEMENT, etc.)
+
+    const input = this.currentInput();
+    if (!input) return { valid: false };
+
+    input.discardInitial();
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+
+    const name = this.nameBuffer();
+    // TODO: getCurrentToken(syntax().generalSubstTable(), name)
+
+    // TODO: syntax().lookupReservedName(name, result)
+    // This requires Syntax.ReservedName enum and lookup method
+    // Reserved names: DOCTYPE, ELEMENT, ATTLIST, ENTITY, NOTATION,
+    //                 SHORTREF, USEMAP, USELINK, LINKTYPE, etc.
+
+    // TODO: if (currentMarkup()) currentMarkup().addReservedName(result, input)
+
+    return { valid: false };
   }
 }
