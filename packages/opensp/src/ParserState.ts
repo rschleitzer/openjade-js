@@ -2673,19 +2673,128 @@ export class ParserState extends ContentState implements ParserStateInterface {
     netEnabling: { value: boolean },
     newAttDef: Ptr<AttributeDefinitionList>
   ): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 15-94
-    // Algorithm:
-    // 1. Parse attribute parameters in loop
-    // 2. Handle name, nameToken, vi, recoverUnquoted
-    // 3. Parse attribute values (literal or unquoted)
-    // 4. Check attribute specification length
-    // 5. Call atts.finish()
-    // Requires:
-    // - parseAttributeParameter
-    // - parseAttributeValueSpec
-    // - handleAttributeNameToken
-    // - AttributeParameter enum
-    return false;
+    const specLengthObj = { value: 0 };
+    const curParmObj = { value: AttributeParameterType.end };
+
+    // Parse first attribute parameter
+    if (!this.parseAttributeParameter(mode, false, curParmObj, netEnabling)) {
+      return false;
+    }
+
+    // Loop through all attributes
+    while (curParmObj.value !== AttributeParameterType.end) {
+      switch (curParmObj.value) {
+        case AttributeParameterType.name:
+          {
+            // Parse attribute name
+            const text = new Text();
+            const input = this.currentInput();
+            if (input) {
+              const start = input.currentTokenStart();
+              if (start) {
+                text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              }
+            }
+
+            const nameMarkupIndex = this.currentMarkup()?.size() ? this.currentMarkup()!.size() - 1 : 0;
+
+            // Substitute characters
+            text.subst(this.syntax().generalSubstTable(), this.syntax().space());
+
+            // Parse next parameter (should be VI or end)
+            const nextMode = mode === Mode.piPasMode ? Mode.asMode : mode;
+            if (!this.parseAttributeParameter(nextMode, true, curParmObj, netEnabling)) {
+              return false;
+            }
+
+            // curParmObj.value has been updated by parseAttributeParameter
+            const nextParm = curParmObj.value as AttributeParameterType;
+            if (nextParm === AttributeParameterType.vi) {
+              // Full attribute with value: name=value
+              specLengthObj.value += text.size() + this.syntax().normsep();
+              if (!this.parseAttributeValueSpec(nextMode, text.string(), atts, specLengthObj, newAttDef)) {
+                return false;
+              }
+              // Setup for next attribute
+              if (!this.parseAttributeParameter(mode, false, curParmObj, netEnabling)) {
+                return false;
+              }
+            } else {
+              // Omitted attribute value (shorttag): just name
+              if (this.currentMarkup()) {
+                // TODO: Implement changeToAttributeValue
+                // this.currentMarkup().changeToAttributeValue(nameMarkupIndex);
+              }
+              if (!this.handleAttributeNameToken(text, atts, specLengthObj)) {
+                return false;
+              }
+            }
+          }
+          break;
+
+        case AttributeParameterType.nameToken:
+          {
+            // Parse name token (attribute name omitted)
+            const text = new Text();
+            const input = this.currentInput();
+            if (input) {
+              const start = input.currentTokenStart();
+              if (start) {
+                text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              }
+            }
+
+            // Substitute characters
+            text.subst(this.syntax().generalSubstTable(), this.syntax().space());
+
+            if (!this.handleAttributeNameToken(text, atts, specLengthObj)) {
+              return false;
+            }
+            if (!this.parseAttributeParameter(mode, false, curParmObj, netEnabling)) {
+              return false;
+            }
+          }
+          break;
+
+        case AttributeParameterType.recoverUnquoted:
+          {
+            // Error recovery for unquoted attribute value
+            // TODO: Implement atts.recoverUnquoted
+            // if (!atts.recoverUnquoted(this.currentToken(), this.currentLocation(), this)) {
+            //   const input = this.currentInput();
+            //   if (input) input.endToken(1);
+            //   if (!atts.handleAsUnterminated(this)) {
+            //     this.message(ParserMessages.attributeSpecCharacter,
+            //       new StringMessageArg(this.currentToken()));
+            //   }
+            //   return false;
+            // }
+            if (!this.parseAttributeParameter(mode, false, curParmObj, netEnabling)) {
+              return false;
+            }
+          }
+          break;
+
+        default:
+          throw new Error('CANNOT_HAPPEN in parseAttributeSpec');
+      }
+    }
+
+    // Finish attribute list processing
+    // TODO: Implement atts.finish()
+    // atts.finish(this);
+
+    // Check total attribute specification length
+    if (specLengthObj.value > this.syntax().attsplen()) {
+      // TODO: Add attsplen message to ParserMessages
+      // this.message(
+      //   ParserMessages.attsplen,
+      //   new NumberMessageArg(this.syntax().attsplen()),
+      //   new NumberMessageArg(specLengthObj.value)
+      // );
+    }
+
+    return true;
   }
 
   // Port of parseAttribute.cxx lines 96-122
