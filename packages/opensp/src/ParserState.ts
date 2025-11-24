@@ -1862,4 +1862,188 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     return true;
   }
+
+  protected parseNumericCharRef(isHex: boolean): { valid: boolean; char?: Char; location?: Location } {
+    // Port of parseNumericCharRef from parseCommon.cxx (lines 282-357)
+    const input = this.currentInput();
+    if (!input) return { valid: false };
+
+    const startLocation = this.currentLocation();
+    input.discardInitial();
+    let valid = true;
+    let c: Char = 0;
+
+    if (isHex) {
+      this.extendHexNumber();
+      const tokenStart = input.currentTokenStart();
+
+      for (let i = 0; tokenStart && i < input.currentTokenLength(); i++) {
+        const digitChar = tokenStart[i];
+        const val = this.sd().hexDigitWeight(digitChar);
+        const charMax = 0x10ffff; // From constant.h
+
+        if (c <= charMax / 16 && (c *= 16) <= charMax - val) {
+          c += val;
+        } else {
+          // TODO: Add characterNumber message to ParserMessages
+          // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+          valid = false;
+          break;
+        }
+      }
+    } else {
+      this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
+      const tokenStart = input.currentTokenStart();
+
+      for (let i = 0; tokenStart && i < input.currentTokenLength(); i++) {
+        const digitChar = tokenStart[i];
+        const val = this.sd().digitWeight(digitChar);
+        const charMax = 0x10ffff;
+
+        if (c <= charMax / 10 && (c *= 10) <= charMax - val) {
+          c += val;
+        } else {
+          // TODO: Add characterNumber message to ParserMessages
+          // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+          valid = false;
+          break;
+        }
+      }
+    }
+
+    // Check if character is declared in document charset
+    if (valid && !this.sd().docCharsetDecl().charDeclared(c)) {
+      valid = false;
+      // TODO: Add characterNumber message to ParserMessages
+      // this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
+    }
+
+    // TODO: Handle markup tracking with Markup class
+    // TODO: Handle REFC delimiter with getToken(refMode)
+    // TODO: Implement NumericCharRefOrigin for location tracking
+
+    if (valid) {
+      // In C++ this creates a Location with NumericCharRefOrigin
+      // For now, just return the character and start location
+      return { valid: true, char: c, location: startLocation };
+    }
+
+    return { valid: false };
+  }
+
+  protected parseNamedCharRef(): boolean {
+    // Stub for parseNamedCharRef from parseCommon.cxx
+    // Full implementation looks up named character entity references
+    // TODO: Port full implementation
+    return false;
+  }
+
+  protected translateNumericCharRef(ch: Char): { valid: boolean; char?: Char; isSgmlChar?: boolean } {
+    // Port of translateNumericCharRef from parseCommon.cxx (lines 365-425)
+    // Translates character number from document charset to internal charset
+
+    if (this.sd().internalCharsetIsDocCharset()) {
+      if (this.options().warnNonSgmlCharRef && !this.syntax().isSgmlChar(ch)) {
+        // TODO: Add nonSgmlCharRef message to ParserMessages
+        // this.message(ParserMessages.nonSgmlCharRef);
+      }
+      return { valid: true, char: ch, isSgmlChar: true };
+    }
+
+    // TODO: Full charset translation logic requires:
+    // - UnivChar type
+    // - Charset.descToUniv() method
+    // - CharsetDeclRange class
+    // - Charset.univToDesc() method
+    // For now, return simplified result assuming document charset = internal charset
+
+    return { valid: true, char: ch, isSgmlChar: true };
+  }
+
+  // Literal parsing flags
+  protected static readonly literalSingleSpace = 0o1;
+  protected static readonly literalNoProcess = 0o2;
+  protected static readonly literalNonSgml = 0o4;
+  protected static readonly literalDelimInfo = 0o10;
+  protected static readonly literalDataTag = 0o20;
+
+  protected parseLiteral(
+    litMode: Mode,
+    liteMode: Mode,
+    maxLength: number,
+    tooLongMessage: any,
+    flags: number,
+    text: any
+  ): boolean {
+    // Port of parseLiteral from parseCommon.cxx (lines 62-236)
+    // TODO: Requires Text class to be fully ported
+    // TODO: Requires Mode enum to be defined
+    // TODO: Requires token constants (tokenEe, tokenLit, tokenLita, etc.)
+    // TODO: Requires markup tracking
+    // TODO: Requires entity reference handling
+
+    const startLevel = this.inputLevel();
+    let currentMode = litMode;
+
+    // If the literal gets to be longer than this, assume closing delimiter omitted
+    const reallyMaxLength = maxLength > Number.MAX_SAFE_INTEGER / 2
+      ? Number.MAX_SAFE_INTEGER
+      : maxLength * 2;
+
+    // TODO: text.clear();
+    const startLoc = this.currentLocation();
+
+    // if (flags & ParserState.literalDelimInfo)
+    //   text.addStartDelim(this.currentLocation());
+
+    for (;;) {
+      const token = this.getToken(currentMode);
+
+      // TODO: Switch on token type and handle all cases
+      // This requires ~40+ token constants to be defined
+      // Key cases:
+      // - tokenEe: entity end
+      // - tokenUnrecognized: non-SGML character
+      // - tokenRs/tokenRe: record boundaries
+      // - tokenSpace/tokenSepchar: whitespace
+      // - tokenCroDigit/tokenHcroHexDigit: numeric char refs
+      // - tokenCroNameStart: named char refs
+      // - tokenEroNameStart/tokenPeroNameStart: entity refs
+      // - tokenLit/tokenLita: closing delimiters
+      // - tokenChar/tokenCharDelim: regular characters
+
+      // Placeholder: just break for now
+      break;
+    }
+
+    // TODO: Handle post-processing
+    // - Remove trailing space if literalSingleSpace flag
+    // - Check max length
+    // - Handle unterminated attribute values
+
+    return true;
+  }
+
+  protected parseEntityReference(
+    isParameter: boolean,
+    ignoreLevel: number
+  ): { valid: boolean; entity?: ConstPtr<any>; origin?: Ptr<any> } {
+    // Port of parseEntityReference from parseCommon.cxx (lines 428-540)
+    // TODO: Requires Entity class hierarchy
+    // TODO: Requires EntityOrigin class
+    // TODO: Requires Markup class
+    // TODO: Requires entity lookup methods
+    // TODO: Requires parseEntityReferenceNameGroup method
+    // This is a complex ~110 line method that handles:
+    // - Name extraction and validation
+    // - Entity lookup in catalog
+    // - Ignored entity handling (ignoreLevel)
+    // - Parameter vs general entity distinction
+    // - Undefined entity handling (with implydef)
+    // - Markup tracking
+    // - Origin tracking for error reporting
+
+    // Placeholder return - needs full implementation
+    return { valid: false };
+  }
 }
