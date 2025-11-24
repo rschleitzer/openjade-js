@@ -2605,6 +2605,23 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return { valid: false };
   }
 
+  protected acceptPcdata(startLocation: Location): void {
+    // Port of acceptPcdata from parseInstance.cxx (lines 614-638)
+    // Validates that PCDATA is allowed in the current element context
+    // If not, tries to imply start tags to make it valid
+
+    // TODO: Full implementation requires:
+    // - currentElement().tryTransitionPcdata()
+    // - pcdataRecovering() state check
+    // - tryImplyTag() for automatic tag inference
+    // - Undo/Event list management
+    // - keepMessages/discardKeptMessages for error recovery
+    // - pcdataRecover() error state
+
+    // For now, this is a no-op stub
+    // Real implementation would validate and possibly imply tags
+  }
+
   protected handleShortref(index: number): void {
     // Port of handleShortref from parseInstance.cxx (lines 333-395)
     // Handles short reference substitution
