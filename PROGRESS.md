@@ -264,6 +264,14 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Error recovery for invalid UTF-8 sequences
   - UTF8Encoder with proper multi-byte encoding
   - Full Unicode support up to 31-bit characters
+- ✅ **Fixed2CodingSystem.ts** - Fixed 2-byte character encoding (78 lines)
+  - Fixed2Decoder with LSB/MSB first byte order support
+  - Fixed2Encoder with big-endian encoding
+  - Handles characters up to 0xFFFF (16-bit)
+- ✅ **Fixed4CodingSystem.ts** - Fixed 4-byte character encoding (119 lines)
+  - Fixed4Decoder with LSB/MSB and LSW/MSW word order support
+  - Fixed4Encoder with big-endian encoding
+  - Full 32-bit character support with overflow detection
 
 ## Next Steps (Priority Order)
 
@@ -345,8 +353,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~15,733 lines (82 modules out of 120 headers)
-- **Progress: ~31%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~15,930 lines (84 modules out of 120 headers)
+- **Progress: ~32%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 

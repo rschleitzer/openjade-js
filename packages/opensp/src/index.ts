@@ -250,6 +250,8 @@ export { MarkupScan } from './MarkupScan';
 export { Decoder, Encoder, RecoveringEncoder, InputCodingSystem, OutputCodingSystem, CodingSystem } from './CodingSystem';
 export { IdentityCodingSystem } from './IdentityCodingSystem';
 export { UTF8CodingSystem } from './UTF8CodingSystem';
+export { Fixed2CodingSystem } from './Fixed2CodingSystem';
+export { Fixed4CodingSystem } from './Fixed4CodingSystem';
 
 // Message system
 export { MessageBuilder } from './MessageBuilder';
