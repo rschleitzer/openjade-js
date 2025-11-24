@@ -1122,4 +1122,19 @@ export class AttributeList {
   setValueToken(index: number, text: any, parser: any, specLength: { value: number }): void {
     // TODO: Implement setValueToken - set attribute value from token
   }
+
+  attributeIndex(name: StringC, result: { value: number }): boolean {
+    // TODO: Implement attributeIndex - get index of attribute by name
+    return false;
+  }
+
+  tokenized(index: number): boolean {
+    // TODO: Implement tokenized - check if attribute is tokenized type
+    return false;
+  }
+
+  setValue(index: number, text: any, parser: any, specLength: { value: number }): boolean {
+    // TODO: Implement setValue - set attribute value from text
+    return true;
+  }
 }

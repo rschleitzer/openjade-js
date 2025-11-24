@@ -2731,23 +2731,142 @@ export class ParserState extends ContentState implements ParserStateInterface {
     specLength: { value: number },
     newAttDef: Ptr<AttributeDefinitionList>
   ): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 124-249
-    // Algorithm:
-    // 1. Get token after attribute name
-    // 2. Skip whitespace
-    // 3. Check if attribute exists in definition
-    // 4. If not, create implied attribute definition
-    // 5. Parse value based on token type:
-    //    - tokenLit/tokenLita: parse literal
-    //    - tokenNameStart/tokenDigit: parse name token
-    //    - tokenUnrecognized: unquoted value (error recovery)
-    // 6. Set value in attribute list
-    // Requires:
-    // - parseAttributeValueLiteral
-    // - parseTokenizedAttributeValueLiteral
-    // - extendUnquotedAttributeValue
-    // - AttributeList.setValue
-    return false;
+    const markup = this.currentMarkup();
+    let token = this.getToken(mode);
+
+    // Skip whitespace
+    if (token === TokenEnum.tokenS) {
+      if (markup) {
+        do {
+          markup.addS(this.currentChar());
+          token = this.getToken(mode);
+        } while (token === TokenEnum.tokenS);
+      } else {
+        do {
+          token = this.getToken(mode);
+        } while (token === TokenEnum.tokenS);
+      }
+    }
+
+    // Check if attribute exists in definition
+    const indexResult = { value: 0 };
+    if (!atts.attributeIndex(name, indexResult)) {
+      // Attribute not in definition - create implied attribute
+      // TODO: Implement full implied attribute creation logic
+      // For now, just note this is needed and fail gracefully
+      // Full implementation requires:
+      // - AttributeDefinitionList creation
+      // - Notation lookup for data attributes
+      // - ImpliedAttributeDefinition creation
+      // - atts.changeDef() and atts.size()
+      return false;
+    }
+
+    atts.setSpec(indexResult.value, this);
+    const text = new Text();
+
+    // Parse value based on token type
+    switch (token) {
+      case TokenEnum.tokenUnrecognized:
+        if (this.reportNonSgmlCharacter()) {
+          return false;
+        }
+        // fall through
+      case TokenEnum.tokenEtago:
+      case TokenEnum.tokenStago:
+      case TokenEnum.tokenNestc:
+        // TODO: Add unquotedAttributeValue to ParserMessages
+        // this.message(ParserMessages.unquotedAttributeValue);
+        this.extendUnquotedAttributeValue();
+        if (markup) {
+          const input = this.currentInput();
+          if (input) markup.addAttributeValue(input);
+        }
+        {
+          const input = this.currentInput();
+          if (input) {
+            const start = input.currentTokenStart();
+            if (start) {
+              text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+            }
+          }
+        }
+        break;
+
+      case TokenEnum.tokenEe:
+        if (mode !== Mode.piPasMode) {
+          // TODO: Add attributeSpecEntityEnd to ParserMessages
+          // this.message(ParserMessages.attributeSpecEntityEnd);
+          return false;
+        }
+        // fall through
+      case TokenEnum.tokenTagc:
+      case TokenEnum.tokenDsc:
+      case TokenEnum.tokenVi:
+        // TODO: Add attributeValueExpected to ParserMessages
+        // this.message(ParserMessages.attributeValueExpected);
+        return false;
+
+      case TokenEnum.tokenNameStart:
+      case TokenEnum.tokenDigit:
+      case TokenEnum.tokenLcUcNmchar:
+        if (!this.sd().attributeValueNotLiteral()) {
+          // TODO: Add attributeValueShorttag to ParserMessages
+          // this.message(ParserMessages.attributeValueShorttag);
+        } else if (this.options().warnAttributeValueNotLiteral) {
+          // TODO: Add warnAttributeValueNotLiteral option and message
+          // this.message(ParserMessages.attributeValueNotLiteral);
+        }
+        this.extendNameToken(
+          this.syntax().litlen() >= this.syntax().normsep()
+            ? this.syntax().litlen() - this.syntax().normsep()
+            : 0,
+          ParserMessages.nameTokenLength // TODO: Should be attributeValueLength
+        );
+        if (markup) {
+          const input = this.currentInput();
+          if (input) markup.addAttributeValue(input);
+        }
+        {
+          const input = this.currentInput();
+          if (input) {
+            const start = input.currentTokenStart();
+            if (start) {
+              text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+            }
+          }
+        }
+        break;
+
+      case TokenEnum.tokenLit:
+      case TokenEnum.tokenLita:
+        {
+          const lita = token === TokenEnum.tokenLita;
+          // TODO: Check if attribute is tokenized
+          const tokenized = false; // atts.tokenized(indexResult.value);
+          if (tokenized) {
+            if (!this.parseTokenizedAttributeValueLiteral(lita, text)) {
+              return false;
+            }
+          } else {
+            if (!this.parseAttributeValueLiteral(lita, text)) {
+              return false;
+            }
+          }
+          if (markup) {
+            markup.addLiteral(text);
+          }
+        }
+        break;
+
+      default:
+        throw new Error('CANNOT_HAPPEN in parseAttributeValueSpec');
+    }
+
+    // Set the attribute value
+    // TODO: Implement atts.setValue() - this sets the parsed value
+    // return atts.setValue(indexResult.value, text, this, specLength);
+    return true; // Stub for now
   }
 
   // Port of parseAttribute.cxx lines 253-371
