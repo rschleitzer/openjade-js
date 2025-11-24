@@ -24,6 +24,7 @@ import { Location } from './Location';
 import { Message, Messenger } from './Message';
 import { StringMessageArg, NumberMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
+import { Token as TokenEnum } from './Token';
 import { OpenElement } from './OpenElement';
 import { OutputState } from './OutputState';
 import { ParserOptions } from './ParserOptions';
@@ -1627,10 +1628,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       const token = this.getToken(this.currentMode());
 
-      // TODO: Import actual token constants
-      const tokenEe = -1;
-
-      if (token === tokenEe) {
+      if (token === TokenEnum.tokenEe) {
         // Entity end
         if (this.inputLevel() === 1) {
           this.endInstance();
@@ -1821,18 +1819,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     let token: Token;
-    const tokenCom = 0; // TODO: Import actual token constants
 
-    while ((token = this.getToken(mode)) !== tokenCom) {
+    while ((token = this.getToken(mode)) !== TokenEnum.tokenCom) {
       switch (token) {
-        case 0: // tokenUnrecognized - TODO: Use actual constant
+        case TokenEnum.tokenUnrecognized:
           if (!this.reportNonSgmlCharacter()) {
             // TODO: Add sdCommentSignificant message
             // this.message(ParserMessages.sdCommentSignificant, new StringMessageArg(this.currentToken()));
           }
           break;
 
-        case -1: // tokenEe - TODO: Use actual constant
+        case TokenEnum.tokenEe:
           // TODO: Add commentEntityEnd message
           // this.message(ParserMessages.commentEntityEnd, startLoc);
           return false;
