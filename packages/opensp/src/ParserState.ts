@@ -2083,4 +2083,129 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Placeholder return - needs full implementation
     return { valid: false };
   }
+
+  protected parsePcdata(): void {
+    // Port of parsePcdata from parseInstance.cxx (lines 397-409)
+    this.extendData();
+    // TODO: acceptPcdata(currentLocation())
+    // TODO: noteData()
+    // TODO: Fire ImmediateDataEvent with character data
+    // eventHandler().data(new ImmediateDataEvent(
+    //   Event.characterData,
+    //   currentInput().currentTokenStart(),
+    //   currentInput().currentTokenLength(),
+    //   currentLocation(),
+    //   0
+    // ));
+  }
+
+  protected parseStartTag(): void {
+    // Port of parseStartTag from parseInstance.cxx (lines 410-418)
+    const input = this.currentInput();
+    if (!input) return;
+
+    // TODO: Start markup tracking
+    // const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), input.currentLocation());
+    // if (markup) markup.addDelim(Syntax.dSTAGO);
+
+    // TODO: Parse the start tag details
+    // const result = this.doParseStartTag();
+    // const netEnabling = result.netEnabling;
+    // const event = result.event;
+
+    // TODO: Accept and process the start tag
+    // this.acceptStartTag(event.elementType(), event, netEnabling);
+  }
+
+  protected doParseStartTag(): any {
+    // Port of doParseStartTag from parseInstance.cxx (lines 420-485)
+    // TODO: This is a complex ~65 line method that:
+    // - Extracts element name
+    // - Looks up element type in DTD
+    // - Handles ranked elements
+    // - Parses attribute specifications
+    // - Handles NET enabling (empty tags)
+    // - Creates StartElementEvent
+    // Requires:
+    // - ElementType class
+    // - AttributeList class
+    // - parseAttributeSpec method
+    // - DTD lookup methods
+    // - Event classes
+
+    const input = this.currentInput();
+    if (!input) return null;
+
+    input.discardInitial();
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+
+    // TODO: Extract name and lookup element type
+    // TODO: Handle attributes
+    // TODO: Return StartElementEvent
+
+    return null;
+  }
+
+  protected parseEndTag(): any {
+    // Port of parseEndTag from parseInstance.cxx (lines 1003-1010)
+    // TODO: Start markup tracking
+    // const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    // if (markup) markup.addDelim(Syntax.dETAGO);
+
+    return this.doParseEndTag();
+  }
+
+  protected doParseEndTag(): any {
+    // Port of doParseEndTag from parseInstance.cxx (lines 1012-1034)
+    const input = this.currentInput();
+    if (!input) return null;
+
+    input.discardInitial();
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+
+    // TODO: Extract name using getCurrentToken
+    // TODO: Lookup element type in DTD
+    // TODO: Handle ranked elements
+    // TODO: Call parseEndTagClose()
+    // TODO: Create EndElementEvent
+
+    // this.parseEndTagClose();
+
+    return null;
+  }
+
+  protected parseEndTagClose(): void {
+    // Port of parseEndTagClose from parseInstance.cxx (lines 1036-1080)
+    // Parses the closing portion of an end tag (whitespace and TAGC delimiter)
+
+    // TODO: Loop through tokens until TAGC or error
+    // for (;;) {
+    //   const token = this.getToken(tagMode);
+    //   switch (token) {
+    //     case tokenUnrecognized: handle non-SGML char
+    //     case tokenEe: entity end in end tag
+    //     case tokenEtago/tokenStago: unclosed end tag
+    //     case tokenTagc: proper close, add delimiter
+    //     case tokenS: whitespace in end tag
+    //   }
+    // }
+  }
+
+  protected acceptStartTag(elementType: any, event: any, netEnabling: boolean): void {
+    // Stub for acceptStartTag - processes a start tag
+    // TODO: Full implementation:
+    // - Validates element is allowed in current context
+    // - May close open elements (implied end tags)
+    // - Pushes element onto stack
+    // - Fires start element event
+  }
+
+  protected acceptEndTag(event: any): void {
+    // Stub for acceptEndTag - processes an end tag
+    // TODO: Full implementation:
+    // - Finds matching open element
+    // - Closes intervening elements if needed
+    // - Validates end tag is legal
+    // - Fires end element event
+  }
 }
