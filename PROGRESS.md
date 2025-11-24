@@ -242,6 +242,12 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - Extends ErrorCountEventHandler with Messenger integration
   - Dispatches messages to Messenger for output
   - Subdoc entity handling (stub for when SgmlParser is ported)
+- ✅ **OutputCharStream.ts** - Character output stream abstraction (309 lines)
+  - OutputCharStream abstract base with buffering support
+  - EncodeOutputCharStream for encoded output with OutputCodingSystem
+  - StrOutputCharStream for string accumulation
+  - RecordOutputCharStream for record-based output with newline handling
+  - Escaper support for handling unencodable characters
 
 ## Next Steps (Priority Order)
 
@@ -323,7 +329,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~14,842 lines (78 modules out of 120 headers)
+- TypeScript (ported so far): ~15,151 lines (79 modules out of 120 headers)
 - **Progress: ~30%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---

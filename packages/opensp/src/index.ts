@@ -193,6 +193,13 @@ export {
 export { ErrorCountEventHandler } from './ErrorCountEventHandler';
 export { MessageEventHandler, SgmlParser as SgmlParserInterface } from './MessageEventHandler';
 export {
+  OutputCharStream,
+  EncodeOutputCharStream,
+  StrOutputCharStream,
+  RecordOutputCharStream,
+  Escaper
+} from './OutputCharStream';
+export {
   ContentToken,
   ModelGroup,
   AndModelGroup,
