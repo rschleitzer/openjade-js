@@ -34,6 +34,7 @@ export { NamedResource } from './NamedResource';
 // Utilities
 export { Hash } from './Hash';
 export { HashTable, HashTableIter, Hashable } from './HashTable';
+export { HashTableItemBase, HashTableKeyFunction } from './HashTableItemBase';
 export * from './constant';
 export { Mode, nModes, minShortrefMode } from './Mode';
 export { StringResource } from './StringResource';

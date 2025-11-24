@@ -254,6 +254,10 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - formatOpenElements() for element stack formatting
   - Builder inner class implementing MessageBuilder
   - ErrnoMessageArg and SearchResultMessageArg handling
+- ✅ **HashTableItemBase.ts** - Base class for hash table items (22 lines)
+  - Generic HashTableItemBase<K> with abstract copy() method
+  - HashTableKeyFunction for key extraction
+  - Used by specialized hash table implementations
 
 ## Next Steps (Priority Order)
 
@@ -335,7 +339,7 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~15,351 lines (80 modules out of 120 headers)
+- TypeScript (ported so far): ~15,373 lines (81 modules out of 120 headers)
 - **Progress: ~31%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
