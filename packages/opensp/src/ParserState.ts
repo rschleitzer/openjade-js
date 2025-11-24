@@ -3,7 +3,7 @@
 
 import { Allocator } from './Allocator';
 import { AttributeList, AttributeValue, AttributeDefinitionList, AttributeContext } from './Attribute';
-import { Boolean } from './Boolean';
+import { Boolean, PackedBoolean } from './Boolean';
 import { Vector } from './Vector';
 import { StringC } from './StringC';
 import { Dtd } from './Dtd';
@@ -18,11 +18,13 @@ import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
 import { Location } from './Location';
-import { Message, Messenger, StringMessageArg, NumberMessageArg } from './Message';
-import { Mode, nModes, proMode, dsMode, dsiMode, rcconeMode, econMode, mconMode, econnetMode, mconnetMode } from './Mode';
+import { Message, Messenger } from './Message';
+import { StringMessageArg, NumberMessageArg } from './MessageArg';
+import { Mode, nModes } from './Mode';
 import { OpenElement } from './OpenElement';
 import { OutputState } from './OutputState';
-import { ParserOptions, EventsWanted } from './ParserOptions';
+import { ParserOptions } from './ParserOptions';
+import { EventsWanted } from './EventsWanted';
 import { Ptr, ConstPtr } from './Ptr';
 import { Recognizer } from './Recognizer';
 import { Sd } from './Sd';
@@ -34,7 +36,7 @@ import { LpdEntityRef } from './LpdEntityRef';
 import { Markup } from './Markup';
 import { ContentState } from './ContentState';
 import { Xchar, Char, Token, Offset } from './types';
-import { XcharMap, PackedBoolean } from './XcharMap';
+import { XcharMap } from './XcharMap';
 import { OwnerTable, OwnerTableIter } from './OwnerTable';
 import { SubstTable } from './SubstTable';
 import { NamedTable, NamedTableIter } from './NamedTable';
@@ -61,7 +63,7 @@ export enum Phase {
 type LpdEntityRefSet = OwnerTable<LpdEntityRef, LpdEntityRef, LpdEntityRef, LpdEntityRef>;
 type LpdEntityRefSetIter = OwnerTableIter<LpdEntityRef, LpdEntityRef, LpdEntityRef, LpdEntityRef>;
 
-export class ParserState extends ContentState implements AttributeContext, Messenger, ParserStateInterface {
+export class ParserState extends ContentState implements ParserStateInterface {
   private static nullLocation_: Location = new Location();
   private static dummyCancel_: number = 0;
 
@@ -160,7 +162,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.specialParseInputLevel_ = 0;
     this.markedSectionLevel_ = 0;
     this.markedSectionSpecialLevel_ = 0;
-    this.currentMode_ = proMode;
+    this.currentMode_ = Mode.proMode;
     this.hadLpd_ = false;
     this.resultAttributeSpecMode_ = false;
     this.pass2_ = false;
@@ -312,7 +314,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.specialParseInputLevel_ = 0;
     this.markedSectionLevel_ = 0;
     this.markedSectionSpecialLevel_ = 0;
-    this.currentMode_ = proMode;
+    this.currentMode_ = Mode.proMode;
     this.hadLpd_ = false;
     this.allowPass2_ = false;
     this.hadPass2Start_ = false;
@@ -359,13 +361,13 @@ export class ParserState extends ContentState implements AttributeContext, Messe
         substTable.subst(name);
       }
       const text = new Text();
-      text.addChars(this.syntax().reservedName(Syntax.rINCLUDE), new Location());
+      text.addChars(this.syntax().reservedName(Syntax.ReservedName.rINCLUDE), new Location());
       const entity = new InternalTextEntity(
         name,
-        Entity.parameterEntity,
+        EntityDecl.DeclType.parameterEntity,
         new Location(),
         text,
-        InternalTextEntity.none
+        InternalTextEntity.Bracketed.none
       );
       entity.setUsed();
       const dtd = this.defDtd_.pointer();
@@ -393,7 +395,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
 
     this.currentDtd_ = this.defDtd_;
     this.currentDtdConst_ = this.defDtd_.asConst();
-    this.currentMode_ = dsMode;
+    this.currentMode_ = Mode.dsMode;
   }
 
   enterTag(start: Boolean): void {
@@ -419,7 +421,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.defDtd_.clear();
     this.currentDtd_.clear();
     this.currentDtdConst_.clear();
-    this.currentMode_ = proMode;
+    this.currentMode_ = Mode.proMode;
   }
 
   startLpd(lpd: Ptr<Lpd>): void {
@@ -430,7 +432,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
       this.currentDtd_ = lpdPtr.sourceDtd();
       this.currentDtdConst_ = lpdPtr.sourceDtd().asConst();
     }
-    this.currentMode_ = dsMode;
+    this.currentMode_ = Mode.dsMode;
   }
 
   endLpd(): void {
@@ -443,7 +445,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.defLpd_.clear();
     this.currentDtd_.clear();
     this.currentDtdConst_.clear();
-    this.currentMode_ = proMode;
+    this.currentMode_ = Mode.proMode;
   }
 
   popInputStack(): void {
@@ -460,10 +462,10 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     if (this.specialParseInputLevel_ > 0 && this.inputLevel_ === this.specialParseInputLevel_) {
       this.currentMode_ = this.specialParseMode_;
     }
-    if (this.currentMode_ === dsiMode &&
+    if (this.currentMode_ === Mode.dsiMode &&
         this.inputLevel_ === 1 &&
         this.markedSectionLevel_ === 0) {
-      this.currentMode_ = dsMode;
+      this.currentMode_ = Mode.dsMode;
     }
     if (this.inputLevelElementIndex_.size()) {
       this.inputLevelElementIndex_.resize(this.inputLevelElementIndex_.size() - 1);
@@ -510,9 +512,9 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.inputLevel_++;
 
     if (this.specialParseInputLevel_ > 0 && this.inputLevel_ > this.specialParseInputLevel_) {
-      this.currentMode_ = rcconeMode;
+      this.currentMode_ = Mode.rcconeMode;
     } else if (this.currentMode_ === dsMode) {
-      this.currentMode_ = dsiMode;
+      this.currentMode_ = Mode.dsiMode;
     }
 
     const sdPtr = this.sd_.pointer();
@@ -527,7 +529,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     this.markedSectionLevel_++;
     this.markedSectionStartLocation_.push_back(loc);
     if (this.currentMode_ === dsMode) {
-      this.currentMode_ = dsiMode;
+      this.currentMode_ = Mode.dsiMode;
     }
     if (this.markedSectionSpecialLevel_) {
       this.markedSectionSpecialLevel_++;
@@ -556,14 +558,14 @@ export class ParserState extends ContentState implements AttributeContext, Messe
       if (this.inInstance_) {
         this.currentMode_ = this.contentMode();
       } else {
-        this.currentMode_ = dsiMode;
+        this.currentMode_ = Mode.dsiMode;
       }
     }
 
-    if (this.currentMode_ === dsiMode &&
+    if (this.currentMode_ === Mode.dsiMode &&
         this.inputLevel_ === 1 &&
         this.markedSectionLevel_ === 0) {
-      this.currentMode_ = dsMode;
+      this.currentMode_ = Mode.dsMode;
     }
   }
 
@@ -582,11 +584,11 @@ export class ParserState extends ContentState implements AttributeContext, Messe
 
   pcdataRecover(): void {
     switch (this.currentMode_) {
-      case econMode:
-        this.currentMode_ = mconMode;
+      case Mode.econMode:
+        this.currentMode_ = Mode.mconMode;
         break;
-      case econnetMode:
-        this.currentMode_ = mconnetMode;
+      case Mode.econnetMode:
+        this.currentMode_ = Mode.mconnetMode;
         break;
       default:
         break;
@@ -626,7 +628,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
     if (!this.instanceSyntax_.isNull()) {
       this.syntax_ = this.instanceSyntax_;
     }
-    this.currentMode_ = econMode;
+    this.currentMode_ = Mode.econMode;
 
     this.currentDtd_.clear();
     for (let i = 0; i < this.dtd_.size(); i++) {
@@ -829,8 +831,8 @@ export class ParserState extends ContentState implements AttributeContext, Messe
 
   private initMessage(msg: Message): void {
     if (this.inInstance()) {
-      let rniPcdata = this.syntax().delimGeneral(Syntax.dRNI);
-      rniPcdata = rniPcdata.concat(this.syntax().reservedName(Syntax.rPCDATA));
+      let rniPcdata = this.syntax().delimGeneral(Syntax.DelimGeneral.dRNI);
+      rniPcdata = rniPcdata.concat(this.syntax().reservedName(Syntax.ReservedName.rPCDATA));
       this.getOpenElementInfo(msg.openElementInfo, rniPcdata);
     }
     msg.loc = this.currentLocation();
@@ -1243,7 +1245,7 @@ export class ParserState extends ContentState implements AttributeContext, Messe
       this.handler_,
       this.eventAllocator_,
       this.options_.eventsWanted,
-      this.syntax().standardFunction(Syntax.fRE),
+      this.syntax().standardFunction(Syntax.StandardFunction.fRE),
       location
     );
   }
