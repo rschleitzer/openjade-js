@@ -114,9 +114,7 @@ export {
   ExternalDataEntity,
   SubdocEntity,
   IgnoredEntity,
-  ParserState as EntityParserState,
-  EntityDecl,
-  EntityOrigin
+  ParserState as EntityParserState
 } from './Entity';
 export { Dtd, Syntax as DtdSyntax, ParserState as DtdParserStateInterface } from './Dtd';
 export {

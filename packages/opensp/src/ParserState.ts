@@ -7,7 +7,9 @@ import { Boolean, PackedBoolean } from './Boolean';
 import { Vector } from './Vector';
 import { StringC } from './StringC';
 import { Dtd } from './Dtd';
-import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity, EntityDecl, EntityOrigin } from './Entity';
+import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity } from './Entity';
+import { EntityDecl } from './EntityDecl';
+import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
 import { Event, MessageEvent, EntityDefaultedEvent } from './Event';
@@ -130,7 +132,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
   private markup_: Markup;
   private markupLocation_: Location;
   private hadAfdrDecl_: Boolean;
-  private implydefElement_: Sd.ImplydefElement;
+  private implydefElement_: number;
   private implydefAttlist_: Boolean;
   private cancelPtr_: number;
 
@@ -187,11 +189,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.allLpd_ = new Vector<ConstPtr<Lpd>>();
     this.lpd_ = new Vector<ConstPtr<Lpd>>();
     this.activeLinkTypes_ = new Vector<StringC>();
-    this.lpdEntityRefs_ = new OwnerTable<LpdEntityRef, LpdEntityRef, LpdEntityRef, LpdEntityRef>(
+    this.lpdEntityRefs_ = new OwnerTable<LpdEntityRef, LpdEntityRef, typeof LpdEntityRef.hash, typeof LpdEntityRef.hash>(
       LpdEntityRef.hash,
-      LpdEntityRef.hash,
-      LpdEntityRef.equals,
-      LpdEntityRef.equals
+      LpdEntityRef.hash
     );
     this.dsEntity_ = new ConstPtr<Entity>();
     this.attributeLists_ = new NCVector<Owner<AttributeList>>();
@@ -513,7 +513,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     if (this.specialParseInputLevel_ > 0 && this.inputLevel_ > this.specialParseInputLevel_) {
       this.currentMode_ = Mode.rcconeMode;
-    } else if (this.currentMode_ === dsMode) {
+    } else if (this.currentMode_ === Mode.dsMode) {
       this.currentMode_ = Mode.dsiMode;
     }
 
@@ -528,7 +528,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
   startMarkedSection(loc: Location): void {
     this.markedSectionLevel_++;
     this.markedSectionStartLocation_.push_back(loc);
-    if (this.currentMode_ === dsMode) {
+    if (this.currentMode_ === Mode.dsMode) {
       this.currentMode_ = Mode.dsiMode;
     }
     if (this.markedSectionSpecialLevel_) {
@@ -751,11 +751,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
       // ... (see C++ code lines 647-672)
     }
     // Clear the refs
-    const tem: LpdEntityRefSet = new OwnerTable<LpdEntityRef, LpdEntityRef, LpdEntityRef, LpdEntityRef>(
+    const tem: LpdEntityRefSet = new OwnerTable<LpdEntityRef, LpdEntityRef, typeof LpdEntityRef.hash, typeof LpdEntityRef.hash>(
       LpdEntityRef.hash,
-      LpdEntityRef.hash,
-      LpdEntityRef.equals,
-      LpdEntityRef.equals
+      LpdEntityRef.hash
     );
     this.lpdEntityRefs_.swap(tem);
   }
@@ -1323,7 +1321,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return this.options_;
   }
 
-  implydefElement(): Sd.ImplydefElement {
+  implydefElement(): number {
     return this.implydefElement_;
   }
 
