@@ -1532,8 +1532,52 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected doProlog(): void {
-    // TODO: Port from parseProlog section in parse*.cxx
-    throw new Error('doProlog not yet implemented');
+    // Minimal implementation of doProlog() from parseDecl.cxx
+    // Full implementation processes prolog markup declarations:
+    // - DOCTYPE declarations (parseDoctypeDeclStart)
+    // - LINKTYPE declarations (parseLinktypeDeclStart)
+    // - Processing instructions (parseProcessingInstruction)
+    // - Comments (parseCommentDecl)
+    // - Whitespace (extendS)
+
+    // For now: skip prolog processing and move directly to instance
+    // This assumes no DTD is explicitly declared (will be implied)
+
+    if (this.cancelled()) {
+      this.allDone();
+      return;
+    }
+
+    // Check if we have input
+    const input = this.currentInput();
+    if (!input) {
+      this.allDone();
+      return;
+    }
+
+    // TODO: Implement full prolog token processing loop
+    // For now, just transition to instance start
+    // This will fail on real documents but allows the structure to work
+
+    this.endProlog();
+  }
+
+  private endProlog(): void {
+    // Simplified endProlog() from parseDecl.cxx
+    // Full version checks DTD, activates link types, compiles modes, etc.
+
+    // TODO: Check DTD validity
+    // TODO: Activate link types
+    // TODO: Check ID references
+
+    // Compile instance modes (needed for content parsing)
+    this.compileInstanceModes();
+
+    // Queue end prolog event
+    // TODO: eventHandler().endProlog(...)
+
+    // Move to instance start phase
+    this.setPhase(Phase.instanceStartPhase);
   }
 
   protected doDeclSubset(): void {
@@ -1542,13 +1586,76 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected doInstanceStart(): void {
-    // TODO: Port from parseInstanceStart section in parse*.cxx
-    throw new Error('doInstanceStart not yet implemented');
+    // Minimal implementation of doInstanceStart() from parseInstance.cxx
+    // Full version checks for valid DTD, handles omitted tags, queues events
+
+    if (this.cancelled()) {
+      this.allDone();
+      return;
+    }
+
+    // Compile instance modes if not already done
+    this.compileInstanceModes();
+
+    // Move to content phase
+    this.setPhase(Phase.contentPhase);
+
+    // TODO: Handle omitted start tags (tryImplyTag)
+    // TODO: Process initial token (getToken, ungetToken)
+    // For now, just move to content phase
   }
 
   protected doContent(): void {
-    // TODO: Port from parseContent section in parse*.cxx
-    throw new Error('doContent not yet implemented');
+    // Minimal implementation of doContent() from parseInstance.cxx
+    // Full version is a complex token-processing loop handling:
+    // - Entity references (tokenEro*)
+    // - Character references (tokenCro*, tokenHcro*)
+    // - Start tags (tokenStago*)
+    // - End tags (tokenEtago*)
+    // - Processing instructions (tokenPio)
+    // - Comments (tokenMdo*)
+    // - Marked sections (tokenMdoDso, tokenMscMdc)
+    // - Character data (tokenChar, tokenRe, tokenRs, tokenS)
+    // - Entity boundaries (tokenEe)
+
+    if (this.cancelled()) {
+      this.allDone();
+      return;
+    }
+
+    // For now: immediately end the instance
+    // A real implementation would loop calling getToken(currentMode())
+    // and dispatching on token types
+
+    // TODO: Implement full content parsing loop
+    // TODO: Parse start tags (parseStartTag)
+    // TODO: Parse end tags (parseEndTag)
+    // TODO: Parse character data (acceptPcdata)
+    // TODO: Parse entity references (parseEntityReference)
+    // TODO: Parse processing instructions (parseProcessingInstruction)
+
+    // Check if at document entity end
+    if (this.inputLevel() === 1) {
+      this.endInstance();
+      return;
+    }
+
+    // Otherwise continue (in a real implementation, this would loop)
+    this.allDone();
+  }
+
+  private endInstance(): void {
+    // Simplified endInstance() from parseInstance.cxx
+
+    // TODO: endAllElements()
+    // TODO: Check unclosed marked sections
+    // TODO: checkIdrefs()
+
+    // Pop the document entity from the input stack
+    this.popInputStack();
+
+    // Done parsing
+    this.allDone();
   }
 
   protected compilePrologModes(): void {
