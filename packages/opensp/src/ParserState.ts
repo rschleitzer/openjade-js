@@ -2087,13 +2087,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected parseProcessingInstruction(): boolean {
-    // Simplified port of parseProcessingInstruction from parseCommon.cxx
-    // Full implementation:
-    // - Collects PI content into buffer
-    // - Checks PI length limits
-    // - Validates PI name format
-    // - Queues PI event
-
+    // Port of parseProcessingInstruction from parseCommon.cxx (lines 17-61)
     const input = this.currentInput();
     if (!input) return false;
 
@@ -2101,12 +2095,60 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const location = this.currentLocation();
     const buf = new String<Char>();
 
-    // TODO: Implement full PI parsing with token loop
-    // For now, just return success to allow parsing to continue
-    // Full version reads tokens until tokenPic, checking length and name validity
+    for (;;) {
+      const token = this.getToken(Mode.piMode);
 
-    // TODO: noteMarkup()
-    // TODO: eventHandler().pi(new ImmediatePiEvent(buf, location))
+      if (token === TokenEnum.tokenPic) {
+        break;
+      }
+
+      switch (token) {
+        case TokenEnum.tokenEe:
+          this.message(ParserMessages.processingInstructionEntityEnd);
+          return false;
+
+        case TokenEnum.tokenUnrecognized:
+          this.reportNonSgmlCharacter();
+          // fall through
+
+        case TokenEnum.tokenChar:
+          const start = input.currentTokenStart();
+          if (start && start.length > 0) {
+            buf.append([start[0]], 1);
+          }
+
+          if (buf.size() / 2 > this.syntax().pilen()) {
+            this.message(ParserMessages.processingInstructionLength,
+              new NumberMessageArg(this.syntax().pilen()));
+            this.message(ParserMessages.processingInstructionClose);
+            return false;
+          }
+          break;
+      }
+    }
+
+    if (buf.size() > this.syntax().pilen()) {
+      this.message(ParserMessages.processingInstructionLength,
+        new NumberMessageArg(this.syntax().pilen()));
+    }
+
+    if (this.options().warnPiMissingName) {
+      let i = 0;
+      if (buf.size() > 0 && this.syntax().isNameStartCharacter(buf.data()[0])) {
+        for (i = 1; i < buf.size(); i++) {
+          if (!this.syntax().isNameCharacter(buf.data()[i])) {
+            break;
+          }
+        }
+      }
+      if (i === 0 || (i < buf.size() && !this.syntax().isS(buf.data()[i]))) {
+        this.message(ParserMessages.piMissingName);
+      }
+    }
+
+    this.noteMarkup();
+    // TODO: Implement ImmediatePiEvent and eventHandler
+    // this.eventHandler().pi(new ImmediatePiEvent(buf, location));
 
     return true;
   }

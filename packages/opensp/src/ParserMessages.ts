@@ -37,3 +37,7 @@ export const noCurrentRank = new MessageType1(MessageType.Severity.error, null, 
 export const startTagMissingName = new MessageType0(MessageType.Severity.error, null, -1, 'missing name in start tag');
 export const endTagMissingName = new MessageType0(MessageType.Severity.error, null, -1, 'missing name in end tag');
 export const startTagGroupNet = new MessageType0(MessageType.Severity.error, null, -1, 'NET delimiter in group start tag');
+export const processingInstructionEntityEnd = new MessageType0(MessageType.Severity.error, null, -1, 'entity end in processing instruction');
+export const processingInstructionLength = new MessageType1(MessageType.Severity.error, null, -1, 'processing instruction length exceeds PILEN limit (%1)');
+export const processingInstructionClose = new MessageType0(MessageType.Severity.error, null, -1, 'missing processing instruction close');
+export const piMissingName = new MessageType0(MessageType.Severity.warning, null, -1, 'processing instruction does not start with valid name');
