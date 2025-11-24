@@ -196,6 +196,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.dsEntity_ = new ConstPtr<Entity>();
     this.attributeLists_ = new NCVector<Owner<AttributeList>>();
     this.nameBuffer_ = new StringC();
+    this.activeLinkTypes_ = new Vector<StringC>();
     this.keptMessages_ = new IQueue<MessageEvent>();
     this.markedSectionStartLocation_ = new Vector<Location>();
     this.recognizers_ = new Array(nModes).fill(null);
