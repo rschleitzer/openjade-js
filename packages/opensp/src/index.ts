@@ -261,6 +261,7 @@ export {
 } from './MessageArg';
 export { ErrnoMessageArg } from './ErrnoMessageArg';
 export { SearchResultMessageArg } from './SearchResultMessageArg';
+export { MessageFormatter } from './MessageFormatter';
 export {
   MessageModule,
   libModule,

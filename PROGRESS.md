@@ -248,6 +248,12 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - StrOutputCharStream for string accumulation
   - RecordOutputCharStream for record-based output with newline handling
   - Escaper support for handling unencodable characters
+- ✅ **MessageFormatter.ts** - Message formatting with argument interpolation (200 lines)
+  - MessageFormatter abstract base with getMessageText()
+  - formatMessage() with %1-%9 placeholder substitution
+  - formatOpenElements() for element stack formatting
+  - Builder inner class implementing MessageBuilder
+  - ErrnoMessageArg and SearchResultMessageArg handling
 
 ## Next Steps (Priority Order)
 
@@ -329,8 +335,8 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~15,151 lines (79 modules out of 120 headers)
-- **Progress: ~30%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~15,351 lines (80 modules out of 120 headers)
+- **Progress: ~31%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
