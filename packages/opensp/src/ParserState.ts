@@ -8,7 +8,7 @@ import { Vector } from './Vector';
 import { StringC } from './StringC';
 import { String } from './StringOf';
 import { Dtd } from './Dtd';
-import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity } from './Entity';
+import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity, IgnoredEntity } from './Entity';
 import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
@@ -2546,24 +2546,146 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected parseEntityReference(
     isParameter: boolean,
     ignoreLevel: number
-  ): { valid: boolean; entity?: ConstPtr<any>; origin?: Ptr<any> } {
+  ): { valid: boolean; entity?: ConstPtr<Entity>; origin?: Ptr<EntityOrigin> } {
     // Port of parseEntityReference from parseCommon.cxx (lines 428-540)
-    // TODO: Requires Entity class hierarchy
-    // TODO: Requires EntityOrigin class
-    // TODO: Requires Markup class
-    // TODO: Requires entity lookup methods
-    // TODO: Requires parseEntityReferenceNameGroup method
-    // This is a complex ~110 line method that handles:
-    // - Name extraction and validation
-    // - Entity lookup in catalog
-    // - Ignored entity handling (ignoreLevel)
-    // - Parameter vs general entity distinction
-    // - Undefined entity handling (with implydef)
-    // - Markup tracking
-    // - Origin tracking for error reporting
+    const input = this.currentInput();
+    if (!input) return { valid: false };
 
-    // Placeholder return - needs full implementation
-    return { valid: false };
+    const startLocation = new Location(input.currentLocation());
+    let markupPtr: Owner<Markup> | null = null;
+
+    if (this.wantMarkup()) {
+      markupPtr = new Owner(new Markup());
+      markupPtr.pointer()!.addDelim(isParameter ? Syntax.DelimGeneral.dPERO : Syntax.DelimGeneral.dERO);
+    }
+
+    if (ignoreLevel === 1) {
+      const savedMarkup = new Markup();
+      const savedCurrentMarkup = this.currentMarkup();
+      if (savedCurrentMarkup) {
+        savedCurrentMarkup.swap(savedMarkup);
+      }
+      const savedMarkupLocation = new Location(this.markupLocation());
+      this.startMarkup(markupPtr !== null, startLocation);
+      if (markupPtr) {
+        markupPtr.pointer()!.addDelim(Syntax.DelimGeneral.dGRPO);
+        markupPtr.pointer()!.swap(this.currentMarkup()!);
+      }
+
+      const ignoreResult = { value: false };
+      if (!this.parseEntityReferenceNameGroup(ignoreResult)) {
+        return { valid: false };
+      }
+
+      if (markupPtr) {
+        this.currentMarkup()!.swap(markupPtr.pointer()!);
+      }
+      this.startMarkup(savedCurrentMarkup !== null, savedMarkupLocation);
+      if (savedCurrentMarkup) {
+        savedMarkup.swap(savedCurrentMarkup);
+      }
+      if (!ignoreResult.value) {
+        ignoreLevel = 0;
+      }
+
+      input.startToken();
+      const c = input.tokenChar(this);
+      if (!this.syntax().isNameStartCharacter(c)) {
+        this.message(ParserMessages.entityReferenceMissingName);
+        return { valid: false };
+      }
+    }
+
+    input.discardInitial();
+    if (isParameter) {
+      this.extendNameToken(this.syntax().penamelen(), ParserMessages.parameterEntityNameLength);
+    } else {
+      this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+    }
+
+    const name = this.nameBuffer();
+    this.getCurrentToken(this.syntax().entitySubstTable(), name);
+
+    let entity: ConstPtr<Entity>;
+    if (ignoreLevel) {
+      entity = new ConstPtr(new IgnoredEntity(
+        name,
+        isParameter ? EntityDecl.DeclType.parameterEntity : EntityDecl.DeclType.generalEntity
+      ));
+    } else {
+      entity = this.lookupEntity(isParameter, name, startLocation, true);
+      if (entity.isNull()) {
+        if (this.haveApplicableDtd()) {
+          if (!isParameter) {
+            entity = this.createUndefinedEntity(name, startLocation);
+            if (!this.sd().implydefEntity()) {
+              this.message(ParserMessages.entityUndefined, new StringMessageArg(name));
+            }
+          } else {
+            this.message(ParserMessages.parameterEntityUndefined, new StringMessageArg(name));
+          }
+        } else {
+          this.message(ParserMessages.entityApplicableDtd);
+        }
+      } else if (entity.pointer() && entity.pointer()!.defaulted() && this.options().warnDefaultEntityReference) {
+        this.message(ParserMessages.defaultEntityReference, new StringMessageArg(name));
+      }
+    }
+
+    let origin: Ptr<EntityOrigin> | null = null;
+
+    if (markupPtr) {
+      markupPtr.pointer()!.addName(input);
+      const refToken = this.getToken(Mode.refMode);
+      switch (refToken) {
+        case TokenEnum.tokenRefc:
+          markupPtr.pointer()!.addDelim(Syntax.DelimGeneral.dREFC);
+          break;
+        case TokenEnum.tokenRe:
+          markupPtr.pointer()!.addRefEndRe();
+          if (this.options().warnRefc) {
+            this.message(ParserMessages.refc);
+          }
+          break;
+        default:
+          if (this.options().warnRefc) {
+            this.message(ParserMessages.refc);
+          }
+          break;
+      }
+    } else if (this.options().warnRefc) {
+      if (this.getToken(Mode.refMode) !== TokenEnum.tokenRefc) {
+        this.message(ParserMessages.refc);
+      }
+    } else {
+      this.getToken(Mode.refMode);
+    }
+
+    if (!entity.isNull()) {
+      const refLength = this.currentLocation().index() + input.currentTokenLength() - startLocation.index();
+      const markup = markupPtr ? markupPtr.extract()! : null;
+      const markupOwner = new Owner<Markup>(markup);
+
+      const entityOrigin = EntityOrigin.makeEntity(
+        this.internalAllocator(),
+        entity,
+        startLocation,
+        refLength,
+        markupOwner
+      );
+      origin = new Ptr(entityOrigin);
+    }
+
+    return { valid: true, entity, origin: origin || undefined };
+  }
+
+  protected parseEntityReferenceNameGroup(ignore: { value: boolean }): boolean {
+    // Port of parseEntityReferenceNameGroup from parseCommon.cxx
+    // TODO: Implement name group parsing for entity references
+    // This handles patterns like &(name1|name2|name3)
+    // For now, return true to allow simple entity references to work
+    ignore.value = false;
+    return true;
   }
 
   protected parsePcdata(): void {
@@ -3195,17 +3317,24 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Handles short reference substitution
     // Short references are delimiter strings that map to entities
 
-    // TODO: Get entity from current element's short reference map
-    // const entity = currentElement().map().entity(index);
-
-    // if (!entity.isNull()) {
-    //   // Create markup and origin
-    //   if (eventsWanted().wantInstanceMarkup()) {
+    // TODO: Requires currentElement().map() - short reference map lookup
+    // For now, comment out the entity lookup since currentElement().map() isn't available
+    // const entity = this.currentElement().map()?.entity(index);
+    // if (entity && !entity.isNull()) {
+    //   let markupOwner: Owner<Markup> | null = null;
+    //   if (this.eventsWanted().wantInstanceMarkup()) {
     //     const markup = new Markup();
-    //     markup.addShortref(currentInput());
+    //     markup.addShortref(this.currentInput()!);
+    //     markupOwner = new Owner(markup);
     //   }
-    //   const origin = EntityOrigin.make(...);
-    //   entity.contentReference(*this, origin);
+    //   const origin = new Ptr(EntityOrigin.makeEntity(
+    //     this.internalAllocator(),
+    //     entity,
+    //     this.currentLocation(),
+    //     this.currentInput()!.currentTokenLength(),
+    //     markupOwner || new Owner<Markup>()
+    //   ));
+    //   entity.pointer()!.contentReference(this, origin);
     //   return;
     // }
 
@@ -3213,22 +3342,57 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const input = this.currentInput();
     if (!input) return;
 
-    const length = input.currentTokenLength();
-    const s = input.currentTokenStart();
+    let length = input.currentTokenLength();
+    let s = input.currentTokenStart();
     let i = 0;
 
-    // TODO: Handle econMode/econnetMode whitespace
-    // TODO: acceptPcdata(location)
+    if (this.currentMode() === Mode.econMode || this.currentMode() === Mode.econnetMode) {
+      // Skip leading whitespace in element content mode
+      for (i = 0; i < length && this.syntax().isS(s[i]); i++) {
+        // continue
+      }
+      if (i > 0 && this.eventsWanted().wantInstanceMarkup()) {
+        // TODO: Fire SSepEvent
+        // this.eventHandler().sSep(new SSepEvent(s, i, this.currentLocation(), 0));
+      }
+    }
 
-    // If sd().keeprsre(), fire data event immediately
-    // Otherwise, process character by character handling RS/RE
+    if (i < length) {
+      let location = new Location(this.currentLocation());
+      location.addOffset(i);
+      s = s.slice(i);
+      length -= i;
 
-    // TODO: Full implementation requires:
-    // - currentElement() with map() method
-    // - Entity class and contentReference method
-    // - EntityOrigin class
-    // - keeprsre() check
-    // - Mode detection (econMode, econnetMode)
+      this.acceptPcdata(location);
+
+      if (this.sd().keeprsre()) {
+        this.noteData();
+        // TODO: Fire ImmediateDataEvent
+        // this.eventHandler().data(new ImmediateDataEvent(
+        //   Event.characterData, s, length, location, 0
+        // ));
+        return;
+      }
+
+      // Process character by character handling RS/RE
+      for (; length > 0; location.addOffset(1), length--, s = s.slice(1)) {
+        if (s[0] === this.syntax().standardFunction(Syntax.StandardFunction.fRS)) {
+          this.noteRs();
+          if (this.eventsWanted().wantInstanceMarkup()) {
+            // TODO: Fire IgnoredRsEvent
+            // this.eventHandler().ignoredRs(new IgnoredRsEvent(s[0], location));
+          }
+        } else if (s[0] === this.syntax().standardFunction(Syntax.StandardFunction.fRE)) {
+          this.queueRe(location);
+        } else {
+          this.noteData();
+          // TODO: Fire ImmediateDataEvent
+          // this.eventHandler().data(new ImmediateDataEvent(
+          //   Event.characterData, s, 1, location, 0
+          // ));
+        }
+      }
+    }
   }
 
   // ========== Attribute Parsing Methods (parseAttribute.cxx) ==========
