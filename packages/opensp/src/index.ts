@@ -318,3 +318,5 @@ export { OutputState, OutputStateLevel } from './OutputState';
 export { Priority, PriorityType } from './Priority';
 export { Trie, BlankTrie } from './Trie';
 export { Recognizer } from './Recognizer';
+export { Undo, UndoTransition, UndoStartTag, UndoEndTag } from './Undo';
+export { ParserState, Phase } from './ParserState';
