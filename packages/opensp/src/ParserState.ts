@@ -1837,4 +1837,29 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     return true;
   }
+
+  protected parseProcessingInstruction(): boolean {
+    // Simplified port of parseProcessingInstruction from parseCommon.cxx
+    // Full implementation:
+    // - Collects PI content into buffer
+    // - Checks PI length limits
+    // - Validates PI name format
+    // - Queues PI event
+
+    const input = this.currentInput();
+    if (!input) return false;
+
+    input.startToken();
+    const location = this.currentLocation();
+    const buf = new String<Char>();
+
+    // TODO: Implement full PI parsing with token loop
+    // For now, just return success to allow parsing to continue
+    // Full version reads tokens until tokenPic, checking length and name validity
+
+    // TODO: noteMarkup()
+    // TODO: eventHandler().pi(new ImmediatePiEvent(buf, location))
+
+    return true;
+  }
 }
