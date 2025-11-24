@@ -17,6 +17,7 @@ import { AttributeList } from './Attribute';
 import { Allocator } from './Allocator';
 import * as ParserMessages from './ParserMessages';
 import { StringMessageArg, NumberMessageArg } from './MessageArg';
+import { PiEntityEvent, CdataEntityEvent, SdataEntityEvent, ExternalDataEntityEvent, SubdocEntityEvent } from './Event';
 
 // Forward declarations
 export class ParserState { }
@@ -197,8 +198,10 @@ export class PiEntity extends InternalEntity {
   ): void {
     // Port of PiEntity::normalReference from Entity.cxx (lines 307-315)
     (parserState as any).noteMarkup();
-    // TODO: Fire PiEntityEvent
-    // (parserState as any).eventHandler().pi(new PiEntityEvent(this, origin.pointer()));
+    if (generateEvent) {
+      const event = new PiEntityEvent(this, new ConstPtr(origin.pointer()));
+      (parserState as any).eventHandler().pi(event);
+    }
   }
 
   declReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
@@ -255,8 +258,10 @@ export class InternalCdataEntity extends InternalDataEntity {
     Entity.checkEntlvl(parserState);
     if (this.string().size() > 0) {
       (parserState as any).noteData();
-      // TODO: Fire CdataEntityEvent
-      // (parserState as any).eventHandler().data(new CdataEntityEvent(this, origin.pointer()));
+      if (generateEvent) {
+        const event = new CdataEntityEvent(this, new ConstPtr(origin.pointer()));
+        (parserState as any).eventHandler().sdataEntity(event);
+      }
     }
   }
 
@@ -607,10 +612,8 @@ export class ExternalDataEntity extends ExternalNonTextEntity {
     this.checkRef(parserState);
     Entity.checkEntlvl(parserState);
     (parserState as any).noteData();
-    // TODO: Fire ExternalDataEntityEvent
-    // (parserState as any).eventHandler().externalDataEntity(
-    //   new ExternalDataEntityEvent(this, origin.pointer())
-    // );
+    const event = new ExternalDataEntityEvent(this, new ConstPtr(origin.pointer()));
+    (parserState as any).eventHandler().externalDataEntity(event);
   }
 
   setNotation(notation: ConstPtr<Notation>, attributes: AttributeList): void {
@@ -634,7 +637,12 @@ export class SubdocEntity extends ExternalNonTextEntity {
   }
 
   contentReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // TODO: Implement subdocument content reference
+    // Port of SubdocEntity::contentReference from Entity.cxx (lines 526-533)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    (parserState as any).noteData();
+    const event = new SubdocEntityEvent(this, new ConstPtr(origin.pointer()));
+    (parserState as any).eventHandler().subdocEntity(event);
   }
 }
 

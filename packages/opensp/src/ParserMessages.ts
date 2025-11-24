@@ -110,3 +110,5 @@ export const recursiveEntityReference = new MessageType1(MessageType.Severity.er
 export const entityRefNone = new MessageType0(MessageType.Severity.error, null, -1, 'entity reference not allowed (SGML declaration: ENTITYREF NONE)');
 export const entityRefInternal = new MessageType0(MessageType.Severity.error, null, -1, 'external entity reference not allowed (SGML declaration: ENTITYREF INTERNAL)');
 export const internalDataEntityReference = new MessageType0(MessageType.Severity.error, null, -1, 'a reference to a CDATA or SDATA entity is allowed only in a context where a data character could occur');
+export const instanceStartOmittag = new MessageType0(MessageType.Severity.error, null, -1, 'document instance must start with document element');
+export const duplicateAttributeSpec = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate specification of attribute %1');

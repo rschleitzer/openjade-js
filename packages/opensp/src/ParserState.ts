@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -1624,8 +1624,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
           // }
           // this.queueElementEvents(eventList);
         } else {
-          // TODO: Add instanceStartOmittag message
-          // this.message(ParserMessages.instanceStartOmittag);
+          this.message(ParserMessages.instanceStartOmittag);
         }
         break;
     }
@@ -2194,8 +2193,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     this.noteMarkup();
-    // TODO: Implement ImmediatePiEvent and eventHandler
-    // this.eventHandler().pi(new ImmediatePiEvent(buf, location));
+    // buf is already StringC (String<Char>)
+    this.eventHandler().pi(new ImmediatePiEvent(buf, location));
 
     return true;
   }
@@ -2725,16 +2724,21 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected parsePcdata(): void {
     // Port of parsePcdata from parseInstance.cxx (lines 397-409)
     this.extendData();
-    // TODO: acceptPcdata(currentLocation())
+    this.acceptPcdata(this.currentLocation());
     this.noteData();
-    // TODO: Fire ImmediateDataEvent with character data
-    // eventHandler().data(new ImmediateDataEvent(
-    //   Event.characterData,
-    //   currentInput().currentTokenStart(),
-    //   currentInput().currentTokenLength(),
-    //   currentLocation(),
-    //   0
-    // ));
+    const input = this.currentInput();
+    if (input) {
+      const data = new Uint32Array(input.currentTokenStart());
+      this.eventHandler().data(
+        new ImmediateDataEvent(
+          Event.Type.characterData,
+          data,
+          input.currentTokenLength(),
+          this.currentLocation(),
+          false
+        )
+      );
+    }
   }
 
   protected parseStartTag(): void {
@@ -3197,7 +3201,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
           if (markup) {
             markup.addDelim(Syntax.DelimGeneral.dMDC);
           }
-          // TODO: eventHandler().commentDecl(new CommentDeclEvent(...))
+          // Fire CommentDeclEvent
+          if (markup) {
+            this.eventHandler().commentDecl(
+              new CommentDeclEvent(this.markupLocation(), markup)
+            );
+          }
           return true;
 
         case TokenEnum.tokenEe:
@@ -3386,8 +3395,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
         // continue
       }
       if (i > 0 && this.eventsWanted().wantInstanceMarkup()) {
-        // TODO: Fire SSepEvent
-        // this.eventHandler().sSep(new SSepEvent(s, i, this.currentLocation(), 0));
+        const data = new Uint32Array(s.slice(0, i));
+        this.eventHandler().sSep(new SSepEvent(data, i, this.currentLocation(), false));
       }
     }
 
@@ -3401,10 +3410,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       if (this.sd().keeprsre()) {
         this.noteData();
-        // TODO: Fire ImmediateDataEvent
-        // this.eventHandler().data(new ImmediateDataEvent(
-        //   Event.characterData, s, length, location, 0
-        // ));
+        const data = new Uint32Array(s);
+        this.eventHandler().data(
+          new ImmediateDataEvent(Event.Type.characterData, data, length, location, false)
+        );
         return;
       }
 
@@ -3413,17 +3422,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
         if (s[0] === this.syntax().standardFunction(Syntax.StandardFunction.fRS)) {
           this.noteRs();
           if (this.eventsWanted().wantInstanceMarkup()) {
-            // TODO: Fire IgnoredRsEvent
-            // this.eventHandler().ignoredRs(new IgnoredRsEvent(s[0], location));
+            this.eventHandler().ignoredRs(new IgnoredRsEvent(s[0], location));
           }
         } else if (s[0] === this.syntax().standardFunction(Syntax.StandardFunction.fRE)) {
           this.queueRe(location);
         } else {
           this.noteData();
-          // TODO: Fire ImmediateDataEvent
-          // this.eventHandler().data(new ImmediateDataEvent(
-          //   Event.characterData, s, 1, location, 0
-          // ));
+          const charData = new Uint32Array([s[0]]);
+          this.eventHandler().data(
+            new ImmediateDataEvent(Event.Type.characterData, charData, 1, location, false)
+          );
         }
       }
     }

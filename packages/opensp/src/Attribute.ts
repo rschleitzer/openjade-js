@@ -13,6 +13,7 @@ import { Text } from './Text';
 import { Ptr, ConstPtr } from './Ptr';
 import { Message, Messenger } from './Message';
 import { StringMessageArg } from './MessageArg';
+import * as ParserMessages from './ParserMessages';
 import { Location } from './Location';
 import { Syntax } from './Syntax';
 import { Notation } from './Notation';
@@ -1259,7 +1260,7 @@ export class AttributeList {
   setSpec(index: number, context: AttributeContext): void {
     if (this.vec_.get(index).specified()) {
       context.message(
-        {} as any, // TODO: ParserMessages.duplicateAttributeSpec
+        ParserMessages.duplicateAttributeSpec,
         new StringMessageArg(this.def(index).name())
       );
     } else {
