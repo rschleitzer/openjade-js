@@ -1695,12 +1695,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenEtagoTagc:
           // Empty end tag
-          // TODO: parseEmptyEndTag()
+          this.parseEmptyEndTag();
           break;
 
         case TokenEnum.tokenEtagoGrpo:
           // Group end tag
-          // TODO: parseGroupEndTag()
+          this.parseGroupEndTag();
           break;
 
         case TokenEnum.tokenStagoNameStart:
@@ -1710,12 +1710,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenStagoTagc:
           // Empty start tag
-          // TODO: parseEmptyStartTag()
+          this.parseEmptyStartTag();
           break;
 
         case TokenEnum.tokenStagoGrpo:
           // Group start tag
-          // TODO: parseGroupStartTag()
+          this.parseGroupStartTag();
           break;
 
         case TokenEnum.tokenMdoNameStart:
@@ -1753,7 +1753,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenNet:
           // Null end tag
-          // TODO: parseNullEndTag()
+          this.parseNullEndTag();
           break;
 
         case TokenEnum.tokenPio:
