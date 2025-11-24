@@ -2255,16 +2255,47 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const name = new String<Char>();
 
     this.getCurrentToken(this.syntax().generalSubstTable(), name);
-    // TODO: syntax().lookupFunctionChar(name, &c)
-    // This requires:
-    // - Syntax.lookupFunctionChar method
 
-    // TODO: Handle refMode tokens (tokenRefc, tokenRe)
-    // TODO: NamedCharRef class for tracking reference type
+    const cResult = { value: 0 };
+    if (!this.syntax().lookupFunctionChar(name, cResult)) {
+      this.message(ParserMessages.functionName, new StringMessageArg(name));
+      valid = false;
+    } else {
+      c = cResult.value;
+      valid = true;
+      if (this.wantMarkup()) {
+        // Get the original name for markup tracking
+        const originalName = new String<Char>();
+        this.getCurrentToken(originalName);
+      }
+    }
+
+    // Handle REFC delimiter
+    const token = this.getToken(Mode.refMode);
+    let refEndType: number;
+    switch (token) {
+      case TokenEnum.tokenRefc:
+        refEndType = 0; // NamedCharRef.endRefc
+        break;
+      case TokenEnum.tokenRe:
+        refEndType = 1; // NamedCharRef.endRE
+        if (this.options().warnRefc) {
+          this.message(ParserMessages.refc);
+        }
+        break;
+      default:
+        refEndType = 2; // NamedCharRef.endOmitted
+        if (this.options().warnRefc) {
+          this.message(ParserMessages.refc);
+        }
+        break;
+    }
+
+    input.startToken();
     // TODO: input.pushCharRef(c, NamedCharRef(...))
+    // This requires NamedCharRef class and InputSource.pushCharRef method
 
-    // Placeholder - needs full implementation
-    return false;
+    return true;
   }
 
   protected translateNumericCharRef(ch: Char): { valid: boolean; char?: Char; isSgmlChar?: boolean } {
@@ -2672,8 +2703,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // const attributes = this.allocAttributeList(e.attributeDef(), 0);
     // attributes.finish(this);
 
-    // TODO: Implement startMarkup
-    const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
     if (markup) {
       markup.addDelim(Syntax.DelimGeneral.dSTAGO);
       markup.addDelim(Syntax.DelimGeneral.dTAGC);
@@ -2708,8 +2738,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (this.tagLevel() === 0) {
       this.message(ParserMessages.emptyEndTagNoOpenElements);
     } else {
-      // TODO: Implement startMarkup
-      const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+      const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
       if (markup) {
         markup.addDelim(Syntax.DelimGeneral.dETAGO);
         markup.addDelim(Syntax.DelimGeneral.dTAGC);
@@ -2756,8 +2785,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         new StringMessageArg(this.currentElement().type().name()));
     }
 
-    // TODO: Implement startMarkup
-    const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
     if (markup) {
       markup.addDelim(Syntax.DelimGeneral.dNET);
     }

@@ -80,3 +80,5 @@ export const commentDeclarationCharacter = new MessageType1(MessageType.Severity
 export const commentDeclS = new MessageType0(MessageType.Severity.warning, null, -1, 'S separator in comment declaration');
 export const commentDeclMultiple = new MessageType0(MessageType.Severity.warning, null, -1, 'multiple comments in comment declaration');
 export const declarationLevel = new MessageType0(MessageType.Severity.error, null, -1, 'an entity end in a parameter separator must terminate an entity referenced in the same declaration');
+export const functionName = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a function name');
+export const refc = new MessageType0(MessageType.Severity.warning, null, -1, 'reference not terminated by REFC delimiter');
