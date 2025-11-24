@@ -159,17 +159,47 @@ Total: 18 files, ~1,400 lines of ported TypeScript code
   - IgnoredEntity for undefined entities
 - ✅ **Dtd.ts** - Document Type Definition system (353 lines)
   - Dtd class managing entities, element types, notations, short reference maps
-  - ElementType, RankStem, ShortReferenceMap stub classes
   - General and parameter entity tables
   - Element type and notation management
   - Short reference indexing
+- ✅ **ElementType.ts** - Element type definitions (316 lines)
+  - ElementDefinition with content models (modelGroup, any, cdata, rcdata, empty)
+  - ElementType with attributes, short reference maps, rank stems
+  - RankStem for ranked elements
+  - ShortReferenceMap stub
+  - Inclusions/exclusions, omitted tag minimization
+- ✅ **ContentToken.ts** - Content model token hierarchy (562 lines - partial)
+  - ContentToken abstract base with occurrence indicators (?, +, *)
+  - ModelGroup hierarchy (AndModelGroup, OrModelGroup, SeqModelGroup) with connectors (&, |, ,)
+  - LeafContentToken hierarchy (PcdataToken, InitialPseudoToken, ElementToken) - partial
+  - DataTagGroup and DataTagElementToken for data tag patterns
+  - CompiledModelGroup for DFA-based content model compilation
+  - Transition tracking with FirstSet/LastSet analysis
+  - GroupInfo for content model analysis state
+  - **Note**: Missing AndState, MatchState, and complete LeafContentToken implementation
+- ✅ **ShortReferenceMap.ts** - Short reference map management (91 lines)
+  - Named short reference maps with entity mapping
+  - Lookup by index with name/entity resolution
+  - Definition location tracking
+  - Usage tracking for validation
+- ✅ **ErrnoMessageArg.ts** - Error number message argument (25 lines)
+  - OtherMessageArg subclass for errno values
+  - System error number wrapping for message formatting
+- ✅ **SearchResultMessageArg.ts** - Search result message argument (51 lines)
+  - OtherMessageArg subclass for file search results
+  - Tracks multiple filename/errno pairs for failed searches
+  - Used for entity catalog search error reporting
+- ✅ **InternalInputSource.ts** - Internal input source implementation (64 lines)
+  - InputSource subclass for in-memory string content
+  - Character reference handling with buffer management
+  - Rewind support for entity expansion
 
 ## Next Steps (Priority Order)
 
 ### Phase 11 Continuation: Parser Core Components
-1. Port Dtd.h/cxx → Dtd.ts (document type definition - ~800 lines)
-2. Port ElementType.h/cxx → ElementType.ts (element type definitions)
-3. Port ContentToken.h/cxx → ContentToken.ts (content model tokens)
+1. Port Group.h/cxx → Group.ts (group token processing)
+2. Port Recognizer.h/cxx → Recognizer.ts (content model recognizer)
+3. Port NumericCharRefOrigin.h/cxx → NumericCharRefOrigin.ts (numeric character references)
 
 ### Phase 12: SGML Tokenization
 7. Port Syntax.h/cxx → Syntax.ts
@@ -244,9 +274,9 @@ Still needed:
 ## Lines of Code
 
 - C++ (OpenSP core): ~50,000 lines
-- TypeScript (ported so far): ~11,456 lines (68 modules out of 120 headers)
-- **Progress: ~23%** (by LOC, foundational infrastructure complete, parser core in progress)
+- TypeScript (ported so far): ~12,635 lines (74 modules out of 120 headers)
+- **Progress: ~25%** (by LOC, foundational infrastructure complete, parser core in progress)
 
 ---
 
-Last updated: 2025-11-23
+Last updated: 2025-11-24

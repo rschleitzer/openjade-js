@@ -115,13 +115,34 @@ export {
   IgnoredEntity,
   ParserState
 } from './Entity';
+export { Dtd, Syntax as DtdSyntax, ParserState as DtdParserState } from './Dtd';
 export {
-  Dtd,
-  ElementType,
+  ElementType as ElementTypeFromElementType,
+  ElementDefinition,
   RankStem,
-  ShortReferenceMap,
-  Syntax as DtdSyntax
-} from './Dtd';
+  CompiledModelGroup as CompiledModelGroupFromElementType
+} from './ElementType';
+export { ShortReferenceMap } from './ShortReferenceMap';
+export {
+  ContentToken,
+  ModelGroup,
+  AndModelGroup,
+  OrModelGroup,
+  SeqModelGroup,
+  LeafContentToken,
+  PcdataToken,
+  InitialPseudoToken,
+  ElementToken,
+  DataTagGroup,
+  DataTagElementToken,
+  CompiledModelGroup,
+  Transition,
+  FirstSet,
+  LastSet,
+  ContentModelAmbiguity,
+  GroupInfo,
+  ElementType as ElementTypeFromContentToken
+} from './ContentToken';
 
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
@@ -142,6 +163,7 @@ export { RangeMap, RangeMapRange, RangeMapIter } from './RangeMap';
 // I/O streams
 export { OutputByteStream, StrOutputByteStream, FileOutputByteStream } from './OutputByteStream';
 export { InputSource } from './InputSource';
+export { InternalInputSource } from './InternalInputSource';
 export { MarkupScan } from './MarkupScan';
 
 // Coding systems
@@ -158,6 +180,8 @@ export {
   OtherMessageArg,
   StringVectorMessageArg
 } from './MessageArg';
+export { ErrnoMessageArg } from './ErrnoMessageArg';
+export { SearchResultMessageArg } from './SearchResultMessageArg';
 export {
   MessageModule,
   libModule,

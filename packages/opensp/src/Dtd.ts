@@ -15,33 +15,8 @@ import { Entity } from './Entity';
 import { Notation } from './Notation';
 import { AttributeDefinitionList } from './Attribute';
 import { StringResource } from './StringResource';
-import { Named } from './Named';
-
-// Forward declarations - to be implemented in separate files
-export class ElementType extends Named {
-  private index_: number;
-
-  constructor(name: StringC, index: number) {
-    super(name);
-    this.index_ = index;
-  }
-
-  index(): number {
-    return this.index_;
-  }
-}
-
-export class RankStem extends Named {
-  constructor(name: StringC) {
-    super(name);
-  }
-}
-
-export class ShortReferenceMap extends Named {
-  constructor(name: StringC) {
-    super(name);
-  }
-}
+import { ElementType, RankStem } from './ElementType';
+import { ShortReferenceMap } from './ShortReferenceMap';
 
 export class Syntax { }
 export class ParserState { }
