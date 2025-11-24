@@ -4,13 +4,13 @@
 This document summarizes the complete OpenSP SGML parser port from C++ to TypeScript.
 
 ## Session Statistics
-- **ParserState.ts**: 3,386 lines (up from 2,665 - added 721 lines)
+- **ParserState.ts**: 3,469 lines (up from 2,665 - added 804 lines)
 - **MessageArg.ts**: 137 lines (added TokenMessageArg class)
-- **ParserMessages.ts**: 27 lines (added 5 end tag messages)
+- **ParserMessages.ts**: 34 lines (added 12 messages)
 - **Token.ts**: 72 lines
-- **~721 lines** of parsing code added this session
+- **~804 lines** of parsing code added this session
 - **0 TypeScript compilation errors**
-- **8 major parsing methods** fully implemented this session
+- **11 major parsing methods** fully implemented this session
 
 ## Completed Components
 
@@ -34,9 +34,10 @@ From `parseInstance.cxx`:
 - `parsePcdata()`
 - ✅ `parseStartTag()` / `doParseStartTag()` - COMPLETE implementation (125 lines)
 - ✅ `parseEndTag()` / `doParseEndTag()` / `parseEndTagClose()` - COMPLETE implementation (93 lines)
-- `parseEmptyStartTag()` / `parseEmptyEndTag()`
-- `parseNullEndTag()`
-- `parseGroupStartTag()` / `parseGroupEndTag()`
+- ✅ `parseEmptyStartTag()` - COMPLETE implementation (51 lines)
+- ✅ `parseEmptyEndTag()` - COMPLETE implementation (32 lines)
+- ✅ `parseNullEndTag()` - COMPLETE implementation (47 lines)
+- `parseGroupStartTag()` / `parseGroupEndTag()` - TODO
 
 ### 4. Character & Entity References ✅
 From `parseCommon.cxx`:
@@ -146,10 +147,10 @@ Expected output: "✓ Parser infrastructure test: PASSED"
 
 ## File Locations
 
-- Main parser: `src/ParserState.ts` (3,386 lines)
+- Main parser: `src/ParserState.ts` (3,469 lines)
 - Token system: `src/Token.ts` (72 lines)
 - Message args: `src/MessageArg.ts` (137 lines)
-- Parser messages: `src/ParserMessages.ts` (27 lines)
+- Parser messages: `src/ParserMessages.ts` (34 lines)
 - API wrapper: `src/Parser.ts`, `src/SgmlParser.ts`
 - Test: `test-parser.ts`
 
