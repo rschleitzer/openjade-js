@@ -328,7 +328,9 @@ export class InternalTextEntity extends InternalEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // TODO: Implement text entity literal reference
+    // Port of InternalTextEntity::litReference from Entity.cxx (lines 426-433)
+    text.addEntityStart(new Location(origin.pointer(), 0));
+    this.normalReference(parserState, origin, false);
   }
 }
 

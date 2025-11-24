@@ -1590,23 +1590,50 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected doInstanceStart(): void {
-    // Minimal implementation of doInstanceStart() from parseInstance.cxx
-    // Full version checks for valid DTD, handles omitted tags, queues events
-
+    // Port of doInstanceStart from parseInstance.cxx (lines 16-54)
     if (this.cancelled()) {
       this.allDone();
       return;
     }
 
-    // Compile instance modes if not already done
+    // TODO: Check that we have a valid DTD
     this.compileInstanceModes();
-
-    // Move to content phase
     this.setPhase(Phase.contentPhase);
 
-    // TODO: Handle omitted start tags (tryImplyTag)
-    // TODO: Process initial token (getToken, ungetToken)
-    // For now, just move to content phase
+    const token = this.getToken(this.currentMode());
+    switch (token) {
+      case TokenEnum.tokenEe:
+      case TokenEnum.tokenStagoNameStart:
+      case TokenEnum.tokenStagoTagc:
+      case TokenEnum.tokenStagoGrpo:
+      case TokenEnum.tokenEtagoNameStart:
+      case TokenEnum.tokenEtagoTagc:
+      case TokenEnum.tokenEtagoGrpo:
+        // These tokens are valid start tokens, continue
+        break;
+
+      default:
+        if (this.sd().omittag()) {
+          // TODO: Implement tryImplyTag and queueElementEvents
+          // let startImpliedCount = 0;
+          // let attributeListIndex = 0;
+          // const undoList = new IList<Undo>();
+          // const eventList = new IList<Event>();
+          // if (!this.tryImplyTag(this.currentLocation(), startImpliedCount, attributeListIndex, undoList, eventList)) {
+          //   CANNOT_HAPPEN();
+          // }
+          // this.queueElementEvents(eventList);
+        } else {
+          // TODO: Add instanceStartOmittag message
+          // this.message(ParserMessages.instanceStartOmittag);
+        }
+        break;
+    }
+
+    const input = this.currentInput();
+    if (input) {
+      input.ungetToken();
+    }
   }
 
   protected doContent(): void {
@@ -1691,12 +1718,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
               this.message(ParserMessages.entityReferenceAfterDocumentElement);
             }
             const result = this.parseEntityReference(false, token === TokenEnum.tokenEroGrpo ? 1 : 0);
-            // TODO: Handle entity content/rcdata reference
-            // if (!result.entity.isNull()) {
-            //   if (entity.isCharacterData())
-            //     acceptPcdata(Location(result.origin.pointer(), 0));
-            //   entity.contentReference(*this, result.origin);
-            // }
+            if (result.valid && result.entity && !result.entity.isNull() && result.origin) {
+              const entity = result.entity.pointer()!;
+              if (entity.isCharacterData()) {
+                this.acceptPcdata(new Location(result.origin.pointer(), 0));
+              }
+              entity.contentReference(this, result.origin);
+            }
           }
           break;
 
@@ -2505,8 +2533,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
             if (!result.valid) {
               return false;
             }
-            // TODO: if (!result.entity.isNull())
-            //   result.entity.litReference(text, this, result.origin, (flags & literalSingleSpace) != 0);
+            if (result.entity && !result.entity.isNull() && result.origin) {
+              result.entity.pointer()!.litReference(
+                text,
+                this,
+                result.origin,
+                (flags & ParserState.literalSingleSpace) !== 0
+              );
+            }
             if (this.inputLevel() > startLevel) {
               currentMode = liteMode;
             }
