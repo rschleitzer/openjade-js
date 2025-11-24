@@ -1731,13 +1731,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenMdoMdc:
           // Empty comment
-          // TODO: emptyCommentDecl()
+          this.emptyCommentDecl();
           this.noteMarkup();
           break;
 
         case TokenEnum.tokenMdoCom:
           // Comment declaration
-          // TODO: parseCommentDecl()
+          this.parseCommentDecl();
           this.noteMarkup();
           break;
 
@@ -2441,5 +2441,46 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // TODO: parseTagNameGroup(active, 0)
     // TODO: If active, parse and accept the end tag
     // TODO: If not active, skip to close and fire ignoredMarkup event
+  }
+
+  protected emptyCommentDecl(): void {
+    // Port of emptyCommentDecl from parseDecl.cxx (lines 3568-3579)
+    // Empty comment declaration <!-- -->
+
+    // TODO: if (startMarkup(eventsWanted().wantCommentDecls(), currentLocation())) {
+    //   currentMarkup().addDelim(Syntax.dMDO);
+    //   currentMarkup().addDelim(Syntax.dMDC);
+    //   eventHandler().commentDecl(new CommentDeclEvent(...));
+    // }
+    // TODO: if (options().warnEmptyCommentDecl)
+    //   message(ParserMessages.emptyCommentDecl);
+  }
+
+  protected parseCommentDecl(): boolean {
+    // Port of parseCommentDecl from parseDecl.cxx (lines 3580-3638)
+    // Comment declaration with one or more comments
+
+    // TODO: Start markup tracking
+    // if (startMarkup(inInstance() ? eventsWanted().wantCommentDecls() : eventsWanted().wantPrologMarkup(), currentLocation()))
+    //   currentMarkup().addDelim(Syntax.dMDO);
+
+    // Parse first comment
+    // TODO: Get comMode from Mode
+    // if (!this.parseComment(comMode)) return false;
+
+    // Parse additional comments and closing
+    // for (;;) {
+    //   const token = this.getToken(mdMode);
+    //   switch (token) {
+    //     case TokenEnum.tokenS: handle whitespace with warning
+    //     case TokenEnum.tokenCom: parse another comment with warning
+    //     case TokenEnum.tokenMdc: close and fire event, return true
+    //     case TokenEnum.tokenEe: entity end error
+    //     case TokenEnum.tokenUnrecognized: non-SGML char error
+    //     default: invalid token error
+    //   }
+    // }
+
+    return false;
   }
 }
