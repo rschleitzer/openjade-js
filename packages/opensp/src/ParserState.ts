@@ -48,7 +48,7 @@ import { NamedResourceTable } from './NamedResourceTable';
 import { Notation } from './Notation';
 import { ExternalId } from './ExternalId';
 import { Text } from './Text';
-import { RankStem } from './ElementType';
+import { RankStem, ElementType } from './ElementType';
 import { ExternalTextEntity } from './Entity';
 import { ASSERT, SIZEOF } from './macros';
 import { InternalInputSource } from './InternalInputSource';
@@ -2536,52 +2536,135 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Port of parseEmptyStartTag from parseInstance.cxx (lines 511-542)
     // Empty start tag <> - refers to last ended or current element
 
-    // TODO: if (options().warnEmptyTag) message(ParserMessages.emptyStartTag)
-    // TODO: if (!currentDtd().isBase()) message(ParserMessages.emptyStartTagBaseDtd)
+    if (this.options().warnEmptyTag) {
+      this.message(ParserMessages.emptyStartTag);
+    }
+
+    if (!this.currentDtd().isBase()) {
+      this.message(ParserMessages.emptyStartTagBaseDtd);
+    }
 
     // Determine which element type this empty tag refers to
-    let e: any = null;
-    // TODO: Implement element type lookup
-    // if (!sd().omittag())
-    //   e = lastEndedElementType();
-    // else if (tagLevel() > 0)
-    //   e = currentElement().type();
-    // if (!e)
-    //   e = currentDtd().documentElementType();
+    let e: ElementType | null = null;
 
-    // TODO: Create attribute list and accept start tag
-    // const attributes = allocAttributeList(e.attributeDef(), 0);
-    // attributes.finish(*this);
-    // TODO: Start markup tracking
-    // acceptStartTag(e, new StartElementEvent(...), 0);
+    if (!this.sd().omittag()) {
+      // TODO: Implement lastEndedElementType
+      // e = this.lastEndedElementType();
+    } else if (this.tagLevel() > 0) {
+      e = this.currentElement().type();
+    }
+
+    if (!e) {
+      e = this.currentDtd().documentElementType();
+    }
+
+    if (!e) return; // Safety check
+
+    // TODO: Implement allocAttributeList
+    // const attributes = this.allocAttributeList(e.attributeDef(), 0);
+    // attributes.finish(this);
+
+    // TODO: Implement startMarkup
+    const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dSTAGO);
+      markup.addDelim(Syntax.DelimGeneral.dTAGC);
+    }
+
+    // TODO: Create StartElementEvent and acceptStartTag
+    // this.acceptStartTag(
+    //   e,
+    //   new StartElementEvent(
+    //     e,
+    //     this.currentDtdPointer(),
+    //     attributes,
+    //     this.markupLocation(),
+    //     markup
+    //   ),
+    //   false
+    // );
   }
 
   protected parseEmptyEndTag(): void {
     // Port of parseEmptyEndTag from parseInstance.cxx (lines 1070-1091)
     // Empty end tag </> - closes current element
 
-    // TODO: if (options().warnEmptyTag) message(ParserMessages.emptyEndTag)
-    // TODO: if (!currentDtd().isBase()) message(ParserMessages.emptyEndTagBaseDtd)
-    // TODO: if (tagLevel() === 0) message(ParserMessages.emptyEndTagNoOpenElements)
-    // TODO: else { create markup, acceptEndTag(new EndElementEvent(...)) }
+    if (this.options().warnEmptyTag) {
+      this.message(ParserMessages.emptyEndTag);
+    }
+
+    if (!this.currentDtd().isBase()) {
+      this.message(ParserMessages.emptyEndTagBaseDtd);
+    }
+
+    if (this.tagLevel() === 0) {
+      this.message(ParserMessages.emptyEndTagNoOpenElements);
+    } else {
+      // TODO: Implement startMarkup
+      const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+      if (markup) {
+        markup.addDelim(Syntax.DelimGeneral.dETAGO);
+        markup.addDelim(Syntax.DelimGeneral.dTAGC);
+      }
+
+      // TODO: Create EndElementEvent and acceptEndTag
+      // this.acceptEndTag(
+      //   new EndElementEvent(
+      //     this.currentElement().type(),
+      //     this.currentDtdPointer(),
+      //     this.currentLocation(),
+      //     markup
+      //   )
+      // );
+    }
   }
 
   protected parseNullEndTag(): void {
     // Port of parseNullEndTag from parseInstance.cxx (lines 1092-1119)
     // Null end tag (NET) / - closes net-enabling element
 
-    // Find the net-enabling element on the stack
-    // for (;;) {
-    //   ASSERT(tagLevel() > 0);
-    //   if (currentElement().netEnabling()) break;
-    //   if (!currentElement().isFinished() && validate())
-    //     message(ParserMessages.elementNotFinished, ...);
-    //   implyCurrentElementEnd(currentLocation());
-    // }
+    // If a null end tag was recognized, then there must be a net enabling
+    // element on the stack.
+    for (;;) {
+      // ASSERT: tagLevel() > 0
+      if (this.tagLevel() === 0) break; // Safety check instead of ASSERT
 
-    // TODO: Check if element is finished
-    // TODO: Create markup with NET delimiter
-    // TODO: acceptEndTag(new EndElementEvent(...))
+      if (this.currentElement().netEnabling()) {
+        break;
+      }
+
+      if (!this.currentElement().isFinished() && this.validate()) {
+        this.message(ParserMessages.elementNotFinished,
+          new StringMessageArg(this.currentElement().type().name()));
+      }
+
+      // TODO: Implement implyCurrentElementEnd
+      // this.implyCurrentElementEnd(this.currentLocation());
+      break; // For now, break to avoid infinite loop
+    }
+
+    if (this.tagLevel() > 0 && !this.currentElement().isFinished() && this.validate()) {
+      this.message(ParserMessages.elementEndTagNotFinished,
+        new StringMessageArg(this.currentElement().type().name()));
+    }
+
+    // TODO: Implement startMarkup
+    const markup = null; // this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dNET);
+    }
+
+    // TODO: Create EndElementEvent and acceptEndTag
+    if (this.tagLevel() > 0) {
+      // this.acceptEndTag(
+      //   new EndElementEvent(
+      //     this.currentElement().type(),
+      //     this.currentDtdPointer(),
+      //     this.currentLocation(),
+      //     markup
+      //   )
+      // );
+    }
   }
 
   protected parseGroupStartTag(): void {
