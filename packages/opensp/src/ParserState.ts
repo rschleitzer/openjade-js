@@ -2695,17 +2695,31 @@ export class ParserState extends ContentState implements ParserStateInterface {
     atts: AttributeList,
     specLength: { value: number }
   ): boolean {
-    // TODO: Port full implementation from parseAttribute.cxx lines 96-122
-    // Algorithm:
-    // 1. Get token index from attribute list
-    // 2. Check if token is valid and unique (if WWW mode)
-    // 3. Set spec and value token in attribute list
-    // 4. Issue warnings for shorttag/missing attribute name
-    // Requires:
-    // - AttributeList.tokenIndex
-    // - AttributeList.setSpec, setValueToken
-    // - sd().attributeOmitName()
-    return false;
+    const indexResult = { value: 0 };
+
+    if (!atts.tokenIndex(text.string(), indexResult)) {
+      if (atts.handleAsUnterminated(this)) {
+        return false;
+      }
+      atts.noteInvalidSpec();
+      // TODO: Add noSuchAttributeToken to ParserMessages
+      // this.message(ParserMessages.noSuchAttributeToken, new StringMessageArg(text.string()));
+    } else if (this.sd().www() && !atts.tokenIndexUnique(text.string(), indexResult.value)) {
+      atts.noteInvalidSpec();
+      // TODO: Add attributeTokenNotUnique to ParserMessages
+      // this.message(ParserMessages.attributeTokenNotUnique, new StringMessageArg(text.string()));
+    } else {
+      if (!this.sd().attributeOmitName()) {
+        // TODO: Add attributeNameShorttag to ParserMessages
+        // this.message(ParserMessages.attributeNameShorttag);
+      } else if (this.options().warnMissingAttributeName) {
+        // TODO: Add missingAttributeName to ParserMessages
+        // this.message(ParserMessages.missingAttributeName);
+      }
+      atts.setSpec(indexResult.value, this);
+      atts.setValueToken(indexResult.value, text, this, specLength);
+    }
+    return true;
   }
 
   // Port of parseAttribute.cxx lines 124-249

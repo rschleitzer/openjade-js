@@ -1095,4 +1095,31 @@ export class AttributeList {
   swap(other: AttributeList): void {
     // TODO: Implement swap
   }
+
+  tokenIndex(name: StringC, result: { value: number }): boolean {
+    // TODO: Implement tokenIndex - get index of attribute by token value
+    return false;
+  }
+
+  handleAsUnterminated(parser: any): boolean {
+    // TODO: Implement handleAsUnterminated - handle unterminated attribute
+    return false;
+  }
+
+  noteInvalidSpec(): void {
+    // TODO: Implement noteInvalidSpec - mark attribute spec as invalid
+  }
+
+  tokenIndexUnique(name: StringC, index: number): boolean {
+    // TODO: Implement tokenIndexUnique - check if token index is unique
+    return true;
+  }
+
+  setSpec(index: number, parser: any): void {
+    // TODO: Implement setSpec - mark attribute as specified
+  }
+
+  setValueToken(index: number, text: any, parser: any, specLength: { value: number }): void {
+    // TODO: Implement setValueToken - set attribute value from token
+  }
 }
