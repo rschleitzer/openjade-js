@@ -4976,7 +4976,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
             this.endInstance();
             return;
           }
-          // TODO: Check specialParseInputLevel()
+          // Port of parseInstance.cxx (lines 96-100)
+          if (this.inputLevel() === this.specialParseInputLevel()) {
+            // Entity end in CDATA, RCDATA, or IGNORE marked section
+            this.message(ParserMessages.specialParseEntityEnd);
+          }
           if (this.eventsWanted().wantInstanceMarkup()) {
             this.eventHandler().entityEnd(new EntityEndEvent(this.currentLocation()));
           }
