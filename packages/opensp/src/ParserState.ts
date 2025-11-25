@@ -4215,7 +4215,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (markup) {
       markup.addDelim(Syntax.DelimGeneral.dMDO);
       markup.addDelim(Syntax.DelimGeneral.dMDC);
-      // TODO: eventHandler().commentDecl(new CommentDeclEvent(...));
+      this.eventHandler().commentDecl(
+        new CommentDeclEvent(this.markupLocation(), markup)
+      );
     }
     if (this.options().warnEmptyCommentDecl) {
       this.message(ParserMessages.emptyCommentDecl);
