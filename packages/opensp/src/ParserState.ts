@@ -13731,10 +13731,82 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     const sgmlChar = new ISet<Char>();
     decl.usedSet(sgmlChar);
-    sdBuilder.syntax.pointer()!.setSgmlChar(sgmlChar);
+
+    // Translate sgmlChar to internal charset if different from doc charset
+    if ((this.sd() as any).internalCharsetIsDocCharset()) {
+      sdBuilder.syntax.pointer()!.setSgmlChar(sgmlChar);
+    } else {
+      const internalSgmlChar = new ISet<Char>();
+      this.translateDocSet(
+        sdBuilder.sd.pointer()!.docCharset(),
+        sdBuilder.sd.pointer()!.internalCharset(),
+        sgmlChar,
+        internalSgmlChar
+      );
+      sdBuilder.syntax.pointer()!.setSgmlChar(internalSgmlChar);
+    }
+
     sdBuilder.sd.pointer()!.setDocCharsetDesc(desc);
-    // Store the charset declaration for later use
     return true;
+  }
+
+  /**
+   * translateDocSet - Translate a character set from document to internal charset
+   * Port of Parser::translateDocSet from parseSd.cxx lines 849-880
+   */
+  protected translateDocSet(
+    fromCharset: any, // CharsetInfo
+    toCharset: any,   // CharsetInfo
+    fromSet: ISet<Char>,
+    toSet: ISet<Char>
+  ): void {
+    const ranges = fromSet.getRanges();
+    for (let i = 0; i < ranges.size(); i++) {
+      const range = ranges.get(i);
+      let min = range.min;
+      const max = range.max;
+
+      do {
+        const univResult = { value: 0 as UnivChar, alsoMax: 0 as WideChar };
+        if (!fromCharset.descToUniv(min, univResult)) {
+          if (univResult.alsoMax >= max) {
+            break;
+          }
+          min = univResult.alsoMax;
+        } else {
+          const toResult = { c: 0 as Char, count: 0 as WideChar };
+          const nMap = this.univToDescCheckWithCount(toCharset, univResult.value, toResult);
+          let alsoMax = univResult.alsoMax;
+          if (alsoMax > max) {
+            alsoMax = max;
+          }
+          if (alsoMax - min > toResult.count - 1) {
+            alsoMax = min + (toResult.count - 1);
+          }
+          if (nMap) {
+            toSet.addRange(toResult.c, toResult.c + (alsoMax - min));
+          }
+          min = alsoMax;
+        }
+      } while (min++ !== max);
+    }
+  }
+
+  /**
+   * univToDescCheckWithCount - Check if a universal character can be mapped to description charset
+   * Returns the number of mappings and sets c and count
+   */
+  private univToDescCheckWithCount(
+    charset: any,
+    univChar: UnivChar,
+    result: { c: Char; count: WideChar }
+  ): number {
+    const descResult = { c: 0 as Char, set: new ISet<WideChar>() };
+    const count = { value: 0 as WideChar };
+    const nMap = charset.univToDesc(univChar, descResult, count);
+    result.c = descResult.c;
+    result.count = count.value > 0 ? count.value : 1;
+    return nMap;
   }
 
   /**
