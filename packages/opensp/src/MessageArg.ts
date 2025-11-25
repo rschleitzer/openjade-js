@@ -4,11 +4,13 @@
 import { StringC } from './StringC';
 import { Vector } from './Vector';
 import { MessageBuilder } from './MessageBuilder';
-import { Token } from './Token';
+import { Token, Token as TokenEnum } from './Token';
 import { Mode } from './Mode';
 import { Syntax } from './Syntax';
 import { Sd } from './Sd';
 import { Ptr, ConstPtr } from './Ptr';
+import { ModeInfo, TokenInfo } from './ModeInfo';
+import * as ParserMessages from './ParserMessages';
 
 export abstract class MessageArg {
   abstract copy(): MessageArg;
@@ -122,16 +124,86 @@ export class TokenMessageArg extends MessageArg {
   }
 
   append(builder: MessageBuilder): void {
-    // Port of TokenMessageArg::append from TokenMessageArg.cxx
-    // TODO: Implement full token description logic
-    // This would involve:
-    // - Checking if token is shortref (tokenFirstShortref)
-    // - Checking if token is entity end (tokenEe)
-    // - Using ModeInfo to get TokenInfo for the token
-    // - Appending appropriate message fragments based on token type
-    // For now, append a placeholder
-    const placeholder = `[token ${this.token_} in mode ${this.mode_}]`;
-    const chars = Array.from(placeholder).map(c => c.charCodeAt(0));
-    builder.appendChars(chars, chars.length);
+    // Port of TokenMessageArg::append from TokenMessageArg.cxx (lines 32-110)
+    // Handle shortref tokens
+    if (this.token_ >= TokenEnum.tokenFirstShortref) {
+      builder.appendFragment(ParserMessages.shortrefDelim);
+      return;
+    }
+
+    // Handle entity end token
+    if (this.token_ === TokenEnum.tokenEe) {
+      builder.appendFragment(ParserMessages.entityEnd);
+      return;
+    }
+
+    // Iterate over tokens in this mode to find a match
+    const iter = new ModeInfo(this.mode_, this.sd_.pointer()!);
+    const info = new TokenInfo();
+    let fragment: typeof ParserMessages.digit | null = null;
+
+    while (iter.nextToken(info)) {
+      if (info.token === this.token_) {
+        switch (info.type) {
+          case TokenInfo.Type.delimType:
+          case TokenInfo.Type.delimDelimType:
+          case TokenInfo.Type.delimSetType:
+            {
+              const delim = this.syntax_.pointer()!.delimGeneral(info.delim1);
+              builder.appendFragment(ParserMessages.delimStart);
+              builder.appendChars(delim.data(), delim.size());
+            }
+            break;
+
+          case TokenInfo.Type.setType:
+            switch (info.set) {
+              case Syntax.Set.digit:
+                fragment = ParserMessages.digit;
+                break;
+              case Syntax.Set.nameStart:
+                fragment = ParserMessages.nameStartCharacter;
+                break;
+              case Syntax.Set.sepchar:
+                fragment = ParserMessages.sepchar;
+                break;
+              case Syntax.Set.s:
+                fragment = ParserMessages.separator;
+                break;
+              case Syntax.Set.nmchar:
+                fragment = ParserMessages.nameCharacter;
+                break;
+              case Syntax.Set.sgmlChar:
+                fragment = ParserMessages.dataCharacter;
+                break;
+              case Syntax.Set.minimumData:
+                fragment = ParserMessages.minimumDataCharacter;
+                break;
+              case Syntax.Set.significant:
+                fragment = ParserMessages.significantCharacter;
+                break;
+            }
+            break;
+
+          case TokenInfo.Type.functionType:
+            switch (info.function) {
+              case Syntax.StandardFunction.fRE:
+                fragment = ParserMessages.recordEnd;
+                break;
+              case Syntax.StandardFunction.fRS:
+                fragment = ParserMessages.recordStart;
+                break;
+              case Syntax.StandardFunction.fSPACE:
+                fragment = ParserMessages.space;
+                break;
+            }
+            break;
+        }
+        break;
+      }
+    }
+
+    if (fragment) {
+      builder.appendFragment(fragment);
+    }
   }
 }

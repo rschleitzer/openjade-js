@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType, MessageType0L, MessageType1L } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType, MessageType0L, MessageType1L, MessageFragment, libModule } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
@@ -349,3 +349,40 @@ export const explicitNoRequiresSourceTypeBase = new MessageType1(MessageType.Sev
 export const explicit1RequiresSourceTypeBase = new MessageType1(MessageType.Severity.error, null, -1, 'source document type name for link type %1 must be base document type since EXPLICIT YES 1');
 export const sorryLink = new MessageType1(MessageType.Severity.warning, null, -1, 'sorry, link type %1 not activated: only one implicit or explicit link process can be active (with base document type as source document type)');
 export const noLpdSubset = new MessageType1(MessageType.Severity.warning, null, -1, 'LPD %1 has neither internal nor external subset');
+
+// Message fragments for token descriptions
+// Port of ParserMessages.msg (lines 453-487)
+export const delimStart = new MessageFragment(libModule, 453, 'delimiter ');
+export const digit = new MessageFragment(libModule, 455, 'digit');
+export const nameStartCharacter = new MessageFragment(libModule, 456, 'name start character');
+export const sepchar = new MessageFragment(libModule, 457, 'sepchar');
+export const separator = new MessageFragment(libModule, 458, 'separator');
+export const nameCharacter = new MessageFragment(libModule, 459, 'name character');
+export const dataCharacter = new MessageFragment(libModule, 460, 'data character');
+export const minimumDataCharacter = new MessageFragment(libModule, 461, 'minimum data character');
+export const significantCharacter = new MessageFragment(libModule, 462, 'significant character');
+export const recordEnd = new MessageFragment(libModule, 463, 'record end character');
+export const recordStart = new MessageFragment(libModule, 464, 'record start character');
+export const space = new MessageFragment(libModule, 465, 'space character');
+export const listSep = new MessageFragment(libModule, 466, ', ');
+export const rangeSep = new MessageFragment(libModule, 467, '-');
+export const parameterLiteral = new MessageFragment(libModule, 468, 'parameter literal');
+export const dataTagGroup = new MessageFragment(libModule, 469, 'data tag group');
+export const modelGroup = new MessageFragment(libModule, 470, 'model group');
+export const dataTagTemplateGroup = new MessageFragment(libModule, 471, 'data tag template group');
+export const name = new MessageFragment(libModule, 472, 'name');
+export const nameToken = new MessageFragment(libModule, 473, 'name token');
+export const elementToken = new MessageFragment(libModule, 474, 'element token');
+export const inclusions = new MessageFragment(libModule, 475, 'inclusions');
+export const exclusions = new MessageFragment(libModule, 476, 'exclusions');
+export const minimumLiteral = new MessageFragment(libModule, 477, 'minimum literal');
+export const attributeValueLiteral = new MessageFragment(libModule, 478, 'attribute value literal');
+export const systemIdentifier = new MessageFragment(libModule, 479, 'system identifier');
+export const number = new MessageFragment(libModule, 480, 'number');
+export const attributeValue = new MessageFragment(libModule, 481, 'attribute value');
+export const capacityName = new MessageFragment(libModule, 482, 'name of capacity');
+export const generalDelimiterRoleName = new MessageFragment(libModule, 483, 'name of general delimiter role');
+export const referenceReservedName = new MessageFragment(libModule, 484, 'reference reserved name');
+export const quantityName = new MessageFragment(libModule, 485, 'name of quantity');
+export const entityEnd = new MessageFragment(libModule, 486, 'entity end');
+export const shortrefDelim = new MessageFragment(libModule, 487, 'short reference delimiter');
