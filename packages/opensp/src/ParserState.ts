@@ -7027,9 +7027,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
           new StringMessageArg(this.currentElement().type().name()));
       }
 
-      // TODO: Implement implyCurrentElementEnd
-      // this.implyCurrentElementEnd(this.currentLocation());
-      break; // For now, break to avoid infinite loop
+      this.implyCurrentElementEnd(this.currentLocation());
     }
 
     if (this.tagLevel() > 0 && !this.currentElement().isFinished() && this.validate()) {
