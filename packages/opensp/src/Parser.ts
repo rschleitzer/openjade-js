@@ -164,7 +164,7 @@ export class Parser extends ParserState {
     }
   }
 
-  private setSdOverrides(sd: Sd): void {
+  protected override setSdOverrides(sd: Sd): void {
     // FIXME overriding behaviour when using multiple -w options
     if (this.options().typeValid !== ParserOptions.sgmlDeclTypeValid) {
       sd.setTypeValid(Boolean(this.options().typeValid));

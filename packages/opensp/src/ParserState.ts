@@ -1616,14 +1616,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   // Parsing phase methods - to be implemented from parse*.cxx files
+  /**
+   * doInit - Initialize parser and handle SGML declaration
+   * Port of Parser::doInit from parseSd.cxx
+   */
   protected doInit(): void {
-    // Minimal implementation of doInit() - implies SGML declaration
-    // Full implementation from parseSd.cxx includes:
-    // - scanForSgmlDecl() to detect explicit SGML declaration
-    // - parseSgmlDecl() to parse explicit declaration
-    // - findMissingMinimum() to check character set completeness
-    // For now, we just imply a standard SGML declaration
-
     if (this.cancelled()) {
       this.allDone();
       return;
@@ -1643,11 +1640,27 @@ export class ParserState extends ContentState implements ParserStateInterface {
       }
     }
 
-    // For now: always imply SGML declaration (skip explicit parsing)
-    // TODO: Implement full parseSgmlDecl() and scanForSgmlDecl()
-    if (!this.implySgmlDecl()) {
-      this.giveUp();
-      return;
+    // Determine the initial charset for scanning
+    const initCharset = this.sd().internalCharset();
+
+    // Try to scan for an explicit SGML declaration
+    let haveSgmlDecl = false;
+    if (input) {
+      haveSgmlDecl = this.scanForSgmlDecl(initCharset);
+    }
+
+    if (haveSgmlDecl) {
+      // Parse the explicit SGML declaration
+      if (!this.parseSgmlDecl()) {
+        this.giveUp();
+        return;
+      }
+    } else {
+      // No explicit SGML declaration - imply one
+      if (!this.implySgmlDecl()) {
+        this.giveUp();
+        return;
+      }
     }
 
     // Mark that document charset won't be changed
@@ -1663,6 +1676,411 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Proceed to prolog phase
     this.compilePrologModes();
     this.setPhase(Phase.prologPhase);
+  }
+
+  /**
+   * scanForSgmlDecl - Determine whether the document starts with an SGML declaration.
+   * Port of Parser::scanForSgmlDecl from parseSd.cxx lines 593-650
+   * There is no current syntax at this point.
+   */
+  protected scanForSgmlDecl(initCharset: any): boolean {
+    // Check if standard character codes can be represented
+    const rsResult = { c: 0 as Char, set: new ISet<WideChar>() };
+    const reResult = { c: 0 as Char, set: new ISet<WideChar>() };
+    const spaceResult = { c: 0 as Char, set: new ISet<WideChar>() };
+    const tabResult = { c: 0 as Char, set: new ISet<WideChar>() };
+
+    if (initCharset.univToDesc(UnivCharsetDesc.rs, rsResult) <= 0) {
+      return false;
+    }
+    if (initCharset.univToDesc(UnivCharsetDesc.re, reResult) <= 0) {
+      return false;
+    }
+    if (initCharset.univToDesc(UnivCharsetDesc.space, spaceResult) <= 0) {
+      return false;
+    }
+    if (initCharset.univToDesc(UnivCharsetDesc.tab, tabResult) <= 0) {
+      return false;
+    }
+
+    const rs = rsResult.c;
+    const re = reResult.c;
+    const space = spaceResult.c;
+    const tab = tabResult.c;
+
+    const input = this.currentInput();
+    if (!input) return false;
+
+    let c = input.get(this);
+
+    // Skip whitespace
+    while (c === rs || c === space || c === re || c === tab) {
+      c = input.tokenChar(this);
+    }
+
+    // Check for "<!SGML"
+    if (c !== initCharset.execToDesc('<'.charCodeAt(0))) {
+      return false;
+    }
+    if (input.tokenChar(this) !== initCharset.execToDesc('!'.charCodeAt(0))) {
+      return false;
+    }
+    c = input.tokenChar(this);
+    if (c !== initCharset.execToDesc('S'.charCodeAt(0)) &&
+        c !== initCharset.execToDesc('s'.charCodeAt(0))) {
+      return false;
+    }
+    c = input.tokenChar(this);
+    if (c !== initCharset.execToDesc('G'.charCodeAt(0)) &&
+        c !== initCharset.execToDesc('g'.charCodeAt(0))) {
+      return false;
+    }
+    c = input.tokenChar(this);
+    if (c !== initCharset.execToDesc('M'.charCodeAt(0)) &&
+        c !== initCharset.execToDesc('m'.charCodeAt(0))) {
+      return false;
+    }
+    c = input.tokenChar(this);
+    if (c !== initCharset.execToDesc('L'.charCodeAt(0)) &&
+        c !== initCharset.execToDesc('l'.charCodeAt(0))) {
+      return false;
+    }
+
+    c = input.tokenChar(this);
+
+    // Don't recognize this if SGML is followed by a name character.
+    if (c === InputSource.eE) {
+      return true;
+    }
+
+    input.endToken(input.currentTokenLength() - 1);
+
+    // Check for name characters after SGML
+    if (c === initCharset.execToDesc('-'.charCodeAt(0))) {
+      return false;
+    }
+    if (c === initCharset.execToDesc('.'.charCodeAt(0))) {
+      return false;
+    }
+
+    const univ = { value: 0 as WideChar };
+    if (!initCharset.descToUniv(c, univ)) {
+      return true;
+    }
+
+    // Check if it's a letter or digit
+    if (UnivCharsetDesc.a <= univ.value && univ.value < UnivCharsetDesc.a + 26) {
+      return false;
+    }
+    if (UnivCharsetDesc.A <= univ.value && univ.value < UnivCharsetDesc.A + 26) {
+      return false;
+    }
+    if (UnivCharsetDesc.zero <= univ.value && univ.value < UnivCharsetDesc.zero + 10) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * parseSgmlDecl - Parse an explicit SGML declaration
+   * Port of Parser::parseSgmlDecl from parseSd.cxx lines 678-779
+   */
+  protected parseSgmlDecl(): boolean {
+    const parm = new SdParam();
+    const sdBuilder = new SdBuilder();
+
+    // Parse first parameter - should be version literal or external reference name
+    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral, SdParam.Type.name), parm)) {
+      return false;
+    }
+
+    // Handle external SGML declaration reference
+    if (parm.type === SdParam.Type.name) {
+      sdBuilder.external = true;
+      const loc = this.currentLocation();
+      const name = new String<Char>(parm.token);
+      const externalId = new ExternalId();
+
+      if (!this.sdParseSgmlDeclRef(sdBuilder, parm, externalId)) {
+        return false;
+      }
+
+      const entity = new ExternalTextEntity(name, EntityDecl.DeclType.sgml, loc, externalId);
+      const entityPtr = new ConstPtr<Entity>(entity);
+      entity.generateSystemId(this);
+
+      if (entity.externalId().effectiveSystemId().size() === 0) {
+        this.message(ParserMessages.cannotGenerateSystemIdSgml);
+        return false;
+      }
+
+      const origin = EntityOrigin.makeEntity(this.internalAllocator(), entityPtr, loc) as any;
+      if (this.currentMarkup()) {
+        this.currentMarkup()!.addEntityStart(origin);
+      }
+
+      this.pushInput(
+        this.entityManager().open(
+          entity.externalId().effectiveSystemId(),
+          (this.sd() as any).docCharset(),
+          origin,
+          0,
+          this
+        )
+      );
+
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
+        return false;
+      }
+    }
+
+    // Check version string
+    const version = (this.sd() as any).execToInternal("ISO 8879:1986");
+    const enrVersion = (this.sd() as any).execToInternal("ISO 8879:1986 (ENR)");
+    const wwwVersion = (this.sd() as any).execToInternal("ISO 8879:1986 (WWW)");
+
+    const versionStr = parm.literalText.string();
+    if (versionStr.equals(enrVersion)) {
+      sdBuilder.enr = true;
+    } else if (versionStr.equals(wwwVersion)) {
+      sdBuilder.enr = true;
+      sdBuilder.www = true;
+    } else if (!versionStr.equals(version)) {
+      this.message(ParserMessages.standardVersion, new StringMessageArg(versionStr));
+    }
+
+    if (sdBuilder.external && !sdBuilder.www) {
+      this.message(ParserMessages.sgmlDeclRefRequiresWww);
+    }
+
+    // Create new Sd
+    sdBuilder.sd = new Ptr<Sd>(new Sd(this.entityManagerPtr()));
+    if (sdBuilder.www) {
+      sdBuilder.sd.pointer()!.setWww(true);
+    }
+
+    // Parse the sections of the SGML declaration
+    type SdParser = (sdBuilder: SdBuilder, parm: SdParam) => boolean;
+    const parsers: SdParser[] = [
+      this.sdParseDocumentCharset.bind(this),
+      this.sdParseCapacity.bind(this),
+      this.sdParseScope.bind(this),
+      this.sdParseSyntax.bind(this),
+      this.sdParseFeatures.bind(this),
+      this.sdParseAppinfo.bind(this),
+      this.sdParseSeealso.bind(this),
+    ];
+
+    for (const parser of parsers) {
+      if (!parser(sdBuilder, parm)) {
+        return false;
+      }
+      if (!sdBuilder.valid) {
+        return false;
+      }
+    }
+
+    // Apply overrides from parser options
+    this.setSdOverrides(sdBuilder.sd.pointer()!);
+
+    // If formal mode is enabled, report any accumulated formal errors
+    if (sdBuilder.sd.pointer()!.formal()) {
+      while (!sdBuilder.formalErrorList.empty()) {
+        const p = sdBuilder.formalErrorList.get();
+        if (p) {
+          p.send(this);
+        }
+      }
+    }
+
+    // Set the Sd
+    this.setSd(new ConstPtr<Sd>(sdBuilder.sd.pointer()!));
+
+    // Set document charset on input
+    const input = this.currentInput();
+    if (input) {
+      input.setDocCharset((this.sd() as any).docCharset(), this.entityManager().charset());
+    }
+
+    // Handle SCOPE INSTANCE case
+    if (sdBuilder.sd.pointer()!.scopeInstance()) {
+      const proSyntax = new Syntax(this.sd()! as any);
+      const switcher = new CharSwitcher();
+      this.setStandardSyntax(proSyntax, refSyntax, (this.sd() as any).internalCharset(), switcher, sdBuilder.www);
+      proSyntax.setSgmlChar(sdBuilder.syntax.pointer()!.charSet(Syntax.Set.sgmlChar)!);
+
+      const invalidSgmlChar = new ISet<WideChar>();
+      proSyntax.checkSgmlChar(
+        sdBuilder.sd.pointer()! as any,
+        sdBuilder.syntax.pointer()!,
+        true,
+        invalidSgmlChar
+      );
+      sdBuilder.syntax.pointer()!.checkSgmlChar(
+        sdBuilder.sd.pointer()! as any,
+        proSyntax,
+        true,
+        invalidSgmlChar
+      );
+
+      if (!invalidSgmlChar.isEmpty()) {
+        this.message(ParserMessages.invalidSgmlChar, new CharsetMessageArg(invalidSgmlChar));
+      }
+
+      this.setSyntaxes(new ConstPtr<Syntax>(proSyntax), new ConstPtr<Syntax>(sdBuilder.syntax.pointer()!));
+    } else {
+      this.setSyntax(new ConstPtr<Syntax>(sdBuilder.syntax.pointer()!));
+    }
+
+    // Set up markup scan table for multicode syntaxes
+    if (this.syntax().multicode() && input) {
+      input.setMarkupScanTable(this.syntax().markupScanTable());
+    }
+
+    return true;
+  }
+
+  /**
+   * sdParseSgmlDeclRef - Parse an external SGML declaration reference
+   * Port of Parser::sdParseSgmlDeclRef from parseSd.cxx lines 781-812
+   */
+  protected sdParseSgmlDeclRef(sdBuilder: SdBuilder, parm: SdParam, id: ExternalId): boolean {
+    id.setLocation(this.currentLocation());
+
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rSYSTEM,
+        SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC,
+        SdParam.Type.mdc
+      ),
+      parm
+    )) {
+      return false;
+    }
+
+    if (parm.type === SdParam.Type.mdc) {
+      return true;
+    }
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC) {
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
+        return false;
+      }
+
+      const err = { value: null as MessageType1 | null };
+      const err1 = { value: null as MessageType1 | null };
+      const textClass = { value: 0 };
+
+      const result = id.setPublic(
+        parm.literalText,
+        (this.sd() as any).internalCharset(),
+        this.syntax().space(),
+        err,
+        err1
+      );
+
+      if (result !== PublicId.Type.fpi && err.value) {
+        sdBuilder.addFormalError(this.currentLocation(), err.value, id.publicId()!.string());
+      } else if (id.publicId()!.getTextClass(textClass) && textClass.value !== PublicId.TextClass.SD) {
+        sdBuilder.addFormalError(
+          this.currentLocation(),
+          ParserMessages.sdTextClass,
+          id.publicId()!.string()
+        );
+      }
+    }
+
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.systemIdentifier, SdParam.Type.mdc),
+      parm
+    )) {
+      return false;
+    }
+
+    if (parm.type === SdParam.Type.mdc) {
+      return true;
+    }
+
+    id.setSystem(parm.literalText);
+
+    return this.parseSdParam(new AllowedSdParams(SdParam.Type.mdc), parm);
+  }
+
+  /**
+   * setSdOverrides - Apply parser options overrides to SD
+   * Port of Parser::setSdOverrides from Parser.cxx lines 124-181
+   * This is a base implementation; Parser has its own override.
+   */
+  protected setSdOverrides(sd: Sd): void {
+    // Override type valid settings
+    if (this.options().typeValid !== ParserOptions.sgmlDeclTypeValid) {
+      sd.setTypeValid(this.options().typeValid ? true : false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFATTLIST, !this.options().typeValid);
+      sd.setImplydefElement(
+        this.options().typeValid
+          ? Sd.ImplydefElement.implydefElementNo
+          : Sd.ImplydefElement.implydefElementYes
+      );
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFENTITY, !this.options().typeValid);
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFNOTATION, !this.options().typeValid);
+    }
+
+    if (this.options().fullyDeclared) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFATTLIST, false);
+      sd.setImplydefElement(Sd.ImplydefElement.implydefElementNo);
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFENTITY, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFNOTATION, false);
+    }
+
+    if (this.options().fullyTagged) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fDATATAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fRANK, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fOMITTAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fSTARTTAGEMPTY, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fATTRIBOMITNAME, false);
+    }
+
+    if (this.options().amplyTagged) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fDATATAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fRANK, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fOMITTAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fATTRIBOMITNAME, false);
+      sd.setImplydefElement(Sd.ImplydefElement.implydefElementYes);
+    }
+
+    if (this.options().amplyTaggedAnyother) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fDATATAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fRANK, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fOMITTAG, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fATTRIBOMITNAME, false);
+      sd.setImplydefElement(Sd.ImplydefElement.implydefElementAnyother);
+    }
+
+    if (this.options().valid) {
+      sd.setTypeValid(true);
+    }
+
+    if (this.options().entityRef) {
+      sd.setEntityRef(Sd.EntityRef.entityRefNone);
+    }
+
+    if (this.options().externalEntityRef) {
+      sd.setEntityRef(Sd.EntityRef.entityRefInternal);
+    }
+
+    if (this.options().integral) {
+      sd.setIntegrallyStored(true);
+    }
+
+    if (this.options().noUnclosedTag) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fSTARTTAGUNCLOSED, false);
+      sd.setBooleanFeature(Sd.BooleanFeature.fENDTAGUNCLOSED, false);
+    }
+
+    if (this.options().noNet) {
+      sd.setStartTagNetEnable(Sd.NetEnable.netEnableNo);
+    }
   }
 
   private implySgmlDecl(): boolean {
