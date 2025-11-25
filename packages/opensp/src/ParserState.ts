@@ -43,7 +43,8 @@ import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
 import { Location, ReplacementOrigin, BracketOrigin } from './Location';
-import { Message, Messenger } from './Message';
+import { Message, Messenger, MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType0L, MessageType1L } from './Message';
+import { MessageArg } from './MessageArg';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
 import { Token as TokenEnum } from './Token';
@@ -88,7 +89,7 @@ import { EquivCode } from './types';
 import { Priority } from './Priority';
 import { GroupToken, AllowedGroupTokens, GroupConnector, AllowedGroupConnectors, AllowedGroupTokensMessageArg, AllowedGroupConnectorsMessageArg } from './Group';
 import { Param, AllowedParams, AllowedParamsMessageArg } from './Param';
-import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup, CompiledModelGroup, ContentModelAmbiguity, LeafContentToken } from './ContentToken';
+import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup, CompiledModelGroup, ContentModelAmbiguity, LeafContentToken, MatchState } from './ContentToken';
 import { NameToken } from './NameToken';
 
 export enum Phase {
@@ -889,10 +890,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     msg.loc = this.currentLocation();
   }
 
-  dispatchMessage(msg: Message): void {
-    this.queueMessage(new MessageEvent(msg));
-  }
-
   allocAttributeList(
     def: ConstPtr<AttributeDefinitionList>,
     i: number
@@ -1073,9 +1070,75 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
-  message(...args: any[]): void {
-    // Stub - should properly dispatch messages
-    console.warn('ParserState.message() stub called');
+  // Overloaded message() methods from Messenger
+  message(type: MessageType0): void;
+  message(type: MessageType1, arg0: MessageArg): void;
+  message(type: MessageType2, arg0: MessageArg, arg1: MessageArg): void;
+  message(type: MessageType3, arg0: MessageArg, arg1: MessageArg, arg2: MessageArg): void;
+  message(type: MessageType5, arg0: MessageArg, arg1: MessageArg, arg2: MessageArg, arg3: MessageArg, arg4: MessageArg): void;
+  message(type: MessageType6, arg0: MessageArg, arg1: MessageArg, arg2: MessageArg, arg3: MessageArg, arg4: MessageArg, arg5: MessageArg): void;
+  message(type: MessageType0L, loc: Location): void;
+  message(type: MessageType1L, arg0: MessageArg, loc: Location): void;
+  message(typeOrArg0: any, arg0OrLoc?: any, arg1OrLoc?: any, arg2?: any, arg3?: any, arg4?: any, arg5?: any): void {
+    const msg = new Message(0);
+    this.doInitMessage(msg);
+
+    if (typeOrArg0 instanceof MessageType0L) {
+      msg.type = typeOrArg0;
+      msg.auxLoc = arg0OrLoc as Location;
+    } else if (typeOrArg0 instanceof MessageType1L) {
+      msg.args.resize(1);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.type = typeOrArg0;
+      msg.auxLoc = arg1OrLoc as Location;
+    } else if (typeOrArg0 instanceof MessageType0) {
+      msg.type = typeOrArg0;
+    } else if (typeOrArg0 instanceof MessageType1) {
+      msg.args.resize(1);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.type = typeOrArg0;
+    } else if (typeOrArg0 instanceof MessageType2) {
+      msg.args.resize(2);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.args.set(1, new CopyOwner(arg1OrLoc.copy()));
+      msg.type = typeOrArg0;
+    } else if (typeOrArg0 instanceof MessageType3) {
+      msg.args.resize(3);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.args.set(1, new CopyOwner(arg1OrLoc.copy()));
+      msg.args.set(2, new CopyOwner(arg2.copy()));
+      msg.type = typeOrArg0;
+    } else if (typeOrArg0 instanceof MessageType5) {
+      msg.args.resize(5);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.args.set(1, new CopyOwner(arg1OrLoc.copy()));
+      msg.args.set(2, new CopyOwner(arg2.copy()));
+      msg.args.set(3, new CopyOwner(arg3.copy()));
+      msg.args.set(4, new CopyOwner(arg4.copy()));
+      msg.type = typeOrArg0;
+    } else if (typeOrArg0 instanceof MessageType6) {
+      msg.args.resize(6);
+      msg.args.set(0, new CopyOwner(arg0OrLoc.copy()));
+      msg.args.set(1, new CopyOwner(arg1OrLoc.copy()));
+      msg.args.set(2, new CopyOwner(arg2.copy()));
+      msg.args.set(3, new CopyOwner(arg3.copy()));
+      msg.args.set(4, new CopyOwner(arg4.copy()));
+      msg.args.set(5, new CopyOwner(arg5.copy()));
+      msg.type = typeOrArg0;
+    }
+
+    this.dispatchMessage(msg);
+  }
+
+  dispatchMessage(msg: Message): void {
+    if (this.keepingMessages_) {
+      // Queue message as MessageEvent when keeping messages
+      const event = new MessageEvent(msg);
+      this.keptMessages_.append(event);
+    } else if (this.handler_) {
+      const event = new MessageEvent(msg);
+      this.handler_.message(event);
+    }
   }
 
   validate(): Boolean {
@@ -5136,17 +5199,53 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   private endInstance(): void {
-    // Simplified endInstance() from parseInstance.cxx
+    // Do checking before popping entity stack so that there's a
+    // current location for error messages.
+    this.endAllElements();
 
-    // TODO: endAllElements()
-    // TODO: Check unclosed marked sections
-    // TODO: checkIdrefs()
+    // Check for unclosed marked sections
+    while (this.markedSectionLevel() > 0) {
+      this.message(
+        ParserMessages.unclosedMarkedSection,
+        this.currentMarkedSectionStartLocation()
+      );
+      this.endMarkedSection();
+    }
+
+    this.checkIdrefs();
 
     // Pop the document entity from the input stack
     this.popInputStack();
 
     // Done parsing
     this.allDone();
+  }
+
+  private endAllElements(): void {
+    while (this.tagLevel() > 0) {
+      if (!this.currentElement().isFinished()) {
+        this.message(
+          ParserMessages.elementNotFinishedDocumentEnd,
+          new StringMessageArg(this.currentElement().type().name())
+        );
+      }
+      this.implyCurrentElementEnd(this.currentLocation());
+    }
+    if (!this.currentElement().isFinished() && this.validate()) {
+      this.message(ParserMessages.noDocumentElement);
+    }
+  }
+
+  private checkIdrefs(): void {
+    const iter = this.idTableIter();
+    let id = iter.next();
+    while (id !== null) {
+      for (let i = 0; i < id.pendingRefs().size(); i++) {
+        this.setNextLocation(id.pendingRefs().get(i));
+        this.message(ParserMessages.missingId, new StringMessageArg(id.name()));
+      }
+      id = iter.next();
+    }
   }
 
   // Mode table flags from parseMode.cxx
@@ -5696,19 +5795,34 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected extendData(): void {
-    // Simple data extension - just extend current token
+    // Port of extendData from parseInstance.cxx (lines 1181-1190)
+    // This is one of the parser's inner loops, so it needs to be fast.
+    const isNormal = this.normalMap();
     const input = this.currentInput();
     if (!input) return;
 
     let length = input.currentTokenLength();
-    // Extend to include all available data
-    // TODO: Implement proper data extension logic
+    while (isNormal.get(input.tokenCharInBuffer(this))) {
+      length++;
+    }
     input.endToken(length);
   }
 
   protected extendContentS(): void {
-    // Extend whitespace in content
-    this.extendS();
+    // Port of extendContentS from parseInstance.cxx (lines 1192-1204)
+    const input = this.currentInput();
+    if (!input) return;
+
+    let length = input.currentTokenLength();
+    const isNormal = this.normalMap();
+    for (;;) {
+      const ch = input.tokenChar(this);
+      if (!this.syntax().isS(ch) || !isNormal.get(ch)) {
+        break;
+      }
+      length++;
+    }
+    input.endToken(length);
   }
 
   protected reportNonSgmlCharacter(): boolean {
@@ -7453,16 +7567,45 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Validates that PCDATA is allowed in the current element context
     // If not, tries to imply start tags to make it valid
 
-    // TODO: Full implementation requires:
-    // - currentElement().tryTransitionPcdata()
-    // - pcdataRecovering() state check
-    // - tryImplyTag() for automatic tag inference
-    // - Undo/Event list management
-    // - keepMessages/discardKeptMessages for error recovery
-    // - pcdataRecover() error state
+    if (this.currentElement().tryTransitionPcdata()) {
+      return;
+    }
 
-    // For now, this is a no-op stub
-    // Real implementation would validate and possibly imply tags
+    // Need to test here since implying tags may turn off pcdataRecovering
+    if (this.pcdataRecovering()) {
+      return;
+    }
+
+    const undoList = new IList<Undo>();
+    const eventList = new IList<Event>();
+    let startImpliedCount = 0;
+    let attributeListIndex = 0;
+    const startImpliedCountRef = { value: startImpliedCount };
+    const attributeListIndexRef = { value: attributeListIndex };
+
+    this.keepMessages();
+    while (
+      this.tryImplyTag(
+        startLocation,
+        startImpliedCountRef,
+        attributeListIndexRef,
+        undoList,
+        eventList
+      )
+    ) {
+      if (this.currentElement().tryTransitionPcdata()) {
+        this.queueElementEvents(eventList);
+        return;
+      }
+    }
+
+    this.discardKeptMessages();
+    this.undo(undoList);
+
+    if (this.validate() || this.afterDocumentElement()) {
+      this.message(ParserMessages.pcdataNotAllowed);
+    }
+    this.pcdataRecover();
   }
 
   protected handleShortref(index: number): void {
@@ -8649,12 +8792,98 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.pushElementCheck(e, event, netEnabling);
   }
 
-  // Port of parseInstance.cxx lines 1273-1340 (stub for now)
-  protected findMissingTag(e: ElementType, v: Vector<ElementType | null>): void {
-    // TODO: Full implementation from parseInstance.cxx lines 1273-1340
-    // This determines what element(s) could be inferred to make the current element valid
-    // For now, return empty vector - will prevent element inference
+  // Port of parseInstance.cxx lines 1273-1346
+  protected findMissingTag(e: ElementType | null, v: Vector<ElementType | null>): void {
     v.clear();
+
+    if (!this.currentElement().currentPosition()) {
+      if (!e) {
+        v.push_back(null); // null represents #PCDATA
+      }
+      return;
+    }
+
+    if (e && this.elementIsExcluded(e)) {
+      return;
+    }
+
+    // Get possible transitions from current match state
+    this.currentElement().matchState().possibleTransitions(v);
+
+    // FIXME: also get currentInclusions
+
+    let newSize = 0;
+    for (let i = 0; i < v.size(); i++) {
+      const candidate = v.get(i);
+      if (candidate && !this.elementIsExcluded(candidate)) {
+        let success = false;
+        const def = candidate.definition();
+
+        if (def) {
+          switch (def.declaredContent()) {
+            case ElementDefinition.DeclaredContent.modelGroup: {
+              const grp = def.compiledModelGroup();
+              if (grp) {
+                const state = new MatchState(grp);
+                if (!e) {
+                  // Looking for #PCDATA
+                  if (state.tryTransitionPcdata()) {
+                    success = true;
+                  }
+                } else {
+                  // Looking for element e
+                  if (state.tryTransition(e)) {
+                    success = true;
+                  }
+                  if (!success) {
+                    // Check inclusions
+                    for (let j = 0; j < def.nInclusions(); j++) {
+                      if (def.inclusion(j) === e) {
+                        success = true;
+                        break;
+                      }
+                    }
+                  }
+                  if (success) {
+                    // Check exclusions
+                    for (let j = 0; j < def.nExclusions(); j++) {
+                      if (def.exclusion(j) === e) {
+                        success = false;
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+              break;
+            }
+            case ElementDefinition.DeclaredContent.cdata:
+            case ElementDefinition.DeclaredContent.rcdata:
+              if (!e) {
+                success = true;
+              }
+              break;
+            default:
+              break;
+          }
+        }
+
+        if (success) {
+          v.set(newSize++, candidate);
+        }
+      }
+    }
+    v.resize(newSize);
+
+    // Sort by order of occurrence in DTD (insertion sort)
+    for (let i = 1; i < v.size(); i++) {
+      const tem = v.get(i);
+      let j: number;
+      for (j = i; j > 0 && v.get(j - 1)!.index() > tem!.index(); j--) {
+        v.set(j, v.get(j - 1));
+      }
+      v.set(j, tem);
+    }
   }
 
   // ============================================================================

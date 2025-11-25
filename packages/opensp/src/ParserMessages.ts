@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType, MessageType1L } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType, MessageType0L, MessageType1L } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
@@ -137,6 +137,11 @@ export const elementNotOpen = new MessageType1(MessageType.Severity.error, null,
 export const requiredElementExcluded = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded at this point because it is contextually required');
 export const invalidExclusion = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded because it is neither inherently optional nor a member of an OR group');
 export const immediateRecursion = new MessageType0(MessageType.Severity.warning, null, -1, 'immediately recursive element');
+export const pcdataNotAllowed = new MessageType0(MessageType.Severity.error, null, -1, 'character data is not allowed here');
+export const elementNotFinishedDocumentEnd = new MessageType1(MessageType.Severity.error, null, -1, '%1 not finished but document ended');
+export const noDocumentElement = new MessageType0(MessageType.Severity.error, null, -1, 'no document element');
+export const unclosedMarkedSection = new MessageType0L(MessageType.Severity.error, null, -1, 'missing marked section end', 'marked section started here');
+export const missingId = new MessageType1(MessageType.Severity.idrefError, null, -1, 'reference to non-existent ID %1');
 export const lexicalAmbiguity = new MessageType2(MessageType.Severity.warning, null, -1, 'delimiter %1 and %2 are ambiguous');
 
 // Messages from parseParam.cxx

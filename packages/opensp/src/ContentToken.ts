@@ -394,18 +394,29 @@ export class AndInfo {
 
 export abstract class LeafContentToken extends ContentToken {
   private transitions_: Vector<Transition>;
+  private follow_: Vector<LeafContentToken>;
   private index_: number;
   private typeIndex_: number;
   private inOrGroup_: PackedBoolean;
   protected andInfo_: AndInfo | null;
+  protected isFinal_: PackedBoolean;
+  protected requiredIndex_: number;
+  // 0 = none, 1 = simple, 2 = complex
+  protected pcdataTransitionType_: number;
+  protected simplePcdataTransition_: LeafContentToken | null;
 
   constructor(occurrenceIndicator: number) {
     super(occurrenceIndicator);
     this.transitions_ = new Vector<Transition>();
+    this.follow_ = new Vector<LeafContentToken>();
     this.index_ = 0;
     this.typeIndex_ = 0;
     this.inOrGroup_ = false;
     this.andInfo_ = null;
+    this.isFinal_ = false;
+    this.requiredIndex_ = -1;
+    this.pcdataTransitionType_ = 0;
+    this.simplePcdataTransition_ = null;
   }
 
   index(): number {
@@ -457,6 +468,126 @@ export abstract class LeafContentToken extends ContentToken {
   // Port of LeafContentToken::andDepth from ContentToken.cxx
   andDepth(): number {
     return this.andInfo_ ? ContentToken.andDepth(this.andInfo_.andAncestor) : 0;
+  }
+
+  isFinal(): Boolean {
+    return this.isFinal_;
+  }
+
+  setFinal(): void {
+    this.isFinal_ = true;
+  }
+
+  addFollow(token: LeafContentToken): void {
+    this.follow_.push_back(token);
+  }
+
+  nFollow(): number {
+    return this.follow_.size();
+  }
+
+  follow(i: number): LeafContentToken {
+    return this.follow_.get(i);
+  }
+
+  // Port of LeafContentToken::possibleTransitions from ContentToken.cxx lines 692-709
+  possibleTransitions(andState: AndState, minAndDepth: number, result: Vector<ElementType | null>): void {
+    if (!this.andInfo_) {
+      // Simple case - no AND groups
+      for (let i = 0; i < this.follow_.size(); i++) {
+        result.push_back(this.follow_.get(i).elementType());
+      }
+    } else {
+      // Complex case with AND groups - check requireClear and andDepth conditions
+      for (let i = 0; i < this.follow_.size(); i++) {
+        const t = this.andInfo_.follow.get(i);
+        if ((t.requireClear === Transition.invalidIndex || andState.isClear(t.requireClear)) &&
+            t.andDepth >= minAndDepth) {
+          result.push_back(this.follow_.get(i).elementType());
+        }
+      }
+    }
+  }
+
+  // Port of LeafContentToken::tryTransition from ContentToken.cxx lines 657-689
+  tryTransition(
+    to: ElementType | null,
+    andState: AndState,
+    minAndDepthRef: { value: number },
+    newposRef: { value: LeafContentToken | null }
+  ): Boolean {
+    if (!this.andInfo_) {
+      // Simple case - no AND groups
+      for (let i = 0; i < this.follow_.size(); i++) {
+        if (this.follow_.get(i).elementType() === to) {
+          newposRef.value = this.follow_.get(i);
+          minAndDepthRef.value = newposRef.value.computeMinAndDepth(andState);
+          return true;
+        }
+      }
+    } else {
+      // Complex case with AND groups
+      for (let i = 0; i < this.follow_.size(); i++) {
+        const q = this.andInfo_.follow.get(i);
+        if (this.follow_.get(i).elementType() === to &&
+            (q.requireClear === Transition.invalidIndex || andState.isClear(q.requireClear)) &&
+            q.andDepth >= minAndDepthRef.value) {
+          if (q.toSet !== Transition.invalidIndex) {
+            andState.set(q.toSet);
+          }
+          andState.clearFrom(q.clearAndStateStartIndex);
+          newposRef.value = this.follow_.get(i);
+          minAndDepthRef.value = newposRef.value.computeMinAndDepth(andState);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Port of LeafContentToken::tryTransitionPcdata from ContentToken.h lines 516-529
+  tryTransitionPcdata(
+    andState: AndState,
+    minAndDepthRef: { value: number },
+    newposRef: { value: LeafContentToken | null }
+  ): Boolean {
+    if (this.pcdataTransitionType_ === 1) {
+      newposRef.value = this.simplePcdataTransition_;
+      return true;
+    } else if (this.pcdataTransitionType_ === 0) {
+      return false;
+    } else {
+      // Complex PCDATA transition - use tryTransition with null element type
+      return this.tryTransition(null, andState, minAndDepthRef, newposRef);
+    }
+  }
+
+  // Port of LeafContentToken::computeMinAndDepth from ContentToken.h lines 512-514
+  computeMinAndDepth(andState: AndState): number {
+    if (!this.andInfo_) {
+      return 0;
+    }
+    return this.computeMinAndDepth1(andState);
+  }
+
+  // Port of LeafContentToken::computeMinAndDepth1 from ContentToken.cxx lines 711-722
+  private computeMinAndDepth1(andState: AndState): number {
+    if (!this.andInfo_) {
+      return 0;
+    }
+    let groupIndex = this.andInfo_.andGroupIndex;
+    for (let group: AndModelGroup | null = this.andInfo_.andAncestor;
+         group;
+         groupIndex = group.andGroupIndex(), group = group.andAncestor()) {
+      for (let i = 0; i < group.nMembers(); i++) {
+        if (i !== groupIndex &&
+            !group.member(i).inherentlyOptional() &&
+            andState.isClear(group.andIndex() + i)) {
+          return group.andDepth() + 1;
+        }
+      }
+    }
+    return 0;
   }
 
   protected analyze1(
@@ -656,22 +787,46 @@ export class MatchState {
     }
   }
 
-  tryTransition(e: ElementType): Boolean {
-    // TODO: Implement transition logic
-    return false;
+  tryTransition(e: ElementType | null): Boolean {
+    // Port of MatchState::tryTransition from ContentToken.h lines 532-535
+    if (!this.pos_) {
+      return false;
+    }
+    const minAndDepthRef = { value: this.minAndDepth_ };
+    const newposRef = { value: this.pos_ as LeafContentToken | null };
+    const result = this.pos_.tryTransition(e, this.andState_, minAndDepthRef, newposRef);
+    if (result) {
+      this.minAndDepth_ = minAndDepthRef.value;
+      this.pos_ = newposRef.value;
+    }
+    return result;
   }
 
   tryTransitionPcdata(): Boolean {
-    // TODO: Implement PCDATA transition logic
-    return false;
+    // Port of MatchState::tryTransitionPcdata from ContentToken.h lines 538-541
+    if (!this.pos_) {
+      return false;
+    }
+    const minAndDepthRef = { value: this.minAndDepth_ };
+    const newposRef = { value: this.pos_ as LeafContentToken | null };
+    const result = this.pos_.tryTransitionPcdata(this.andState_, minAndDepthRef, newposRef);
+    if (result) {
+      this.minAndDepth_ = minAndDepthRef.value;
+      this.pos_ = newposRef.value;
+    }
+    return result;
   }
 
-  possibleTransitions(result: Vector<ElementType>): void {
-    // TODO: Implement possible transitions enumeration
+  possibleTransitions(result: Vector<ElementType | null>): void {
+    // Port of MatchState::possibleTransitions from ContentToken.h lines 544-547
+    if (this.pos_) {
+      this.pos_.possibleTransitions(this.andState_, this.minAndDepth_, result);
+    }
   }
 
   isFinished(): Boolean {
-    return this.pos_ === null || (this.pos_ as any).isFinal?.() === true;
+    // Port of MatchState::isFinished from ContentToken.h lines 550-553
+    return this.pos_ !== null && this.pos_.isFinal() && this.minAndDepth_ === 0;
   }
 
   impliedStartTag(): LeafContentToken | null {
