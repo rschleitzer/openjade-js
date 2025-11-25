@@ -17,7 +17,8 @@ import { AttributeList } from './Attribute';
 import { Allocator } from './Allocator';
 import * as ParserMessages from './ParserMessages';
 import { StringMessageArg, NumberMessageArg } from './MessageArg';
-import { PiEntityEvent, CdataEntityEvent, SdataEntityEvent, ExternalDataEntityEvent, SubdocEntityEvent } from './Event';
+import { PiEntityEvent, CdataEntityEvent, SdataEntityEvent, ExternalDataEntityEvent, SubdocEntityEvent, EntityStartEvent } from './Event';
+import { InternalInputSource } from './InternalInputSource';
 
 // Forward declarations
 export class ParserState { }
@@ -257,11 +258,10 @@ export class InternalCdataEntity extends InternalDataEntity {
     this.checkRef(parserState);
     Entity.checkEntlvl(parserState);
     if (this.string().size() > 0) {
-      (parserState as any).noteData();
-      if (generateEvent) {
-        const event = new CdataEntityEvent(this, new ConstPtr(origin.pointer()));
-        (parserState as any).eventHandler().sdataEntity(event);
-      }
+      const ps = parserState as any;
+      ps.noteData();
+      // CdataEntityEvent is passed to data() handler
+      ps.eventHandler().data(new CdataEntityEvent(this, new ConstPtr(origin.pointer())));
     }
   }
 
@@ -320,17 +320,13 @@ export class InternalSdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // Port of InternalSdataEntity::normalReference from Entity.cxx (lines 410-425)
+    // Port of InternalSdataEntity::normalReference from Entity.cxx (lines 376-386)
+    // SDATA entities fire an event directly rather than pushing to input stack
     this.checkRef(parserState);
     Entity.checkEntlvl(parserState);
-    if (this.checkNotOpen(parserState)) {
-      if (generateEvent && (parserState as any).wantMarkup()) {
-        // TODO: Fire EntityStartEvent
-        // (parserState as any).eventHandler().entityStart(new EntityStartEvent(origin));
-      }
-      // TODO: Push InternalInputSource
-      // (parserState as any).pushInput(new InternalInputSource(this.text_.string(), origin.pointer()));
-    }
+    const ps = parserState as any;
+    ps.noteData();
+    ps.eventHandler().sdataEntity(new SdataEntityEvent(this, new ConstPtr(origin.pointer())));
   }
 
   litReference(
@@ -339,7 +335,7 @@ export class InternalSdataEntity extends InternalDataEntity {
     origin: Ptr<EntityOriginImport>,
     squeezeSpaces: Boolean
   ): void {
-    // Port of InternalSdataEntity::litReference from Entity.cxx (lines 393-410)
+    // Port of InternalSdataEntity::litReference from Entity.cxx (lines 393-409)
     this.checkRef(parserState);
     Entity.checkEntlvl(parserState);
     if (squeezeSpaces) {
@@ -396,7 +392,16 @@ export class InternalTextEntity extends InternalEntity {
     origin: Ptr<EntityOriginImport>,
     generateEvent: Boolean
   ): void {
-    // TODO: Implement text entity normal reference
+    // Port of InternalTextEntity::normalReference from Entity.cxx (lines 411-424)
+    this.checkRef(parserState);
+    Entity.checkEntlvl(parserState);
+    if (this.checkNotOpen(parserState)) {
+      const ps = parserState as any;
+      if (generateEvent && ps.wantMarkup()) {
+        ps.eventHandler().entityStart(new EntityStartEvent(new ConstPtr(origin.pointer())));
+      }
+      ps.pushInput(new InternalInputSource(this.text_.string(), origin.pointer()));
+    }
   }
 
   litReference(
@@ -475,23 +480,22 @@ export class ExternalTextEntity extends ExternalEntity {
     this.checkRef(parserState);
     Entity.checkEntlvl(parserState);
     if (this.checkNotOpen(parserState)) {
-      if (generateEvent && (parserState as any).wantMarkup()) {
-        // TODO: Fire EntityStartEvent
-        // (parserState as any).eventHandler().entityStart(new EntityStartEvent(origin));
+      const ps = parserState as any;
+      if (generateEvent && ps.wantMarkup()) {
+        ps.eventHandler().entityStart(new EntityStartEvent(new ConstPtr(origin.pointer())));
       }
       if (this.externalId().effectiveSystemId().size() > 0) {
-        // TODO: Push input from entity manager
-        // (parserState as any).pushInput(
-        //   (parserState as any).entityManager().open(
-        //     this.externalId().effectiveSystemId(),
-        //     (parserState as any).sd().docCharset(),
-        //     origin.pointer(),
-        //     0,
-        //     parserState
-        //   )
-        // );
+        ps.pushInput(
+          ps.entityManager().open(
+            this.externalId().effectiveSystemId(),
+            ps.sd().docCharset(),
+            origin.pointer(),
+            0,
+            parserState
+          )
+        );
       } else {
-        (parserState as any).message(
+        ps.message(
           ParserMessages.nonExistentEntityRef,
           new StringMessageArg(this.name()),
           this.defLocation()
