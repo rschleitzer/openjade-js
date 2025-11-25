@@ -55,6 +55,7 @@ import { EventsWanted } from './EventsWanted';
 import { Ptr, ConstPtr } from './Ptr';
 import { Recognizer } from './Recognizer';
 import { Sd } from './Sd';
+import { SdParam, AllowedSdParams, AllowedSdParamsMessageArg } from './SdParam';
 import { Syntax } from './Syntax';
 import { NCVector } from './NCVector';
 import { Owner } from './Owner';
@@ -6378,6 +6379,30 @@ export class ParserState extends ContentState implements ParserStateInterface {
     input.endToken(length);
   }
 
+  /**
+   * parseNumberFromToken - Parse a number from a token's character buffer
+   * Returns null if the number is invalid, otherwise returns the parsed value
+   */
+  protected parseNumberFromToken(start: Char[] | null, length: number): number | null {
+    if (!start || length === 0) {
+      return null;
+    }
+    let result = 0;
+    for (let i = 0; i < length; i++) {
+      const digit = start[i] - 0x30; // '0' = 0x30
+      if (digit < 0 || digit > 9) {
+        return null;
+      }
+      const newResult = result * 10 + digit;
+      if (newResult < result) {
+        // Overflow
+        return null;
+      }
+      result = newResult;
+    }
+    return result;
+  }
+
   protected extendS(): void {
     // Port of extendS from parseCommon.cxx
     const input = this.currentInput();
@@ -11098,6 +11123,375 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected readonly literalNonSgml = 0o020;
   protected readonly literalLcnmstrt = 0o040;
   protected readonly literalLcnmchar = 0o0100;
+
+  // ========================================
+  // SGML Declaration Parameter Parsing
+  // Port of parseSd.cxx lines 2882-3065
+  // ========================================
+
+  /**
+   * parseSdParam - Parse a parameter in an SGML declaration
+   * Port of Parser::parseSdParam from parseSd.cxx
+   */
+  protected parseSdParam(allow: AllowedSdParams, parm: SdParam): Boolean {
+    for (;;) {
+      const token = this.getToken(Mode.sdMode);
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.markupDeclarationCharacter,
+            new StringMessageArg(this.currentToken()),
+            new AllowedSdParamsMessageArg(allow, this.sdPointer())
+          );
+          return false;
+
+        case TokenEnum.tokenEe:
+          if (allow.param(SdParam.Type.eE)) {
+            parm.type = SdParam.Type.eE;
+            if (this.currentMarkup()) {
+              this.currentMarkup()!.addEntityEnd();
+            }
+            this.popInputStack();
+            return true;
+          }
+          this.message(
+            ParserMessages.sdEntityEnd,
+            new AllowedSdParamsMessageArg(allow, this.sdPointer())
+          );
+          return false;
+
+        case TokenEnum.tokenS:
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addS(this.currentChar());
+          }
+          break;
+
+        case TokenEnum.tokenCom:
+          if (!this.parseComment(Mode.sdcomMode)) {
+            return false;
+          }
+          break;
+
+        case TokenEnum.tokenDso:
+        case TokenEnum.tokenGrpo:
+        case TokenEnum.tokenMinusGrpo:
+        case TokenEnum.tokenPlusGrpo:
+        case TokenEnum.tokenRni:
+        case TokenEnum.tokenPeroNameStart:
+        case TokenEnum.tokenPeroGrpo:
+          this.sdParamInvalidToken(token, allow);
+          return false;
+
+        case TokenEnum.tokenMinus:
+          if (allow.param(SdParam.Type.minus)) {
+            parm.type = SdParam.Type.minus;
+            return true;
+          }
+          this.sdParamInvalidToken(TokenEnum.tokenMinus, allow);
+          return false;
+
+        case TokenEnum.tokenLita:
+        case TokenEnum.tokenLit: {
+          const lita = token === TokenEnum.tokenLita;
+          if (allow.param(SdParam.Type.minimumLiteral)) {
+            if (!this.parseMinimumLiteral(lita, parm.literalText)) {
+              return false;
+            }
+            parm.type = SdParam.Type.minimumLiteral;
+            if (this.currentMarkup()) {
+              this.currentMarkup()!.addLiteral(parm.literalText);
+            }
+          } else if (allow.param(SdParam.Type.paramLiteral)) {
+            if (!this.parseSdParamLiteral(lita, parm.paramLiteralText)) {
+              return false;
+            }
+            parm.type = SdParam.Type.paramLiteral;
+          } else if (allow.param(SdParam.Type.systemIdentifier)) {
+            if (!this.parseSdSystemIdentifier(lita, parm.literalText)) {
+              return false;
+            }
+            parm.type = SdParam.Type.systemIdentifier;
+          } else {
+            this.sdParamInvalidToken(token, allow);
+            return false;
+          }
+          return true;
+        }
+
+        case TokenEnum.tokenMdc:
+          if (allow.param(SdParam.Type.mdc)) {
+            parm.type = SdParam.Type.mdc;
+            if (this.currentMarkup()) {
+              this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMDC);
+            }
+            return true;
+          }
+          this.sdParamInvalidToken(TokenEnum.tokenMdc, allow);
+          return false;
+
+        case TokenEnum.tokenNameStart: {
+          this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+          this.getCurrentToken(this.syntax().generalSubstTable(), parm.token);
+
+          if (allow.param(SdParam.Type.capacityName)) {
+            const capResult: { value: number } = { value: 0 };
+            if (this.sd().lookupCapacityName(parm.token, capResult)) {
+              parm.capacityIndex = capResult.value;
+              parm.type = SdParam.Type.capacityName;
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            }
+          }
+
+          if (allow.param(SdParam.Type.referenceReservedName)) {
+            const rnResult: { value: number } = { value: 0 };
+            if (this.syntax().lookupReservedName(parm.token, rnResult)) {
+              parm.reservedNameIndex = rnResult.value;
+              parm.type = SdParam.Type.referenceReservedName;
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            }
+          }
+
+          if (allow.param(SdParam.Type.generalDelimiterName)) {
+            const delimResult: { value: number } = { value: 0 };
+            if (this.sd().lookupGeneralDelimiterName(parm.token, delimResult)) {
+              parm.delimGeneralIndex = delimResult.value;
+              parm.type = SdParam.Type.generalDelimiterName;
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            }
+          }
+
+          if (allow.param(SdParam.Type.quantityName)) {
+            const qtyResult: { value: number } = { value: 0 };
+            if (this.sd().lookupQuantityName(parm.token, qtyResult)) {
+              parm.quantityIndex = qtyResult.value;
+              parm.type = SdParam.Type.quantityName;
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            }
+          }
+
+          // Check for specific reserved names
+          for (let i = 0; ; i++) {
+            const t = allow.get(i);
+            if (t === SdParam.Type.invalid) {
+              break;
+            }
+            if (t >= SdParam.Type.reservedName) {
+              const sdReservedName = t - SdParam.Type.reservedName;
+              if (parm.token.equals(this.sd().reservedName(sdReservedName))) {
+                parm.type = t;
+                if (this.currentMarkup()) {
+                  this.currentMarkup()!.addSdReservedName(sdReservedName, this.currentInput()!);
+                }
+                return true;
+              }
+            }
+          }
+
+          if (allow.param(SdParam.Type.name)) {
+            parm.type = SdParam.Type.name;
+            if (this.currentMarkup()) {
+              this.currentMarkup()!.addName(this.currentInput()!);
+            }
+            return true;
+          }
+
+          this.message(
+            ParserMessages.sdInvalidNameToken,
+            new StringMessageArg(parm.token),
+            new AllowedSdParamsMessageArg(allow, this.sdPointer())
+          );
+          return false;
+        }
+
+        case TokenEnum.tokenDigit:
+          if (allow.param(SdParam.Type.number)) {
+            this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
+            parm.type = SdParam.Type.number;
+            const input = this.currentInput()!;
+            const nResult = this.parseNumberFromToken(
+              input.currentTokenStart(),
+              input.currentTokenLength()
+            );
+            if (nResult === null || nResult > 0xFFFFFFFF) {
+              this.message(
+                ParserMessages.numberTooBig,
+                new StringMessageArg(this.currentToken())
+              );
+              parm.n = 0xFFFFFFFF;
+            } else {
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addNumber(input);
+              }
+              parm.n = nResult;
+            }
+            const nextToken = this.getToken(Mode.sdMode);
+            if (nextToken === TokenEnum.tokenNameStart) {
+              this.message(ParserMessages.psRequired);
+            }
+            this.currentInput()!.ungetToken();
+            return true;
+          }
+          this.sdParamInvalidToken(TokenEnum.tokenDigit, allow);
+          return false;
+
+        default:
+          CANNOT_HAPPEN();
+      }
+    }
+  }
+
+  /**
+   * sdParamInvalidToken - Report an invalid token in SGML declaration
+   * Port of Parser::sdParamInvalidToken from parseSd.cxx
+   */
+  protected sdParamInvalidToken(token: Token, allow: AllowedSdParams): void {
+    this.message(
+      ParserMessages.sdParamInvalidToken,
+      new TokenMessageArg(token, Mode.sdMode, this.syntaxPointer(), this.sdPointer()),
+      new AllowedSdParamsMessageArg(allow, this.sdPointer())
+    );
+  }
+
+  /**
+   * parseSdParamLiteral - Parse a parameter literal in SGML declaration
+   * Port of Parser::parseSdParamLiteral from parseSd.cxx
+   */
+  protected parseSdParamLiteral(lita: Boolean, str: String<number>): Boolean {
+    const loc = new Location(this.currentLocation());
+    loc.addOffset(1);
+    str.resize(0);
+    const refLitlen = Syntax.referenceQuantity(Syntax.Quantity.qLITLEN);
+
+    const mode = lita ? Mode.sdplitaMode : Mode.sdplitMode;
+    for (;;) {
+      const token = this.getToken(mode);
+      switch (token) {
+        case TokenEnum.tokenEe:
+          this.message(ParserMessages.literalLevel);
+          return false;
+
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          if (this.options().errorSignificant) {
+            this.message(
+              ParserMessages.sdLiteralSignificant,
+              new StringMessageArg(this.currentToken())
+            );
+          }
+          str.appendChar(this.currentChar());
+          break;
+
+        case TokenEnum.tokenCroDigit: {
+          const input = this.currentInput()!;
+          input.discardInitial();
+          this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
+          const n = this.parseNumberFromToken(
+            input.currentTokenStart(),
+            input.currentTokenLength()
+          );
+          if (n === null || n > this.syntaxCharMax_) {
+            this.message(
+              ParserMessages.syntaxCharacterNumber,
+              new StringMessageArg(this.currentToken())
+            );
+          } else {
+            str.appendChar(n);
+          }
+          // Skip to REFC
+          this.getToken(Mode.refMode);
+          break;
+        }
+
+        case TokenEnum.tokenChar:
+          str.appendChar(this.currentChar());
+          break;
+
+        case TokenEnum.tokenLit:
+        case TokenEnum.tokenLita:
+          if (str.size() > refLitlen) {
+            this.message(
+              ParserMessages.parameterLiteralLength,
+              new NumberMessageArg(refLitlen)
+            );
+          }
+          return true;
+
+        default:
+          CANNOT_HAPPEN();
+      }
+    }
+  }
+
+  /**
+   * parseSdSystemIdentifier - Parse a system identifier in SGML declaration
+   * Port of Parser::parseSdSystemIdentifier from parseSd.cxx
+   */
+  protected parseSdSystemIdentifier(lita: Boolean, text: Text): Boolean {
+    const loc = new Location(this.currentLocation());
+    loc.addOffset(1);
+    text.clear();
+    const refLitlen = Syntax.referenceQuantity(Syntax.Quantity.qLITLEN);
+
+    const mode = lita ? Mode.sdslitaMode : Mode.sdslitMode;
+    for (;;) {
+      const token = this.getToken(mode);
+      switch (token) {
+        case TokenEnum.tokenEe:
+          this.message(ParserMessages.literalLevel);
+          return false;
+
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          if (this.options().errorSignificant) {
+            this.message(
+              ParserMessages.sdLiteralSignificant,
+              new StringMessageArg(this.currentToken())
+            );
+          }
+          text.addChar(this.currentChar(), this.currentLocation());
+          break;
+
+        case TokenEnum.tokenChar:
+          text.addChar(this.currentChar(), this.currentLocation());
+          break;
+
+        case TokenEnum.tokenLit:
+        case TokenEnum.tokenLita:
+          if (text.size() > refLitlen) {
+            this.message(
+              ParserMessages.systemIdentifierLength,
+              new NumberMessageArg(refLitlen)
+            );
+          }
+          return true;
+
+        default:
+          CANNOT_HAPPEN();
+      }
+    }
+  }
+
+  // Maximum syntax character number (used in parseSdParamLiteral)
+  protected syntaxCharMax_: number = 0x7FFFFFFF;
 
 }
 
