@@ -68,15 +68,14 @@ export class ContentState {
     const model = new Owner<ModelGroup>(
       new SeqModelGroup(tokens, ContentToken.OccurrenceIndicator.none)
     );
-    const compiledModel = new Owner<CompiledModelGroup>(new CompiledModelGroup());
+    const compiledModel = new Owner<CompiledModelGroup>(new CompiledModelGroup(model.pointer()));
     const ambiguities = new Vector<ContentModelAmbiguity>();
     const pcdataUnreachableRef = { value: false };
 
     compiledModel.pointer()!.compile(
       dtd.nElementTypeIndex(),
-      model,
-      new Vector<any>(),
-      new Owner<any>()
+      ambiguities,
+      pcdataUnreachableRef
     );
 
     ASSERT(ambiguities.size() === 0);

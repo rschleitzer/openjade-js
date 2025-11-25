@@ -379,11 +379,25 @@ export class SeqModelGroup extends ModelGroup {
 }
 
 // LeafContentToken - base class for leaf tokens (elements, PCDATA, etc.)
+// AndInfo - information about AND group containment
+export class AndInfo {
+  andAncestor: AndModelGroup | null;
+  andGroupIndex: number;
+  follow: Vector<Transition>;
+
+  constructor() {
+    this.andAncestor = null;
+    this.andGroupIndex = 0;
+    this.follow = new Vector<Transition>();
+  }
+}
+
 export abstract class LeafContentToken extends ContentToken {
   private transitions_: Vector<Transition>;
   private index_: number;
   private typeIndex_: number;
   private inOrGroup_: PackedBoolean;
+  protected andInfo_: AndInfo | null;
 
   constructor(occurrenceIndicator: number) {
     super(occurrenceIndicator);
@@ -391,6 +405,7 @@ export abstract class LeafContentToken extends ContentToken {
     this.index_ = 0;
     this.typeIndex_ = 0;
     this.inOrGroup_ = false;
+    this.andInfo_ = null;
   }
 
   index(): number {
@@ -432,6 +447,16 @@ export abstract class LeafContentToken extends ContentToken {
   // Port of ContentToken.h line 206 - virtual method, overridden in ElementToken
   elementType(): ElementType | null {
     return null;
+  }
+
+  // Port of LeafContentToken::isInitial from ContentToken.cxx
+  isInitial(): Boolean {
+    return false;
+  }
+
+  // Port of LeafContentToken::andDepth from ContentToken.cxx
+  andDepth(): number {
+    return this.andInfo_ ? ContentToken.andDepth(this.andInfo_.andAncestor) : 0;
   }
 
   protected analyze1(
@@ -557,19 +582,6 @@ export class DataTagElementToken extends LeafContentToken {
     pcdataUnreachable: { value: Boolean }
   ): void {
     // TODO: Implement data tag element token finishing
-  }
-}
-
-// AndInfo - information for AND group transitions
-export class AndInfo {
-  andAncestor: AndModelGroup | null;
-  andGroupIndex: number;
-  follow: Vector<Transition>;
-
-  constructor() {
-    this.andAncestor = null;
-    this.andGroupIndex = 0;
-    this.follow = new Vector<Transition>();
   }
 }
 
@@ -705,11 +717,13 @@ export class CompiledModelGroup {
   private initial_: Owner<LeafContentToken>;
   private pcdataUnreachable_: Boolean;
   private andStateSize_: number;
+  private modelGroup_: Owner<ModelGroup>;
 
-  constructor() {
+  constructor(modelGroup?: ModelGroup | null) {
     this.initial_ = new Owner<LeafContentToken>();
     this.pcdataUnreachable_ = true;
     this.andStateSize_ = 0;
+    this.modelGroup_ = new Owner<ModelGroup>(modelGroup ?? null);
   }
 
   initial(): LeafContentToken | null {
@@ -720,22 +734,24 @@ export class CompiledModelGroup {
     return !this.pcdataUnreachable_;
   }
 
-  pcdataUnreachable(): Boolean {
-    return this.pcdataUnreachable_;
-  }
-
   andStateSize(): number {
     return this.andStateSize_;
   }
 
+  modelGroup(): ModelGroup | null {
+    return this.modelGroup_.pointer();
+  }
+
+  // Port of CompiledModelGroup::compile from ContentToken.cxx
   compile(
-    andStateSize: number,
-    modelGroup: Owner<ModelGroup>,
-    elementsInfo: Vector<any>,
-    pcdataToken: Owner<PcdataToken>
+    nElementTypeIndex: number,
+    ambiguities: Vector<ContentModelAmbiguity>,
+    pcdataUnreachable: { value: Boolean }
   ): void {
-    // TODO: Implement compilation
-    this.andStateSize_ = andStateSize;
+    // TODO: Implement full compilation logic
+    // For now, stub implementation that marks pcdata as unreachable
+    this.andStateSize_ = 0;
     this.pcdataUnreachable_ = true;
+    pcdataUnreachable.value = this.pcdataUnreachable_;
   }
 }

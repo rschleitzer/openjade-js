@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
@@ -190,3 +190,34 @@ export const missingStatusKeyword = new MessageType0(MessageType.Severity.warnin
 export const multipleStatusKeyword = new MessageType0(MessageType.Severity.warning, null, -1, 'multiple status keywords');
 export const instanceStatusKeywordSpecS = new MessageType0(MessageType.Severity.warning, null, -1, 'S separator in status keyword specification in document instance');
 export const internalSubsetMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'marked section in internal DTD subset');
+
+// Element declaration messages
+export const elementGroupDecl = new MessageType0(MessageType.Severity.warning, null, -1, 'element type name group in element declaration');
+export const rank = new MessageType0(MessageType.Severity.warning, null, -1, 'RANK feature');
+export const genericIdentifierLength = new MessageType1(MessageType.Severity.quantityError, null, -1, 'generic identifier length must not exceed NAMELEN (%1)');
+export const rankStemGenericIdentifier = new MessageType1(MessageType.Severity.error, null, -1, '%1 cannot be a generic identifier because it was used as a rank stem');
+export const psRequired = new MessageType0(MessageType.Severity.error, null, -1, 'parameter separator required');
+export const minimizationParam = new MessageType0(MessageType.Severity.warning, null, -1, 'tag minimization parameter specified');
+export const missingTagMinimization = new MessageType0(MessageType.Severity.error, null, -1, 'tag minimization parameter missing');
+export const cdataContent = new MessageType0(MessageType.Severity.warning, null, -1, 'CDATA declared content');
+export const rcdataContent = new MessageType0(MessageType.Severity.warning, null, -1, 'RCDATA declared content');
+export const emptyOmitEndTag = new MessageType0(MessageType.Severity.warning, null, -1, 'should be declared with O end-tag minimization');
+export const grpgtcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of content tokens exceeds GRPGTCNT (%1)');
+export const pcdataUnreachable = new MessageType0(MessageType.Severity.warning, null, -1, '#PCDATA in mixed content model unreachable');
+export const duplicateElementDefinition = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate definition of element %1');
+export const ambiguousModelInitial = new MessageType3(MessageType.Severity.error, null, -1, 'content model is ambiguous: when the start-tag has been parsed, the %1 contained in content token %2 and the %1 contained in content token %3 are both possible');
+export const ambiguousModel = new MessageType5(MessageType.Severity.error, null, -1, 'content model is ambiguous: when the %1 contained in content token %2 has been matched, the %3 contained in content token %4 and the %3 contained in content token %5 are both possible');
+export const ambiguousModelSingleAnd = new MessageType5(MessageType.Severity.error, null, -1, 'content model is ambiguous: when the %1 contained in content token %2 has been matched and the connector after an AND group has been matched, the %3 contained in content token %4 and the %3 contained in content token %5 are both possible');
+export const ambiguousModelMultipleAnd = new MessageType6(MessageType.Severity.error, null, -1, 'content model is ambiguous: when the %1 contained in content token %2 has been matched and the connectors after %3 AND groups have been matched, the %4 contained in content token %5 and the %4 contained in content token %6 are both possible');
+export const exclusion = new MessageType0(MessageType.Severity.warning, null, -1, 'exclusion exception');
+export const inclusion = new MessageType0(MessageType.Severity.warning, null, -1, 'inclusion exception');
+export const excludeIncludeSame = new MessageType1(MessageType.Severity.error, null, -1, '%1 appears in both inclusion and exclusion');
+export const conrefEmpty = new MessageType1(MessageType.Severity.error, null, -1, 'element %1 has a declared content of EMPTY and a CONREF attribute');
+export const notationEmpty = new MessageType1(MessageType.Severity.error, null, -1, 'element %1 has a declared content of EMPTY and a NOTATION attribute');
+
+// Notation declaration messages
+export const notationIdentifierTextClass = new MessageType0(MessageType.Severity.error, null, -1, 'public text class of public identifier in notation identifier must be NOTATION');
+export const duplicateNotationDeclaration = new MessageType1(MessageType.Severity.error, null, -1, 'notation %1 already defined');
+export const notationMustNotBeDeclared = new MessageType1(MessageType.Severity.error, null, -1, '#IMPLICIT attributes have already been specified for notation %1');
+export const missingSystemId = new MessageType0(MessageType.Severity.warning, null, -1, 'no system identifier specified');
+export const wwwRequired = new MessageType0(MessageType.Severity.warning, null, -1, 'public identifier in formal public identifier form requires WWW feature');

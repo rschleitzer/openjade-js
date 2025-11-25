@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -46,7 +46,7 @@ import { SubstTable } from './SubstTable';
 import { NamedTable, NamedTableIter } from './NamedTable';
 import { NamedResourceTable } from './NamedResourceTable';
 import { Notation } from './Notation';
-import { ExternalId } from './ExternalId';
+import { ExternalId, PublicId } from './ExternalId';
 import { Text } from './Text';
 import { RankStem, ElementType, ElementDefinition } from './ElementType';
 import { ExternalTextEntity } from './Entity';
@@ -63,7 +63,7 @@ import { EquivCode } from './types';
 import { Priority } from './Priority';
 import { GroupToken, AllowedGroupTokens, GroupConnector, AllowedGroupConnectors, AllowedGroupTokensMessageArg, AllowedGroupConnectorsMessageArg } from './Group';
 import { Param, AllowedParams, AllowedParamsMessageArg } from './Param';
-import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup } from './ContentToken';
+import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup, CompiledModelGroup, ContentModelAmbiguity, LeafContentToken } from './ContentToken';
 import { NameToken } from './NameToken';
 
 export enum Phase {
@@ -1944,11 +1944,271 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return true;
   }
 
+  // Port of Parser::parseElementDecl from parseDecl.cxx lines 538-740
   protected parseElementDecl(): boolean {
-    // Element declaration parsing
-    // Full implementation in parseDecl.cxx lines 538-894
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    // Allow name or name group
+    const allowNameNameGroup = new AllowedParams(Param.paramName, Param.nameGroup);
+    if (!this.parseParam(allowNameNameGroup, declInputLevel, parm)) {
+      return false;
+    }
+
+    const nameVector = new Vector<NameToken>();
+    if (parm.type === Param.nameGroup) {
+      parm.nameTokenVector.swap(nameVector);
+      if (this.options().warnElementGroupDecl) {
+        this.message(ParserMessages.elementGroupDecl);
+      }
+    } else {
+      nameVector.resize(1);
+      const nt = new NameToken();
+      parm.token.swap(nt.name);
+      parm.origToken.swap(nt.origName);
+      nameVector.set(0, nt);
+    }
+
+    // Allow rank, omission, or content specification
+    const allowRankOmissionContent = new AllowedParams(
+      Param.number,
+      Param.reservedName + Syntax.ReservedName.rO,
+      Param.minus,
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rRCDATA,
+      Param.reservedName + Syntax.ReservedName.rEMPTY,
+      Param.reservedName + Syntax.ReservedName.rANY,
+      Param.modelGroup
+    );
+    if (!this.parseParam(allowRankOmissionContent, declInputLevel, parm)) {
+      return false;
+    }
+
+    let rankSuffix = new String<Char>();
+    const elements = new Vector<ElementType | null>(nameVector.size());
+    const rankStems = new Vector<RankStem | null>();
+    const constRankStems = new Vector<RankStem | null>();
+    let i: number;
+
+    if (parm.type === Param.number) {
+      if (this.options().warnRank) {
+        this.message(ParserMessages.rank);
+      }
+      parm.token.swap(rankSuffix);
+      rankStems.resize(nameVector.size());
+      constRankStems.resize(nameVector.size());
+      for (i = 0; i < elements.size(); i++) {
+        const srcName = nameVector.get(i).name;
+        const name = new String<Char>(srcName.data(), srcName.size());
+        name.appendString(rankSuffix);
+        if (name.size() > this.syntax().namelen() &&
+            nameVector.get(i).name.size() <= this.syntax().namelen()) {
+          this.message(ParserMessages.genericIdentifierLength, new NumberMessageArg(this.syntax().namelen()));
+        }
+        elements.set(i, this.lookupCreateElement(name));
+        rankStems.set(i, this.lookupCreateRankStem(nameVector.get(i).name));
+        constRankStems.set(i, rankStems.get(i));
+      }
+      const allowOmissionContent = new AllowedParams(
+        Param.reservedName + Syntax.ReservedName.rO,
+        Param.minus,
+        Param.reservedName + Syntax.ReservedName.rCDATA,
+        Param.reservedName + Syntax.ReservedName.rRCDATA,
+        Param.reservedName + Syntax.ReservedName.rEMPTY,
+        Param.reservedName + Syntax.ReservedName.rANY,
+        Param.modelGroup
+      );
+      const token = this.getToken(Mode.mdMinusMode);
+      if (token === TokenEnum.tokenNameStart) {
+        this.message(ParserMessages.psRequired);
+      }
+      this.currentInput()?.ungetToken();
+      if (!this.parseParam(allowOmissionContent, declInputLevel, parm)) {
+        return false;
+      }
+    } else {
+      for (i = 0; i < elements.size(); i++) {
+        elements.set(i, this.lookupCreateElement(nameVector.get(i).name));
+        elements.get(i)!.setOrigName(nameVector.get(i).origName);
+      }
+    }
+
+    for (i = 0; i < elements.size(); i++) {
+      if (this.defDtd().lookupRankStem(elements.get(i)!.name()) && this.validate()) {
+        this.message(ParserMessages.rankStemGenericIdentifier, new StringMessageArg(elements.get(i)!.name()));
+      }
+    }
+
+    let omitFlags = 0;
+    if (parm.type === Param.minus || parm.type === Param.reservedName + Syntax.ReservedName.rO) {
+      if (this.options().warnMinimizationParam) {
+        this.message(ParserMessages.minimizationParam);
+      }
+      omitFlags |= ElementDefinition.OmitFlags.omitSpec;
+      if (parm.type !== Param.minus) {
+        omitFlags |= ElementDefinition.OmitFlags.omitStart;
+      }
+      const allowOmission = new AllowedParams(
+        Param.reservedName + Syntax.ReservedName.rO,
+        Param.minus
+      );
+      if (!this.parseParam(allowOmission, declInputLevel, parm)) {
+        return false;
+      }
+      if (parm.type !== Param.minus) {
+        omitFlags |= ElementDefinition.OmitFlags.omitEnd;
+      }
+      const allowContent = new AllowedParams(
+        Param.reservedName + Syntax.ReservedName.rCDATA,
+        Param.reservedName + Syntax.ReservedName.rRCDATA,
+        Param.reservedName + Syntax.ReservedName.rEMPTY,
+        Param.reservedName + Syntax.ReservedName.rANY,
+        Param.modelGroup
+      );
+      if (!this.parseParam(allowContent, declInputLevel, parm)) {
+        return false;
+      }
+    } else {
+      if (this.sd().omittag()) {
+        this.message(ParserMessages.missingTagMinimization);
+      }
+    }
+
+    let def: Ptr<ElementDefinition>;
+    switch (parm.type) {
+      case Param.reservedName + Syntax.ReservedName.rCDATA:
+        def = new Ptr<ElementDefinition>(new ElementDefinition(
+          this.markupLocation(),
+          this.defDtdNonConst().allocElementDefinitionIndex(),
+          omitFlags,
+          ElementDefinition.DeclaredContent.cdata
+        ));
+        {
+          const allowMdc = new AllowedParams(Param.mdc);
+          if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+            return false;
+          }
+        }
+        if (this.options().warnCdataContent) {
+          this.message(ParserMessages.cdataContent);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rRCDATA:
+        def = new Ptr<ElementDefinition>(new ElementDefinition(
+          this.markupLocation(),
+          this.defDtdNonConst().allocElementDefinitionIndex(),
+          omitFlags,
+          ElementDefinition.DeclaredContent.rcdata
+        ));
+        {
+          const allowMdc = new AllowedParams(Param.mdc);
+          if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+            return false;
+          }
+        }
+        if (this.options().warnRcdataContent) {
+          this.message(ParserMessages.rcdataContent);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rEMPTY:
+        def = new Ptr<ElementDefinition>(new ElementDefinition(
+          this.markupLocation(),
+          this.defDtdNonConst().allocElementDefinitionIndex(),
+          omitFlags,
+          ElementDefinition.DeclaredContent.empty
+        ));
+        if ((omitFlags & ElementDefinition.OmitFlags.omitSpec) !== 0 &&
+            (omitFlags & ElementDefinition.OmitFlags.omitEnd) === 0 &&
+            this.options().warnShould) {
+          this.message(ParserMessages.emptyOmitEndTag);
+        }
+        {
+          const allowMdc = new AllowedParams(Param.mdc);
+          if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+            return false;
+          }
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rANY:
+        def = new Ptr<ElementDefinition>(new ElementDefinition(
+          this.markupLocation(),
+          this.defDtdNonConst().allocElementDefinitionIndex(),
+          omitFlags,
+          ElementDefinition.DeclaredContent.any
+        ));
+        if (!this.parseExceptions(declInputLevel, def)) {
+          return false;
+        }
+        break;
+      case Param.modelGroup:
+        {
+          const cnt = parm.modelGroupPtr.pointer()!.grpgtcnt();
+          // The outermost model group isn't formally a content token.
+          if (cnt - 1 > this.syntax().grpgtcnt()) {
+            this.message(ParserMessages.grpgtcnt, new NumberMessageArg(this.syntax().grpgtcnt()));
+          }
+          const modelGroup = new Owner<CompiledModelGroup>(new CompiledModelGroup(parm.modelGroupPtr.pointer()));
+          const ambiguities = new Vector<ContentModelAmbiguity>();
+          const pcdataUnreachable = { value: false };
+          modelGroup.pointer()!.compile(this.currentDtd().nElementTypeIndex(), ambiguities, pcdataUnreachable);
+          if (pcdataUnreachable.value && this.options().warnMixedContent) {
+            this.message(ParserMessages.pcdataUnreachable);
+          }
+          if (this.validate()) {
+            for (i = 0; i < ambiguities.size(); i++) {
+              const a = ambiguities.get(i);
+              this.reportAmbiguity(a.from, a.to1, a.to2, a.andDepth);
+            }
+          }
+          def = new Ptr<ElementDefinition>(new ElementDefinition(
+            this.markupLocation(),
+            this.defDtdNonConst().allocElementDefinitionIndex(),
+            omitFlags,
+            ElementDefinition.DeclaredContent.modelGroup,
+            modelGroup
+          ));
+          if (!this.parseExceptions(declInputLevel, def)) {
+            return false;
+          }
+        }
+        break;
+      default:
+        def = new Ptr<ElementDefinition>(null);
+        break;
+    }
+
+    if (rankSuffix.size() > 0) {
+      def.pointer()!.setRank(rankSuffix, constRankStems);
+    }
+    const constDef = new ConstPtr<ElementDefinition>(def.pointer());
+    for (i = 0; i < elements.size(); i++) {
+      if (elements.get(i)!.definition() !== null) {
+        if (this.validate()) {
+          this.message(ParserMessages.duplicateElementDefinition, new StringMessageArg(elements.get(i)!.name()));
+        }
+      } else {
+        elements.get(i)!.setElementDefinition(constDef, i);
+        if (elements.get(i)!.attributeDef() !== null) {
+          this.checkElementAttribute(elements.get(i)!);
+        }
+      }
+      if (rankStems.size() > 0) {
+        rankStems.get(i)!.addDefinition(constDef);
+      }
+    }
+
+    if (this.currentMarkup()) {
+      const v = new Vector<ElementType | null>(elements.size());
+      for (i = 0; i < elements.size(); i++) {
+        v.set(i, elements.get(i));
+      }
+      this.eventHandler().elementDecl(new ElementDeclEvent(
+        v,
+        this.currentDtdPointer(),
+        this.markupLocation(),
+        this.currentMarkup()
+      ));
+    }
     return true;
   }
 
@@ -1968,11 +2228,78 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return true;
   }
 
+  // Port of Parser::parseNotationDecl from parseDecl.cxx
   protected parseNotationDecl(): boolean {
-    // Notation declaration parsing
-    // Full implementation in parseDecl.cxx lines 1558-1610
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowName = new AllowedParams(Param.paramName);
+    if (!this.parseParam(allowName, declInputLevel, parm)) {
+      return false;
+    }
+    const ntPtr = this.lookupCreateNotation(parm.token);
+    const nt = ntPtr.pointer()!;
+    if (this.validate() && nt.defined()) {
+      this.message(ParserMessages.duplicateNotationDeclaration, new StringMessageArg(parm.token));
+    }
+    const atts = nt.attributeDef().attributeDef().pointer();
+    if (atts) {
+      for (let i = 0; i < atts.size(); i++) {
+        const def = atts.def(i);
+        if (def) {
+          const implicitRef = { value: false };
+          if (def.isSpecified(implicitRef) && implicitRef.value) {
+            this.message(ParserMessages.notationMustNotBeDeclared, new StringMessageArg(parm.token));
+            break;
+          }
+        }
+      }
+    }
+
+    const allowPublicSystem = new AllowedParams(
+      Param.reservedName + Syntax.ReservedName.rPUBLIC,
+      Param.reservedName + Syntax.ReservedName.rSYSTEM
+    );
+    if (!this.parseParam(allowPublicSystem, declInputLevel, parm)) {
+      return false;
+    }
+
+    const allowSystemIdentifierMdc = new AllowedParams(Param.systemIdentifier, Param.mdc);
+    const allowMdc = new AllowedParams(Param.mdc);
+
+    const id = new ExternalId();
+    if (!this.parseExternalId(
+      allowSystemIdentifierMdc,
+      allowMdc,
+      parm.type === Param.reservedName + Syntax.ReservedName.rSYSTEM,
+      declInputLevel,
+      parm,
+      id
+    )) {
+      return false;
+    }
+
+    if (this.validate() && this.sd().formal()) {
+      const publicId = id.publicId();
+      if (publicId) {
+        const textClassRef = { value: 0 };
+        if (publicId.getTextClass(textClassRef) && textClassRef.value !== PublicId.TextClass.NOTATION) {
+          this.message(ParserMessages.notationIdentifierTextClass);
+        }
+      }
+    }
+
+    if (!nt.defined()) {
+      nt.setExternalId(id, this.markupLocation());
+      nt.generateSystemId(this);
+      if (this.currentMarkup()) {
+        this.eventHandler().notationDecl(new NotationDeclEvent(
+          new ConstPtr<Notation>(nt),
+          this.markupLocation(),
+          this.currentMarkup()
+        ));
+      }
+    }
     return true;
   }
 
@@ -7083,6 +7410,229 @@ export class ParserState extends ContentState implements ParserStateInterface {
   // Get the definition DTD (non-const version)
   protected defDtdNonConst(): Dtd {
     return this.defDtd_.pointer()!;
+  }
+
+  // Port of Parser::lookupCreateRankStem from parseDecl.cxx
+  protected lookupCreateRankStem(name: StringC): RankStem {
+    let r = this.defDtd().lookupRankStem(name);
+    if (!r) {
+      r = new RankStem(name, this.defDtd().nRankStem());
+      this.defDtdNonConst().insertRankStem(r);
+      const e = this.defDtd().lookupElementType(name);
+      if (e && e.definition() !== null) {
+        this.message(ParserMessages.rankStemGenericIdentifier, new StringMessageArg(name));
+      }
+    }
+    return r;
+  }
+
+  // Port of Parser::checkElementAttribute from parseDecl.cxx
+  protected checkElementAttribute(e: ElementType, checkFrom: number = 0): void {
+    if (!this.validate()) {
+      return;
+    }
+    const attDef = e.attributeDef();
+    if (!attDef) {
+      return;
+    }
+    let conref = false;
+    const edef = e.definition();
+    ASSERT(edef !== null);
+    const attDefPtr = attDef.pointer();
+    if (!attDefPtr) {
+      return;
+    }
+    const attDefLength = attDefPtr.size();
+    for (let i = checkFrom; i < attDefLength; i++) {
+      const p = attDefPtr.def(i);
+      if (p && p.isConref()) {
+        conref = true;
+      }
+      if (p && p.isNotation() && edef!.declaredContent() === ElementDefinition.DeclaredContent.empty) {
+        this.message(ParserMessages.notationEmpty, new StringMessageArg(e.name()));
+      }
+    }
+    if (conref) {
+      if (edef!.declaredContent() === ElementDefinition.DeclaredContent.empty) {
+        this.message(ParserMessages.conrefEmpty, new StringMessageArg(e.name()));
+      }
+    }
+  }
+
+  // Port of Parser::reportAmbiguity from parseDecl.cxx
+  protected reportAmbiguity(
+    from: LeafContentToken,
+    to1: LeafContentToken,
+    to2: LeafContentToken,
+    ambigAndDepth: number
+  ): void {
+    let toName = new String<Char>();
+    const toType = to1.elementType();
+    if (toType) {
+      toName = toType.name();
+    } else {
+      const delim = this.syntax().delimGeneral(Syntax.DelimGeneral.dRNI);
+      toName = new String<Char>(delim.data(), delim.size());
+      toName.appendString(this.syntax().reservedName(Syntax.ReservedName.rPCDATA));
+    }
+    const to1Index = to1.typeIndex() + 1;
+    const to2Index = to2.typeIndex() + 1;
+    if (from.isInitial()) {
+      this.message(ParserMessages.ambiguousModelInitial,
+        new StringMessageArg(toName),
+        new OrdinalMessageArg(to1Index),
+        new OrdinalMessageArg(to2Index));
+    } else {
+      let fromName = new String<Char>();
+      const fromType = from.elementType();
+      if (fromType) {
+        fromName = fromType.name();
+      } else {
+        const delim2 = this.syntax().delimGeneral(Syntax.DelimGeneral.dRNI);
+        fromName = new String<Char>(delim2.data(), delim2.size());
+        fromName.appendString(this.syntax().reservedName(Syntax.ReservedName.rPCDATA));
+      }
+      const fromIndex = from.typeIndex() + 1;
+      const andMatches = from.andDepth() - ambigAndDepth;
+      if (andMatches === 0) {
+        this.message(ParserMessages.ambiguousModel,
+          new StringMessageArg(fromName),
+          new OrdinalMessageArg(fromIndex),
+          new StringMessageArg(toName),
+          new OrdinalMessageArg(to1Index),
+          new OrdinalMessageArg(to2Index));
+      } else if (andMatches === 1) {
+        this.message(ParserMessages.ambiguousModelSingleAnd,
+          new StringMessageArg(fromName),
+          new OrdinalMessageArg(fromIndex),
+          new StringMessageArg(toName),
+          new OrdinalMessageArg(to1Index),
+          new OrdinalMessageArg(to2Index));
+      } else {
+        this.message(ParserMessages.ambiguousModelMultipleAnd,
+          new StringMessageArg(fromName),
+          new OrdinalMessageArg(fromIndex),
+          new NumberMessageArg(andMatches),
+          new StringMessageArg(toName),
+          new OrdinalMessageArg(to1Index),
+          new OrdinalMessageArg(to2Index));
+      }
+    }
+  }
+
+  // Port of Parser::parseExceptions from parseDecl.cxx
+  protected parseExceptions(declInputLevel: number, def: Ptr<ElementDefinition>): boolean {
+    const parm = new Param();
+    const allowExceptionsMdc = new AllowedParams(Param.mdc, Param.exclusions, Param.inclusions);
+    if (!this.parseParam(allowExceptionsMdc, declInputLevel, parm)) {
+      return false;
+    }
+    if (parm.type === Param.exclusions) {
+      if (this.options().warnExclusion) {
+        this.message(ParserMessages.exclusion);
+      }
+      def.pointer()!.setExclusions(parm.elementVector);
+      const allowInclusionsMdc = new AllowedParams(Param.mdc, Param.inclusions);
+      if (!this.parseParam(allowInclusionsMdc, declInputLevel, parm)) {
+        return false;
+      }
+    }
+    if (parm.type === Param.inclusions) {
+      if (this.options().warnInclusion) {
+        this.message(ParserMessages.inclusion);
+      }
+      def.pointer()!.setInclusions(parm.elementVector);
+      const nI = def.pointer()!.nInclusions();
+      const nE = def.pointer()!.nExclusions();
+      if (nE > 0) {
+        for (let i = 0; i < nI; i++) {
+          const e = def.pointer()!.inclusion(i);
+          for (let j = 0; j < nE; j++) {
+            if (def.pointer()!.exclusion(j) === e) {
+              this.message(ParserMessages.excludeIncludeSame, new StringMessageArg(e!.name()));
+            }
+          }
+        }
+      }
+      const allowMdc = new AllowedParams(Param.mdc);
+      if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Port of Parser::lookupCreateNotation from parseDecl.cxx
+  protected lookupCreateNotation(name: StringC): Ptr<Notation> {
+    let nt = this.defDtd().lookupNotation(name);
+    if (nt.isNull()) {
+      const newNt = new Ptr<Notation>(new Notation(name, this.defDtd().namePointer(), this.defDtd().isBase()));
+      nt = this.defDtdNonConst().insertNotation(newNt);
+    }
+    return nt;
+  }
+
+  // Port of Parser::parseExternalId from parseDecl.cxx
+  protected parseExternalId(
+    sysidAllow: AllowedParams,
+    endAllow: AllowedParams,
+    maybeWarnMissingSystemId: boolean,
+    declInputLevel: number,
+    parm: Param,
+    id: ExternalId
+  ): boolean {
+    id.setLocation(this.currentLocation());
+    if (parm.type === Param.reservedName + Syntax.ReservedName.rPUBLIC) {
+      const allowMinimumLiteral = new AllowedParams(Param.minimumLiteral);
+      if (!this.parseParam(allowMinimumLiteral, declInputLevel, parm)) {
+        return false;
+      }
+      const fpierr: { value: any } = { value: null };
+      const urnerr: { value: any } = { value: null };
+      const result = id.setPublic(parm.literalText, this.sd().internalCharset(),
+                                  this.syntax().space(), fpierr, urnerr);
+      switch (result) {
+        case PublicId.Type.fpi: {
+          let textClass: number = 0;
+          const publicId = id.publicId();
+          if (publicId) {
+            const textClassRef = { value: 0 };
+            if (this.sd().formal() && publicId.getTextClass(textClassRef) && textClassRef.value === PublicId.TextClass.SD) {
+              this.message(ParserMessages.wwwRequired);
+            }
+          }
+          if (this.sd().urn() && !this.sd().formal() && urnerr.value) {
+            this.message(urnerr.value, new StringMessageArg(id.publicIdString()!));
+          }
+          break;
+        }
+        case PublicId.Type.urn:
+          if (this.sd().formal() && !this.sd().urn() && fpierr.value) {
+            this.message(fpierr.value, new StringMessageArg(id.publicIdString()!));
+          }
+          break;
+        case PublicId.Type.informal:
+          if (this.sd().formal() && fpierr.value) {
+            this.message(fpierr.value, new StringMessageArg(id.publicIdString()!));
+          }
+          if (this.sd().urn() && urnerr.value) {
+            this.message(urnerr.value, new StringMessageArg(id.publicIdString()!));
+          }
+          break;
+      }
+    }
+    if (!this.parseParam(sysidAllow, declInputLevel, parm)) {
+      return false;
+    }
+    if (parm.type === Param.systemIdentifier) {
+      id.setSystem(parm.literalText);
+      if (!this.parseParam(endAllow, declInputLevel, parm)) {
+        return false;
+      }
+    } else if (this.options().warnMissingSystemId && maybeWarnMissingSystemId) {
+      this.message(ParserMessages.missingSystemId);
+    }
+    return true;
   }
 
   // Literal parsing flags - Port of Parser.h
