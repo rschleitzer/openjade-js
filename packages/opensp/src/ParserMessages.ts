@@ -386,3 +386,18 @@ export const referenceReservedName = new MessageFragment(libModule, 484, 'refere
 export const quantityName = new MessageFragment(libModule, 485, 'name of quantity');
 export const entityEnd = new MessageFragment(libModule, 486, 'entity end');
 export const shortrefDelim = new MessageFragment(libModule, 487, 'short reference delimiter');
+
+// Prolog messages
+export const notSgml = new MessageType0(MessageType.Severity.error, null, -1, 'this is not an SGML document');
+export const prologCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 not allowed in prolog');
+export const documentEndProlog = new MessageType0(MessageType.Severity.error, null, -1, 'end of document in prolog');
+export const prologDeclaration = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration not allowed in prolog');
+
+// Entity system ID generation messages
+export const cannotGenerateSystemIdPublic = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for public text %1');
+export const cannotGenerateSystemIdGeneral = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for general entity %1');
+export const cannotGenerateSystemIdParameter = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for parameter entity %1');
+export const cannotGenerateSystemIdDoctype = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for document type %1');
+export const cannotGenerateSystemIdLinktype = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for link type %1');
+export const cannotGenerateSystemIdNotation = new MessageType1(MessageType.Severity.warning, null, -1, 'cannot generate system identifier for notation %1');
+export const cannotGenerateSystemIdSgml = new MessageType0(MessageType.Severity.error, null, -1, 'cannot generate system identifier for SGML declaration reference');

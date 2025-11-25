@@ -42,7 +42,7 @@ import { InputSource } from './InputSource';
 import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
-import { Location, ReplacementOrigin, BracketOrigin, NamedCharRef } from './Location';
+import { Location, ReplacementOrigin, BracketOrigin, NamedCharRef, NumericCharRefOrigin } from './Location';
 import { Message, Messenger, MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType0L, MessageType1L } from './Message';
 import { MessageArg } from './MessageArg';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
@@ -76,7 +76,7 @@ import { ExternalId, PublicId } from './ExternalId';
 import { Text } from './Text';
 import { RankStem, ElementType, ElementDefinition } from './ElementType';
 import { ExternalTextEntity } from './Entity';
-import { ASSERT, SIZEOF } from './macros';
+import { ASSERT, SIZEOF, CANNOT_HAPPEN } from './macros';
 import { InternalInputSource } from './InternalInputSource';
 import { Undo, UndoStartTag, UndoEndTag, UndoTransition, ParserState as ParserStateInterface } from './Undo';
 import * as ParserMessages from './ParserMessages';
@@ -91,6 +91,93 @@ import { GroupToken, AllowedGroupTokens, GroupConnector, AllowedGroupConnectors,
 import { Param, AllowedParams, AllowedParamsMessageArg } from './Param';
 import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup, CompiledModelGroup, ContentModelAmbiguity, LeafContentToken, MatchState } from './ContentToken';
 import { NameToken } from './NameToken';
+import { CharsetInfo as CharsetInfoClass } from './CharsetInfo';
+import { UnivCharsetDesc } from './UnivCharsetDesc';
+import { WideChar, SyntaxChar, UnivChar } from './types';
+
+// Local CharsetInfo interface matching what we need for SGML declaration parsing
+interface CharsetInfo {
+  execToDesc(c: number | string): Char;
+  execToDescString(s: string): StringC;
+  univToDesc(univChar: UnivChar, result: { c: WideChar; set: ISet<WideChar> }): number;
+  descToUniv(c: WideChar, result: { univ: UnivChar }): Boolean;
+  getDescSet(set: ISet<Char>): void;
+}
+
+// CharSwitcher - handles character switching in syntax
+class CharSwitcher {
+  private switchUsed_: PackedBoolean[];
+  private switches_: WideChar[];
+
+  constructor() {
+    this.switchUsed_ = [];
+    this.switches_ = [];
+  }
+
+  addSwitch(from: WideChar, to: WideChar): void {
+    this.switches_.push(from);
+    this.switches_.push(to);
+    this.switchUsed_.push(false);
+  }
+
+  subst(c: WideChar): SyntaxChar {
+    // Apply character switches
+    for (let i = 0; i < this.switches_.length; i += 2) {
+      if (this.switches_[i] === c) {
+        this.switchUsed_[i / 2] = true;
+        return this.switches_[i + 1];
+      }
+    }
+    return c;
+  }
+
+  nSwitches(): number {
+    return this.switchUsed_.length;
+  }
+
+  switchUsed(i: number): boolean {
+    return this.switchUsed_[i];
+  }
+
+  switchFrom(i: number): WideChar {
+    return this.switches_[i * 2];
+  }
+
+  switchTo(i: number): WideChar {
+    return this.switches_[i * 2 + 1];
+  }
+}
+
+// StandardSyntaxSpec - specification for standard syntaxes
+interface AddedFunction {
+  name: string;
+  functionClass: number;
+  syntaxChar: SyntaxChar;
+}
+
+interface StandardSyntaxSpec {
+  addedFunction: AddedFunction[];
+  nAddedFunction: number;
+  shortref: boolean;
+}
+
+// Core syntax - standard SGML syntax without shortrefs
+const coreSyntax: StandardSyntaxSpec = {
+  addedFunction: [
+    { name: "TAB", functionClass: Syntax.FunctionClass.cSEPCHAR, syntaxChar: 9 }
+  ],
+  nAddedFunction: 1,
+  shortref: false
+};
+
+// Reference syntax - standard SGML syntax with shortrefs
+const refSyntax: StandardSyntaxSpec = {
+  addedFunction: [
+    { name: "TAB", functionClass: Syntax.FunctionClass.cSEPCHAR, syntaxChar: 9 }
+  ],
+  nAddedFunction: 1,
+  shortref: true
+};
 
 export enum Phase {
   noPhase,
@@ -1619,12 +1706,343 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   private implySgmlDecl(): boolean {
-    // Simplified version of implySgmlDecl() from parseSd.cxx
-    // Full implementation would set up Syntax with proper character sets,
-    // delimiters, quantities, etc.
-    // For now, assume syntax is already set up
-    // TODO: Port full implySgmlDecl() implementation
+    // Port of implySgmlDecl() from parseSd.cxx
+    // Sets up a standard syntax based on the options (shortref or not)
+    const syntaxp = new Syntax(this.sd()! as any);
+    const spec = this.options().shortref ? refSyntax : coreSyntax;
+    const switcher = new CharSwitcher();
+
+    if (!this.setStandardSyntax(syntaxp, spec, this.sd()!.internalCharset(), switcher, false)) {
+      return false;
+    }
+
+    syntaxp.implySgmlChar(this.sd()! as any);
+
+    // Set quantities from options
+    for (let i = 0; i < Syntax.nQuantity; i++) {
+      syntaxp.setQuantity(i, this.options().quantity[i]);
+    }
+
+    // Create a Ptr wrapper for the syntax
+    const syntaxPtr = new ConstPtr<Syntax>(syntaxp);
+    this.setSyntax(syntaxPtr);
     return true;
+  }
+
+  private setStandardSyntax(
+    syn: Syntax,
+    spec: StandardSyntaxSpec,
+    internalCharset: any, // CharsetInfo - use any to avoid complex type issues
+    switcher: CharSwitcher,
+    www: boolean
+  ): boolean {
+    // Port of setStandardSyntax() from parseSd.cxx
+    // The syntax charset for the reference syntax is ASCII (0-127)
+    const syntaxCharsetDesc = new UnivCharsetDesc();
+    syntaxCharsetDesc.addRange(0, 128, 0);
+    const syntaxCharset: any = new CharsetInfoClass(syntaxCharsetDesc);
+
+    let valid = true;
+
+    // Shunchar controls - non-printable characters
+    const shunchar: Char[] = [
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+      127, 255
+    ];
+
+    for (const c of shunchar) {
+      syn.addShunchar(c);
+    }
+    syn.setShuncharControls();
+
+    // Standard functions: RE (13), RS (10), SPACE (32)
+    const standardFunctions = [Syntax.StandardFunction.fRE, Syntax.StandardFunction.fRS, Syntax.StandardFunction.fSPACE];
+    const functionChars: SyntaxChar[] = [13, 10, 32];
+
+    for (let i = 0; i < 3; i++) {
+      const result = this.translateSyntax(switcher, syntaxCharset, internalCharset, functionChars[i]);
+      if (result.valid && this.checkNotFunction(syn, result.docChar)) {
+        syn.setStandardFunction(standardFunctions[i], result.docChar);
+      } else {
+        valid = false;
+      }
+    }
+
+    // Additional functions from the spec (e.g., TAB)
+    for (let i = 0; i < spec.nAddedFunction; i++) {
+      const addedFunc = spec.addedFunction[i];
+      const result = this.translateSyntax(switcher, syntaxCharset, internalCharset, addedFunc.syntaxChar);
+      if (result.valid && this.checkNotFunction(syn, result.docChar)) {
+        const nameStr = internalCharset.execToDescString(addedFunc.name);
+        syn.addFunctionChar(nameStr, addedFunc.functionClass, result.docChar);
+      } else {
+        valid = false;
+      }
+    }
+
+    // Name characters: '-' (45) and '.' (46)
+    const nameChars: SyntaxChar[] = [45, 46];
+    const nameCharSet = new ISet<Char>();
+
+    for (const sc of nameChars) {
+      const result = this.translateSyntax(switcher, syntaxCharset, internalCharset, sc);
+      if (result.valid) {
+        nameCharSet.add(result.docChar);
+      } else {
+        valid = false;
+      }
+    }
+
+    if (!this.checkNmchars(nameCharSet, syn)) {
+      valid = false;
+    } else {
+      syn.addNameCharacters(nameCharSet);
+    }
+
+    syn.setNamecaseGeneral(true);
+    syn.setNamecaseEntity(false);
+
+    if (!this.setRefDelimGeneral(syn, syntaxCharset, internalCharset, switcher)) {
+      valid = false;
+    }
+
+    this.setRefNames(syn, internalCharset, www);
+    syn.enterStandardFunctionNames();
+
+    if (spec.shortref && !this.addRefDelimShortref(syn, syntaxCharset, internalCharset, switcher)) {
+      valid = false;
+    }
+
+    return valid;
+  }
+
+  private translateSyntax(
+    switcher: CharSwitcher,
+    syntaxCharset: any,
+    internalCharset: any,
+    syntaxChar: SyntaxChar
+  ): { valid: boolean; docChar: Char } {
+    // Translate a syntax character to a document character
+    const univChar = this.translateUniv(syntaxChar, switcher, syntaxCharset);
+    const result = { c: 0 as Char, set: new ISet<WideChar>() };
+    if (internalCharset.univToDesc(univChar, result) > 0) {
+      return { valid: true, docChar: result.c };
+    }
+    return { valid: false, docChar: 0 };
+  }
+
+  private translateUniv(
+    syntaxChar: SyntaxChar,
+    switcher: CharSwitcher,
+    syntaxCharset: any
+  ): UnivChar {
+    return switcher.subst(syntaxChar);
+  }
+
+  private checkNotFunction(syn: Syntax, c: Char): boolean {
+    // Check that c is not already a function character
+    return !syn.charSet(Syntax.Set.functionChar).contains(c);
+  }
+
+  private checkNmchars(set: ISet<Char>, syn: Syntax): boolean {
+    // Check that nmchars don't conflict with function characters
+    const iter = new ISetIter<Char>(set);
+    const result = { fromMin: 0 as Char, fromMax: 0 as Char };
+    while (iter.next(result)) {
+      for (let c = result.fromMin; c <= result.fromMax; c++) {
+        if (syn.charSet(Syntax.Set.functionChar).contains(c)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private setRefDelimGeneral(
+    syn: Syntax,
+    syntaxCharset: any,
+    internalCharset: any,
+    switcher: CharSwitcher
+  ): boolean {
+    // Reference delimiter strings (Column 3 from Figure 3 in ISO 8879)
+    const delims: number[][] = [
+      [38],          // AND: &
+      [45, 45],      // COM: --
+      [38, 35],      // CRO: &#
+      [93],          // DSC: ]
+      [91],          // DSO: [
+      [93],          // DTGC: ]
+      [91],          // DTGO: [
+      [38],          // ERO: &
+      [60, 47],      // ETAGO: </
+      [41],          // GRPC: )
+      [40],          // GRPO: (
+      [],            // HCRO: (none in reference)
+      [34],          // LIT: "
+      [39],          // LITA: '
+      [62],          // MDC: >
+      [60, 33],      // MDO: <!
+      [45],          // MINUS: -
+      [93, 93],      // MSC: ]]
+      [47],          // NET: /
+      [47],          // NESTC: /
+      [63],          // OPT: ?
+      [124],         // OR: |
+      [37],          // PERO: %
+      [62],          // PIC: >
+      [60, 63],      // PIO: <?
+      [43],          // PLUS: +
+      [59],          // REFC: ;
+      [42],          // REP: *
+      [35],          // RNI: #
+      [44],          // SEQ: ,
+      [60],          // STAGO: <
+      [62],          // TAGC: >
+      [61],          // VI: =
+    ];
+
+    let valid = true;
+    const missing = new ISet<WideChar>();
+
+    for (let i = 0; i < Syntax.nDelimGeneral; i++) {
+      if (syn.delimGeneral(i).size() === 0) {
+        const delim = new String<Char>();
+        let j;
+        for (j = 0; j < delims[i].length && delims[i][j] !== 0; j++) {
+          const univChar = this.translateUniv(delims[i][j], switcher, syntaxCharset);
+          const result = { c: 0 as Char, set: new ISet<WideChar>() };
+          if (internalCharset.univToDesc(univChar, result) > 0) {
+            delim.append([result.c], 1);
+          } else {
+            missing.add(univChar);
+            valid = false;
+          }
+        }
+        if (delim.size() === j) {
+          if (this.checkGeneralDelim(syn, delim)) {
+            syn.setDelimGeneral(i, delim);
+          } else {
+            valid = false;
+          }
+        }
+      }
+    }
+
+    if (!missing.isEmpty()) {
+      // Would report missingSignificant646 message here
+    }
+
+    return valid;
+  }
+
+  private checkGeneralDelim(syn: Syntax, delim: StringC): boolean {
+    // Basic check that delimiter characters are valid
+    // Full implementation would check for conflicts
+    return true;
+  }
+
+  private setRefNames(syn: Syntax, internalCharset: any, www: boolean): void {
+    // Reference reserved names from ISO 8879
+    const referenceNames: string[] = [
+      "ALL", "ANY", "ATTLIST", "CDATA", "CONREF", "CURRENT", "DATA", "DEFAULT",
+      "DOCTYPE", "ELEMENT", "EMPTY", "ENDTAG", "ENTITIES", "ENTITY", "FIXED",
+      "ID", "IDLINK", "IDREF", "IDREFS", "IGNORE", "IMPLICIT", "IMPLIED",
+      "INCLUDE", "INITIAL", "LINK", "LINKTYPE", "MD", "MS", "NAME", "NAMES",
+      "NDATA", "NMTOKEN", "NMTOKENS", "NOTATION", "NUMBER", "NUMBERS",
+      "NUTOKEN", "NUTOKENS", "O", "PCDATA", "PI", "POSTLINK", "PUBLIC",
+      "RCDATA", "RE", "REQUIRED", "RESTORE", "RS", "SDATA", "SHORTREF",
+      "SIMPLE", "SPACE", "STARTTAG", "SUBDOC", "SYSTEM", "TEMP", "USELINK",
+      "USEMAP"
+    ];
+
+    for (let i = 0; i < Syntax.nNames; i++) {
+      // Skip DATA and IMPLICIT unless www mode
+      if ((i === Syntax.ReservedName.rDATA || i === Syntax.ReservedName.rIMPLICIT) && !www) {
+        continue;
+      }
+      // Skip ALL unless www or errorAfdr
+      if (i === Syntax.ReservedName.rALL && !www && !this.options().errorAfdr) {
+        continue;
+      }
+
+      const docName = internalCharset.execToDescString(referenceNames[i]);
+      if (syn.reservedName(i).size() === 0) {
+        syn.setName(i, docName);
+      }
+    }
+  }
+
+  private addRefDelimShortref(
+    syn: Syntax,
+    syntaxCharset: any,
+    internalCharset: any,
+    switcher: CharSwitcher
+  ): boolean {
+    // Reference short reference delimiters (Column 2 from Figure 4)
+    // TAB, RS, RE, etc.
+    const delimShortref: number[][] = [
+      [9],           // TAB
+      [13],          // RE
+      [10],          // RS
+      [10, 66],      // RS B
+      [10, 13],      // RS RE
+      [10, 66, 13],  // RS B RE
+      [66, 13],      // B RE
+      [32],          // SPACE
+      [66, 66],      // BB
+      [34],          // "
+      [35],          // #
+      [37],          // %
+      [39],          // '
+      [40],          // (
+      [41],          // )
+      [42],          // *
+      [43],          // +
+      [44],          // ,
+      [45],          // -
+      [45, 45],      // --
+      [58],          // :
+      [59],          // ;
+      [61],          // =
+      [64],          // @
+      [91],          // [
+      [93],          // ]
+      [94],          // ^
+      [95],          // _
+      [123],         // {
+      [124],         // |
+      [125],         // }
+      [126],         // ~
+    ];
+
+    let valid = true;
+
+    for (const shortref of delimShortref) {
+      const delim = new String<Char>();
+      for (const sc of shortref) {
+        if (sc === 66) {
+          // B represents blank (space, RS, or RE)
+          const result = { c: 0 as Char, set: new ISet<WideChar>() };
+          if (internalCharset.univToDesc(66, result) > 0) {
+            delim.append([result.c], 1);
+          }
+        } else {
+          const univChar = this.translateUniv(sc, switcher, syntaxCharset);
+          const result = { c: 0 as Char, set: new ISet<WideChar>() };
+          if (internalCharset.univToDesc(univChar, result) > 0) {
+            delim.append([result.c], 1);
+          } else {
+            valid = false;
+          }
+        }
+      }
+      if (delim.size() > 0) {
+        syn.addDelimShortref(delim, internalCharset);
+      }
+    }
+
+    return valid;
   }
 
   protected giveUp(): void {
@@ -1638,34 +2056,146 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected doProlog(): void {
-    // Minimal implementation of doProlog() from parseDecl.cxx
-    // Full implementation processes prolog markup declarations:
-    // - DOCTYPE declarations (parseDoctypeDeclStart)
-    // - LINKTYPE declarations (parseLinktypeDeclStart)
-    // - Processing instructions (parseProcessingInstruction)
-    // - Comments (parseCommentDecl)
-    // - Whitespace (extendS)
+    // Port of doProlog() from parseDecl.cxx (lines 41-151)
+    const maxTries = 10;
+    let tries = 0;
 
-    // For now: skip prolog processing and move directly to instance
-    // This assumes no DTD is explicitly declared (will be implied)
+    do {
+      if (this.cancelled()) {
+        this.allDone();
+        return;
+      }
 
-    if (this.cancelled()) {
-      this.allDone();
-      return;
-    }
+      const token = this.getToken(Mode.proMode);
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          if (this.hadDtd()) {
+            this.currentInput()!.ungetToken();
+            this.endProlog();
+            return;
+          }
+          {
+            const gi = new String<Char>();
+            if (this.lookingAtStartTag(gi)) {
+              this.currentInput()!.ungetToken();
+              this.implyDtd(gi);
+              return;
+            }
+          }
 
-    // Check if we have input
-    const input = this.currentInput();
-    if (!input) {
-      this.allDone();
-      return;
-    }
+          if (++tries >= maxTries) {
+            this.message(ParserMessages.notSgml);
+            this.giveUp();
+            return;
+          }
+          this.message(ParserMessages.prologCharacter, new StringMessageArg(this.currentToken()));
+          this.prologRecover();
+          break;
 
-    // TODO: Implement full prolog token processing loop
-    // For now, just transition to instance start
-    // This will fail on real documents but allows the structure to work
+        case TokenEnum.tokenEe:
+          if (this.hadDtd()) {
+            this.endProlog();
+            return;
+          }
+          this.message(ParserMessages.documentEndProlog);
+          this.allDone();
+          return;
 
-    this.endProlog();
+        case TokenEnum.tokenMdoMdc:
+          // empty comment
+          this.emptyCommentDecl();
+          break;
+
+        case TokenEnum.tokenMdoCom:
+          if (!this.parseCommentDecl()) {
+            this.prologRecover();
+          }
+          break;
+
+        case TokenEnum.tokenMdoNameStart:
+          this.setPass2Start();
+          if (this.startMarkup(this.eventsWanted().wantPrologMarkup(), this.currentLocation())) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMDO);
+          }
+          {
+            const result = this.parseDeclarationName();
+            if (result.valid && result.name !== undefined) {
+              switch (result.name) {
+                case Syntax.ReservedName.rDOCTYPE:
+                  if (!this.parseDoctypeDeclStart()) {
+                    this.giveUp();
+                  }
+                  return;
+                case Syntax.ReservedName.rLINKTYPE:
+                  if (!this.parseLinktypeDeclStart()) {
+                    this.giveUp();
+                  }
+                  return;
+                case Syntax.ReservedName.rELEMENT:
+                case Syntax.ReservedName.rATTLIST:
+                case Syntax.ReservedName.rENTITY:
+                case Syntax.ReservedName.rNOTATION:
+                case Syntax.ReservedName.rSHORTREF:
+                case Syntax.ReservedName.rUSEMAP:
+                case Syntax.ReservedName.rUSELINK:
+                case Syntax.ReservedName.rLINK:
+                case Syntax.ReservedName.rIDLINK:
+                  this.message(
+                    ParserMessages.prologDeclaration,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  if (!this.hadDtd()) {
+                    tries++;
+                  }
+                  this.prologRecover();
+                  break;
+                default:
+                  this.message(
+                    ParserMessages.noSuchDeclarationType,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  this.prologRecover();
+                  break;
+              }
+            } else {
+              this.prologRecover();
+            }
+          }
+          break;
+
+        case TokenEnum.tokenPio:
+          if (!this.parseProcessingInstruction()) {
+            this.prologRecover();
+          }
+          break;
+
+        case TokenEnum.tokenS:
+          if (this.eventsWanted().wantPrologMarkup()) {
+            this.extendS();
+            const input = this.currentInput();
+            if (input) {
+              const startIdx = input.currentTokenStartIndex();
+              const len = input.currentTokenLength();
+              const tokenData = new Uint32Array(input.currentTokenStart()!.slice(startIdx, startIdx + len));
+              this.eventHandler().sSep(
+                new SSepEvent(
+                  tokenData,
+                  len,
+                  this.currentLocation(),
+                  true
+                )
+              );
+            }
+          }
+          break;
+
+        default:
+          CANNOT_HAPPEN();
+      }
+    } while (this.eventQueueEmpty());
   }
 
   private endProlog(): void {
@@ -6119,14 +6649,48 @@ export class ParserState extends ContentState implements ParserStateInterface {
       this.message(ParserMessages.characterNumber, new StringMessageArg(this.currentToken()));
     }
 
-    // TODO: Handle markup tracking with Markup class
-    // TODO: Handle REFC delimiter with getToken(refMode)
-    // TODO: Implement NumericCharRefOrigin for location tracking
+    // Handle markup tracking with Markup class and REFC delimiter
+    let markupPtr: Owner<Markup> | null = null;
+    if (this.wantMarkup()) {
+      markupPtr = new Owner<Markup>(new Markup());
+      markupPtr.pointer()!.addDelim(isHex ? Syntax.DelimGeneral.dHCRO : Syntax.DelimGeneral.dCRO);
+      markupPtr.pointer()!.addNumber(input);
+      const refToken = this.getToken(Mode.refMode);
+      switch (refToken) {
+        case TokenEnum.tokenRefc:
+          markupPtr.pointer()!.addDelim(Syntax.DelimGeneral.dREFC);
+          break;
+        case TokenEnum.tokenRe:
+          markupPtr.pointer()!.addRefEndRe();
+          if (this.options().warnRefc) {
+            this.message(ParserMessages.refc);
+          }
+          break;
+        default:
+          if (this.options().warnRefc) {
+            this.message(ParserMessages.refc);
+          }
+          break;
+      }
+    } else if (this.options().warnRefc) {
+      if (this.getToken(Mode.refMode) !== TokenEnum.tokenRefc) {
+        this.message(ParserMessages.refc);
+      }
+    } else {
+      this.getToken(Mode.refMode);
+    }
 
     if (valid) {
-      // In C++ this creates a Location with NumericCharRefOrigin
-      // For now, just return the character and start location
-      return { valid: true, char: c, location: startLocation };
+      // Create Location with NumericCharRefOrigin
+      const refLength = this.currentLocation().index()
+        + input.currentTokenLength()
+        - startLocation.index();
+      const markupOwner = markupPtr ? markupPtr : new Owner<Markup>();
+      const loc = new Location(
+        new NumericCharRefOrigin(startLocation, refLength, markupOwner),
+        0
+      );
+      return { valid: true, char: c, location: loc };
     }
 
     return { valid: false };

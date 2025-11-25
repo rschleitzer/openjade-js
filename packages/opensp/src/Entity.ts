@@ -423,7 +423,73 @@ export abstract class ExternalEntity extends Entity {
   }
 
   generateSystemId(parserState: ParserState): void {
-    // TODO: Implement system ID generation via entity catalog
+    // Port of ExternalEntity::generateSystemId from Entity.cxx lines 127-166
+    const ps = parserState as any;
+    const str = new StringOf<Char>();
+
+    // Try to lookup via entity catalog
+    if (ps.entityCatalog && ps.entityCatalog().lookup) {
+      const lookupResult = ps.entityCatalog().lookup(
+        this,
+        ps.syntax(),
+        ps.sd().docCharset(),
+        ps.messenger(),
+        str
+      );
+
+      if (lookupResult) {
+        this.externalId_.setEffectiveSystem(str);
+        return;
+      }
+    }
+
+    // If we have a system ID already, use it as effective
+    if (this.externalId_.systemIdString() && this.externalId_.systemIdString()!.size() > 0) {
+      this.externalId_.setEffectiveSystem(this.externalId_.systemIdString()!);
+      return;
+    }
+
+    // Generate warnings for missing system IDs (except for SGML declaration)
+    if (this.externalId_.publicIdString() && this.externalId_.publicIdString()!.size() > 0) {
+      if (this.declType() !== EntityDecl.DeclType.sgml) {
+        ps.message(
+          ParserMessages.cannotGenerateSystemIdPublic,
+          new StringMessageArg(this.externalId_.publicIdString()!)
+        );
+      }
+    } else {
+      switch (this.declType()) {
+        case EntityDecl.DeclType.generalEntity:
+          ps.message(
+            ParserMessages.cannotGenerateSystemIdGeneral,
+            new StringMessageArg(this.name())
+          );
+          break;
+        case EntityDecl.DeclType.parameterEntity:
+          ps.message(
+            ParserMessages.cannotGenerateSystemIdParameter,
+            new StringMessageArg(this.name())
+          );
+          break;
+        case EntityDecl.DeclType.doctype:
+          ps.message(
+            ParserMessages.cannotGenerateSystemIdDoctype,
+            new StringMessageArg(this.name())
+          );
+          break;
+        case EntityDecl.DeclType.linktype:
+          ps.message(
+            ParserMessages.cannotGenerateSystemIdLinktype,
+            new StringMessageArg(this.name())
+          );
+          break;
+        case EntityDecl.DeclType.sgml:
+          // No warning for SGML declaration
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   systemIdPointer(): StringC | null {
