@@ -2,25 +2,47 @@
 // See the file COPYING for copying permission.
 
 import { Allocator } from './Allocator';
-import { AttributeList, AttributeValue, AttributeDefinitionList, AttributeContext } from './Attribute';
+import {
+  AttributeList,
+  AttributeValue,
+  AttributeDefinitionList,
+  AttributeContext,
+  AttributeDefinition,
+  DeclaredValue,
+  CdataDeclaredValue,
+  TokenizedDeclaredValue,
+  NameTokenGroupDeclaredValue,
+  NotationDeclaredValue,
+  EntityDeclaredValue,
+  IdDeclaredValue,
+  IdrefDeclaredValue,
+  GroupDeclaredValue,
+  DataDeclaredValue,
+  RequiredAttributeDefinition,
+  CurrentAttributeDefinition,
+  ImpliedAttributeDefinition,
+  ConrefAttributeDefinition,
+  DefaultAttributeDefinition,
+  FixedAttributeDefinition
+} from './Attribute';
 import { Boolean, PackedBoolean } from './Boolean';
 import { Vector } from './Vector';
 import { StringC } from './StringC';
 import { String } from './StringOf';
 import { Dtd } from './Dtd';
-import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity, IgnoredEntity } from './Entity';
+import { Entity, InternalEntity, ExternalEntity, InternalTextEntity, PredefinedEntity, IgnoredEntity, InternalCdataEntity, InternalSdataEntity, PiEntity, SubdocEntity, ExternalDataEntity } from './Entity';
 import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
 import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
-import { Location, ReplacementOrigin } from './Location';
+import { Location, ReplacementOrigin, BracketOrigin } from './Location';
 import { Message, Messenger } from './Message';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
@@ -35,6 +57,8 @@ import { Sd } from './Sd';
 import { Syntax } from './Syntax';
 import { NCVector } from './NCVector';
 import { Owner } from './Owner';
+import { CopyOwner } from './CopyOwner';
+import { Attributed } from './Attributed';
 import { Lpd, ComplexLpd } from './Lpd';
 import { LpdEntityRef } from './LpdEntityRef';
 import { Markup } from './Markup';
@@ -2212,20 +2236,387 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return true;
   }
 
-  protected parseAttlistDecl(): boolean {
-    // Attribute list declaration parsing
-    // Full implementation in parseDecl.cxx lines 896-1555
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+  // Port of Parser::parseEntityDecl from parseDecl.cxx
+  protected parseEntityDecl(): boolean {
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowEntityNamePero = new AllowedParams(
+      Param.entityName,
+      Param.indicatedReservedName + Syntax.ReservedName.rDEFAULT,
+      Param.pero
+    );
+    if (!this.parseParam(allowEntityNamePero, declInputLevel, parm)) {
+      return false;
+    }
+
+    let declType: number;
+    let name = new String<Char>();
+    if (parm.type === Param.pero) {
+      declType = Entity.DeclType.parameterEntity;
+      const allowParamEntityName = new AllowedParams(Param.paramEntityName);
+      if (!this.parseParam(allowParamEntityName, declInputLevel, parm)) {
+        return false;
+      }
+      parm.token.swap(name);
+    } else {
+      declType = Entity.DeclType.generalEntity;
+      if (parm.type === Param.entityName) {
+        parm.token.swap(name);
+      } else if (this.sd().implydefEntity()) {
+        this.message(ParserMessages.implydefEntityDefault);
+      } else if (this.options().warnDefaultEntityDecl) {
+        this.message(ParserMessages.defaultEntityDecl);
+      }
+    }
+
+    const allowEntityTextType = AllowedParams.fromArray([
+      Param.paramLiteral,
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rSDATA,
+      Param.reservedName + Syntax.ReservedName.rPI,
+      Param.reservedName + Syntax.ReservedName.rSTARTTAG,
+      Param.reservedName + Syntax.ReservedName.rENDTAG,
+      Param.reservedName + Syntax.ReservedName.rMS,
+      Param.reservedName + Syntax.ReservedName.rMD,
+      Param.reservedName + Syntax.ReservedName.rSYSTEM,
+      Param.reservedName + Syntax.ReservedName.rPUBLIC
+    ]);
+    if (!this.parseParam(allowEntityTextType, declInputLevel, parm)) {
+      return false;
+    }
+
+    const typeLocation = this.currentLocation();
+    let dataType: number = Entity.DataType.sgmlText;
+    let bracketed: number = InternalTextEntity.Bracketed.none;
+
+    switch (parm.type) {
+      case Param.reservedName + Syntax.ReservedName.rSYSTEM:
+      case Param.reservedName + Syntax.ReservedName.rPUBLIC:
+        return this.parseExternalEntity(name, declType, declInputLevel, parm);
+      case Param.reservedName + Syntax.ReservedName.rCDATA:
+        dataType = Entity.DataType.cdata;
+        if (this.options().warnInternalCdataEntity) {
+          this.message(ParserMessages.internalCdataEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rSDATA:
+        dataType = Entity.DataType.sdata;
+        if (this.options().warnInternalSdataEntity) {
+          this.message(ParserMessages.internalSdataEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rPI:
+        dataType = Entity.DataType.pi;
+        if (this.options().warnPiEntity) {
+          this.message(ParserMessages.piEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rSTARTTAG:
+        bracketed = InternalTextEntity.Bracketed.starttag;
+        if (this.options().warnBracketEntity) {
+          this.message(ParserMessages.bracketEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rENDTAG:
+        bracketed = InternalTextEntity.Bracketed.endtag;
+        if (this.options().warnBracketEntity) {
+          this.message(ParserMessages.bracketEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rMS:
+        bracketed = InternalTextEntity.Bracketed.ms;
+        if (this.options().warnBracketEntity) {
+          this.message(ParserMessages.bracketEntity);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rMD:
+        bracketed = InternalTextEntity.Bracketed.md;
+        if (this.options().warnBracketEntity) {
+          this.message(ParserMessages.bracketEntity);
+        }
+        break;
+    }
+
+    if (parm.type !== Param.paramLiteral) {
+      const allowParamLiteral = new AllowedParams(Param.paramLiteral);
+      if (!this.parseParam(allowParamLiteral, declInputLevel, parm)) {
+        return false;
+      }
+    }
+
+    const text = new Text();
+    parm.literalText.swap(text);
+
+    if (bracketed !== InternalTextEntity.Bracketed.none) {
+      let open = new String<Char>();
+      let close = new String<Char>();
+      switch (bracketed) {
+        case InternalTextEntity.Bracketed.starttag:
+          open = this.instanceSyntax().delimGeneral(Syntax.DelimGeneral.dSTAGO);
+          close = this.instanceSyntax().delimGeneral(Syntax.DelimGeneral.dTAGC);
+          break;
+        case InternalTextEntity.Bracketed.endtag:
+          open = this.instanceSyntax().delimGeneral(Syntax.DelimGeneral.dETAGO);
+          close = this.instanceSyntax().delimGeneral(Syntax.DelimGeneral.dTAGC);
+          break;
+        case InternalTextEntity.Bracketed.ms: {
+          const syn = declType === Entity.DeclType.parameterEntity ? this.syntax() : this.instanceSyntax();
+          open = new String<Char>(syn.delimGeneral(Syntax.DelimGeneral.dMDO).data(), syn.delimGeneral(Syntax.DelimGeneral.dMDO).size());
+          open.appendString(syn.delimGeneral(Syntax.DelimGeneral.dDSO));
+          close = new String<Char>(syn.delimGeneral(Syntax.DelimGeneral.dMSC).data(), syn.delimGeneral(Syntax.DelimGeneral.dMSC).size());
+          close.appendString(syn.delimGeneral(Syntax.DelimGeneral.dMDC));
+          break;
+        }
+        case InternalTextEntity.Bracketed.md: {
+          const syn = declType === Entity.DeclType.parameterEntity ? this.syntax() : this.instanceSyntax();
+          open = syn.delimGeneral(Syntax.DelimGeneral.dMDO);
+          close = syn.delimGeneral(Syntax.DelimGeneral.dMDC);
+          break;
+        }
+      }
+      text.insertChars(open, new Location(new BracketOrigin(typeLocation, BracketOrigin.Position.open), 0));
+      text.addChars(close, new Location(new BracketOrigin(typeLocation, BracketOrigin.Position.close), 0));
+      if (text.size() > this.syntax().litlen() &&
+          text.size() - open.size() - close.size() <= this.syntax().litlen()) {
+        this.message(ParserMessages.bracketedLitlen, new NumberMessageArg(this.syntax().litlen()));
+      }
+    }
+
+    const allowMdc = new AllowedParams(Param.mdc);
+    if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+      return false;
+    }
+
+    if (declType === Entity.DeclType.parameterEntity &&
+        (dataType === Entity.DataType.cdata || dataType === Entity.DataType.sdata)) {
+      this.message(ParserMessages.internalParameterDataEntity, new StringMessageArg(name));
+      return true;
+    }
+
+    let entity: Ptr<Entity>;
+    switch (dataType) {
+      case Entity.DataType.cdata:
+        entity = new Ptr<Entity>(new InternalCdataEntity(name, this.markupLocation(), text));
+        break;
+      case Entity.DataType.sdata:
+        entity = new Ptr<Entity>(new InternalSdataEntity(name, this.markupLocation(), text));
+        break;
+      case Entity.DataType.pi:
+        entity = new Ptr<Entity>(new PiEntity(name, declType, this.markupLocation(), text));
+        break;
+      case Entity.DataType.sgmlText:
+        entity = new Ptr<Entity>(new InternalTextEntity(name, declType, this.markupLocation(), text, bracketed));
+        break;
+      default:
+        entity = new Ptr<Entity>(null);
+        break;
+    }
+    this.maybeDefineEntity(entity);
     return true;
   }
 
-  protected parseEntityDecl(): boolean {
-    // Entity declaration parsing
-    // Full implementation in parseDecl.cxx lines 1612-1935
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+  // Port of Parser::parseExternalEntity from parseDecl.cxx
+  protected parseExternalEntity(
+    name: String<Char>,
+    declType: number,
+    declInputLevel: number,
+    parm: Param
+  ): boolean {
+    const allowSystemIdentifierEntityTypeMdc = AllowedParams.fromArray([
+      Param.systemIdentifier,
+      Param.reservedName + Syntax.ReservedName.rSUBDOC,
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rSDATA,
+      Param.reservedName + Syntax.ReservedName.rNDATA,
+      Param.mdc
+    ]);
+    const allowEntityTypeMdc = AllowedParams.fromArray([
+      Param.reservedName + Syntax.ReservedName.rSUBDOC,
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rSDATA,
+      Param.reservedName + Syntax.ReservedName.rNDATA,
+      Param.mdc
+    ]);
+
+    const id = new ExternalId();
+    if (!this.parseExternalId(
+      allowSystemIdentifierEntityTypeMdc,
+      allowEntityTypeMdc,
+      true,
+      declInputLevel,
+      parm,
+      id
+    )) {
+      return false;
+    }
+
+    if (parm.type === Param.mdc) {
+      this.maybeDefineEntity(
+        new Ptr<Entity>(new ExternalTextEntity(name, declType, this.markupLocation(), id))
+      );
+      return true;
+    }
+
+    let entity: Ptr<Entity>;
+    if (parm.type === Param.reservedName + Syntax.ReservedName.rSUBDOC) {
+      if (this.sd().subdoc() === 0) {
+        this.message(ParserMessages.subdocEntity, new StringMessageArg(name));
+      }
+      const allowMdc = new AllowedParams(Param.mdc);
+      if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+        return false;
+      }
+      entity = new Ptr<Entity>(new SubdocEntity(name, this.markupLocation(), id));
+    } else {
+      let dataType: number;
+      switch (parm.type) {
+        case Param.reservedName + Syntax.ReservedName.rCDATA:
+          dataType = Entity.DataType.cdata;
+          if (this.options().warnExternalCdataEntity) {
+            this.message(ParserMessages.externalCdataEntity);
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rSDATA:
+          dataType = Entity.DataType.sdata;
+          if (this.options().warnExternalSdataEntity) {
+            this.message(ParserMessages.externalSdataEntity);
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rNDATA:
+          dataType = Entity.DataType.ndata;
+          break;
+        default:
+          throw new Error('CANNOT_HAPPEN in parseExternalEntity');
+      }
+
+      const allowName = new AllowedParams(Param.paramName);
+      if (!this.parseParam(allowName, declInputLevel, parm)) {
+        return false;
+      }
+      const notation = this.lookupCreateNotation(parm.token);
+
+      const allowDsoMdc = new AllowedParams(Param.dso, Param.mdc);
+      if (!this.parseParam(allowDsoMdc, declInputLevel, parm)) {
+        return false;
+      }
+
+      const attributes = new AttributeList(notation.pointer()!.attributeDef().attributeDefConst());
+      if (parm.type === Param.dso) {
+        if (attributes.size() === 0 && !this.sd().www()) {
+          this.message(
+            ParserMessages.notationNoAttributes,
+            new StringMessageArg(notation.pointer()!.name())
+          );
+        }
+        const netEnabling = { value: false };
+        const newAttDef = new Ptr<AttributeDefinitionList>(null);
+        if (!this.parseAttributeSpec(Mode.asMode, attributes, netEnabling, newAttDef)) {
+          return false;
+        }
+        if (!newAttDef.isNull()) {
+          newAttDef.pointer()!.setIndex(this.defDtd().allocAttributeDefinitionListIndex());
+          notation.pointer()!.setAttributeDef(newAttDef);
+        }
+        if (attributes.nSpec() === 0) {
+          this.message(ParserMessages.emptyDataAttributeSpec);
+        }
+        const allowMdc = new AllowedParams(Param.mdc);
+        if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+          return false;
+        }
+      } else {
+        attributes.finish(this as any);
+      }
+
+      entity = new Ptr<Entity>(
+        new ExternalDataEntity(
+          name,
+          dataType,
+          this.markupLocation(),
+          id,
+          new ConstPtr<Notation>(notation.pointer()),
+          attributes,
+          declType === Entity.DeclType.parameterEntity
+            ? Entity.DeclType.parameterEntity
+            : Entity.DeclType.generalEntity
+        )
+      );
+    }
+
+    if (declType === Entity.DeclType.parameterEntity && !this.sd().www()) {
+      this.message(ParserMessages.externalParameterDataSubdocEntity, new StringMessageArg(name));
+      return true;
+    }
+    this.maybeDefineEntity(entity);
     return true;
+  }
+
+  // Port of Parser::maybeDefineEntity from parseDecl.cxx
+  protected maybeDefineEntity(entity: Ptr<Entity>): void {
+    const dtd = this.defDtd();
+    const ent = entity.pointer()!;
+    if (this.haveDefLpd()) {
+      ent.setDeclIn(
+        dtd.namePointer(),
+        dtd.isBase(),
+        this.defLpd().namePointer(),
+        this.defLpd().active()
+      );
+    } else {
+      ent.setDeclIn(dtd.namePointer(), dtd.isBase());
+    }
+
+    let ignored = false;
+    if (ent.name().size() === 0) {
+      const oldEntity = dtd.defaultEntity().pointer();
+      if (!oldEntity || (!oldEntity.declInActiveLpd() && ent.declInActiveLpd())) {
+        dtd.setDefaultEntity(entity, this);
+      } else {
+        ignored = true;
+        if (this.options().warnDuplicateEntity) {
+          this.message(
+            ParserMessages.duplicateEntityDeclaration,
+            new StringMessageArg(this.syntax().rniReservedName(Syntax.ReservedName.rDEFAULT))
+          );
+        }
+      }
+    } else {
+      const oldEntity = dtd.insertEntity(entity);
+      if (oldEntity.isNull()) {
+        ent.generateSystemId(this);
+      } else if (oldEntity.pointer()!.defaulted()) {
+        dtd.insertEntity(entity, true);
+        this.message(ParserMessages.defaultedEntityDefined, new StringMessageArg(ent.name()));
+        ent.generateSystemId(this);
+      } else {
+        if (ent.declInActiveLpd() && !oldEntity.pointer()!.declInActiveLpd()) {
+          dtd.insertEntity(entity, true);
+          ent.generateSystemId(this);
+        } else {
+          ignored = true;
+          if (this.options().warnDuplicateEntity) {
+            this.message(
+              ent.declType() === Entity.DeclType.parameterEntity
+                ? ParserMessages.duplicateParameterEntityDeclaration
+                : ParserMessages.duplicateEntityDeclaration,
+              new StringMessageArg(ent.name())
+            );
+          }
+        }
+      }
+    }
+
+    if (this.currentMarkup()) {
+      this.eventHandler().entityDecl(
+        new EntityDeclEvent(
+          new ConstPtr<Entity>(entity.pointer()),
+          ignored,
+          this.markupLocation(),
+          this.currentMarkup()!
+        )
+      );
+    }
   }
 
   // Port of Parser::parseNotationDecl from parseDecl.cxx
@@ -2300,6 +2691,646 @@ export class ParserState extends ContentState implements ParserStateInterface {
         ));
       }
     }
+    return true;
+  }
+
+  // Port of Parser::parseAttributed from parseDecl.cxx
+  protected parseAttributed(
+    declInputLevel: number,
+    parm: Param,
+    attributed: Vector<ElementType | Notation>,
+    isNotationRef: { value: boolean }
+  ): boolean {
+    const allowNameGroupNotation = AllowedParams.fromArray([
+      Param.paramName,
+      Param.nameGroup,
+      Param.indicatedReservedName + Syntax.ReservedName.rNOTATION
+    ]);
+    const allowNameGroupNotationAll = AllowedParams.fromArray([
+      Param.paramName,
+      Param.nameGroup,
+      Param.indicatedReservedName + Syntax.ReservedName.rNOTATION,
+      Param.indicatedReservedName + Syntax.ReservedName.rALL,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLICIT
+    ]);
+    if (!this.parseParam(
+      this.haveDefLpd() ? allowNameGroupNotation : allowNameGroupNotationAll,
+      declInputLevel,
+      parm
+    )) {
+      return false;
+    }
+
+    if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rNOTATION) {
+      if (this.options().warnDataAttributes) {
+        this.message(ParserMessages.dataAttributes);
+      }
+      isNotationRef.value = true;
+      const allowNameNameGroup = new AllowedParams(Param.paramName, Param.nameGroup);
+      const allowNameGroupAll = AllowedParams.fromArray([
+        Param.paramName,
+        Param.nameGroup,
+        Param.indicatedReservedName + Syntax.ReservedName.rALL,
+        Param.indicatedReservedName + Syntax.ReservedName.rIMPLICIT
+      ]);
+      if (!this.parseParam(
+        this.haveDefLpd() ? allowNameNameGroup : allowNameGroupAll,
+        declInputLevel,
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type === Param.nameGroup) {
+        attributed.resize(parm.nameTokenVector.size());
+        for (let i = 0; i < attributed.size(); i++) {
+          attributed.set(i, this.lookupCreateNotation(parm.nameTokenVector.get(i).name).pointer()!);
+        }
+      } else {
+        if (parm.type !== Param.paramName && !this.hadAfdrDecl() && !this.sd().www()) {
+          this.message(ParserMessages.missingAfdrDecl);
+          this.setHadAfdrDecl();
+        }
+        attributed.resize(1);
+        const name = parm.type === Param.paramName
+          ? parm.token
+          : this.syntax().rniReservedName(parm.type - Param.indicatedReservedName);
+        attributed.set(0, this.lookupCreateNotation(name).pointer()!);
+      }
+    } else {
+      isNotationRef.value = false;
+      if (parm.type === Param.nameGroup) {
+        if (this.options().warnAttlistGroupDecl) {
+          this.message(ParserMessages.attlistGroupDecl);
+        }
+        attributed.resize(parm.nameTokenVector.size());
+        for (let i = 0; i < attributed.size(); i++) {
+          attributed.set(i, this.lookupCreateElement(parm.nameTokenVector.get(i).name));
+        }
+      } else {
+        if (parm.type !== Param.paramName && !this.hadAfdrDecl() && !this.sd().www()) {
+          this.message(ParserMessages.missingAfdrDecl);
+          this.setHadAfdrDecl();
+        }
+        attributed.resize(1);
+        const name = parm.type === Param.paramName
+          ? parm.token
+          : this.syntax().rniReservedName(parm.type - Param.indicatedReservedName);
+        attributed.set(0, this.lookupCreateElement(name));
+      }
+    }
+    return true;
+  }
+
+  // Port of Parser::parseDeclaredValue from parseDecl.cxx
+  protected parseDeclaredValue(
+    declInputLevel: number,
+    isNotation: boolean,
+    parm: Param,
+    declaredValue: Owner<DeclaredValue>
+  ): boolean {
+    const declaredValues: number[] = [
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rENTITY,
+      Param.reservedName + Syntax.ReservedName.rENTITIES,
+      Param.reservedName + Syntax.ReservedName.rID,
+      Param.reservedName + Syntax.ReservedName.rIDREF,
+      Param.reservedName + Syntax.ReservedName.rIDREFS,
+      Param.reservedName + Syntax.ReservedName.rNAME,
+      Param.reservedName + Syntax.ReservedName.rNAMES,
+      Param.reservedName + Syntax.ReservedName.rNMTOKEN,
+      Param.reservedName + Syntax.ReservedName.rNMTOKENS,
+      Param.reservedName + Syntax.ReservedName.rNUMBER,
+      Param.reservedName + Syntax.ReservedName.rNUMBERS,
+      Param.reservedName + Syntax.ReservedName.rNUTOKEN,
+      Param.reservedName + Syntax.ReservedName.rNUTOKENS,
+      Param.reservedName + Syntax.ReservedName.rNOTATION,
+      Param.nameTokenGroup,
+      Param.reservedName + Syntax.ReservedName.rDATA
+    ];
+    const allowDeclaredValue = AllowedParams.fromArray(declaredValues.slice(0, -1));
+    const allowDeclaredValueData = AllowedParams.fromArray(declaredValues);
+    if (!this.parseParam(
+      this.sd().www() ? allowDeclaredValueData : allowDeclaredValue,
+      declInputLevel,
+      parm
+    )) {
+      return false;
+    }
+
+    const asDataAttribute = 0x01;
+    const asLinkAttribute = 0x02;
+    let allowedFlags = asDataAttribute | asLinkAttribute;
+
+    switch (parm.type) {
+      case Param.reservedName + Syntax.ReservedName.rCDATA:
+        declaredValue.reset(new CdataDeclaredValue());
+        break;
+      case Param.reservedName + Syntax.ReservedName.rENTITY:
+        declaredValue.reset(new EntityDeclaredValue(false));
+        allowedFlags = asLinkAttribute;
+        break;
+      case Param.reservedName + Syntax.ReservedName.rENTITIES:
+        declaredValue.reset(new EntityDeclaredValue(true));
+        allowedFlags = asLinkAttribute;
+        break;
+      case Param.reservedName + Syntax.ReservedName.rID:
+        declaredValue.reset(new IdDeclaredValue());
+        allowedFlags = 0;
+        break;
+      case Param.reservedName + Syntax.ReservedName.rIDREF:
+        declaredValue.reset(new IdrefDeclaredValue(false));
+        allowedFlags = 0;
+        break;
+      case Param.reservedName + Syntax.ReservedName.rIDREFS:
+        declaredValue.reset(new IdrefDeclaredValue(true));
+        allowedFlags = 0;
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNAME:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.name, false));
+        if (this.options().warnNameDeclaredValue) {
+          this.message(ParserMessages.nameDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNAMES:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.name, true));
+        if (this.options().warnNameDeclaredValue) {
+          this.message(ParserMessages.nameDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNMTOKEN:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.nameToken, false));
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNMTOKENS:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.nameToken, true));
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNUMBER:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.number, false));
+        if (this.options().warnNumberDeclaredValue) {
+          this.message(ParserMessages.numberDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNUMBERS:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.number, true));
+        if (this.options().warnNumberDeclaredValue) {
+          this.message(ParserMessages.numberDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNUTOKEN:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.numberToken, false));
+        if (this.options().warnNutokenDeclaredValue) {
+          this.message(ParserMessages.nutokenDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNUTOKENS:
+        declaredValue.reset(new TokenizedDeclaredValue(TokenizedDeclaredValue.TokenType.numberToken, true));
+        if (this.options().warnNutokenDeclaredValue) {
+          this.message(ParserMessages.nutokenDeclaredValue);
+        }
+        break;
+      case Param.reservedName + Syntax.ReservedName.rNOTATION: {
+        const allowNameGroup = new AllowedParams(Param.nameGroup);
+        if (!this.parseParam(allowNameGroup, declInputLevel, parm)) {
+          return false;
+        }
+        const group = new Vector<String<Char>>();
+        group.resize(parm.nameTokenVector.size());
+        for (let i = 0; i < group.size(); i++) {
+          group.set(i, parm.nameTokenVector.get(i).name);
+        }
+        declaredValue.reset(new NotationDeclaredValue(group));
+        allowedFlags = 0;
+        break;
+      }
+      case Param.nameTokenGroup: {
+        const group = new Vector<String<Char>>();
+        const origGroup = new Vector<String<Char>>();
+        group.resize(parm.nameTokenVector.size());
+        origGroup.resize(parm.nameTokenVector.size());
+        for (let i = 0; i < group.size(); i++) {
+          group.set(i, parm.nameTokenVector.get(i).name);
+          origGroup.set(i, parm.nameTokenVector.get(i).origName);
+        }
+        const grpVal = new NameTokenGroupDeclaredValue(group);
+        grpVal.setOrigAllowedValues(origGroup);
+        declaredValue.reset(grpVal);
+        break;
+      }
+      case Param.reservedName + Syntax.ReservedName.rDATA: {
+        const allowName = new AllowedParams(Param.paramName);
+        if (!this.parseParam(allowName, declInputLevel, parm)) {
+          return false;
+        }
+        const notation = this.lookupCreateNotation(parm.token);
+        const allowDsoSilentValue = new AllowedParams(Param.dso, Param.silent);
+        const attributes = new AttributeList(notation.pointer()!.attributeDef().attributeDefConst());
+        if (this.parseParam(allowDsoSilentValue, declInputLevel, parm) && parm.type === Param.dso) {
+          if (attributes.size() === 0 && !this.sd().www()) {
+            this.message(ParserMessages.notationNoAttributes, new StringMessageArg(notation.pointer()!.name()));
+          }
+          const netEnabling = { value: false };
+          const newAttDef = new Ptr<AttributeDefinitionList>(null);
+          if (!this.parseAttributeSpec(Mode.asMode, attributes, netEnabling, newAttDef)) {
+            return false;
+          }
+          if (!newAttDef.isNull()) {
+            newAttDef.pointer()!.setIndex(this.defDtd().allocAttributeDefinitionListIndex());
+            notation.pointer()!.setAttributeDef(newAttDef);
+          }
+          if (attributes.nSpec() === 0) {
+            this.message(ParserMessages.emptyDataAttributeSpec);
+          }
+        } else {
+          attributes.finish(this as any);
+          // unget the first token of the default value
+          this.currentInput()?.ungetToken();
+        }
+        declaredValue.reset(new DataDeclaredValue(new ConstPtr<Notation>(notation.pointer()), attributes));
+        break;
+      }
+      default:
+        throw new Error('CANNOT_HAPPEN in parseDeclaredValue');
+    }
+
+    if (isNotation) {
+      if (!(allowedFlags & asDataAttribute)) {
+        this.message(ParserMessages.dataAttributeDeclaredValue);
+      }
+    } else if (this.haveDefLpd() && !(allowedFlags & asLinkAttribute)) {
+      this.message(ParserMessages.linkAttributeDeclaredValue);
+    }
+    return true;
+  }
+
+  // Port of Parser::parseDefaultValue from parseDecl.cxx
+  protected parseDefaultValue(
+    declInputLevel: number,
+    isNotation: boolean,
+    parm: Param,
+    attributeName: StringC,
+    declaredValue: Owner<DeclaredValue>,
+    def: Owner<AttributeDefinition>,
+    anyCurrentRef: { value: boolean }
+  ): boolean {
+    const allowDefaultValue = AllowedParams.fromArray([
+      Param.indicatedReservedName + Syntax.ReservedName.rFIXED,
+      Param.indicatedReservedName + Syntax.ReservedName.rREQUIRED,
+      Param.indicatedReservedName + Syntax.ReservedName.rCURRENT,
+      Param.indicatedReservedName + Syntax.ReservedName.rCONREF,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED,
+      Param.attributeValue,
+      Param.attributeValueLiteral
+    ]);
+    const allowTokenDefaultValue = AllowedParams.fromArray([
+      Param.indicatedReservedName + Syntax.ReservedName.rFIXED,
+      Param.indicatedReservedName + Syntax.ReservedName.rREQUIRED,
+      Param.indicatedReservedName + Syntax.ReservedName.rCURRENT,
+      Param.indicatedReservedName + Syntax.ReservedName.rCONREF,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED,
+      Param.attributeValue,
+      Param.tokenizedAttributeValueLiteral
+    ]);
+
+    if (!this.parseParam(
+      declaredValue.pointer()!.tokenized() ? allowTokenDefaultValue : allowDefaultValue,
+      declInputLevel,
+      parm
+    )) {
+      return false;
+    }
+
+    switch (parm.type) {
+      case Param.indicatedReservedName + Syntax.ReservedName.rFIXED: {
+        const allowValue = new AllowedParams(Param.attributeValue, Param.attributeValueLiteral);
+        const allowTokenValue = new AllowedParams(Param.attributeValue, Param.tokenizedAttributeValueLiteral);
+        if (!this.parseParam(
+          declaredValue.pointer()!.tokenized() ? allowTokenValue : allowValue,
+          declInputLevel,
+          parm
+        )) {
+          return false;
+        }
+        const specLength = { value: 0 };
+        const value = declaredValue.pointer()!.makeValue(parm.literalText, this as any, attributeName, specLength);
+        if (declaredValue.pointer()!.isId()) {
+          this.message(ParserMessages.idDeclaredValue);
+        }
+        def.reset(new FixedAttributeDefinition(attributeName, declaredValue.extract()!, value));
+        break;
+      }
+      case Param.attributeValue:
+        if (this.options().warnAttributeValueNotLiteral) {
+          this.message(ParserMessages.attributeValueNotLiteral);
+        }
+      // fall through
+      case Param.attributeValueLiteral:
+      case Param.tokenizedAttributeValueLiteral: {
+        const specLength = { value: 0 };
+        const value = declaredValue.pointer()!.makeValue(parm.literalText, this as any, attributeName, specLength);
+        if (declaredValue.pointer()!.isId()) {
+          this.message(ParserMessages.idDeclaredValue);
+        }
+        def.reset(new DefaultAttributeDefinition(attributeName, declaredValue.extract()!, value));
+        break;
+      }
+      case Param.indicatedReservedName + Syntax.ReservedName.rREQUIRED:
+        def.reset(new RequiredAttributeDefinition(attributeName, declaredValue.extract()!));
+        break;
+      case Param.indicatedReservedName + Syntax.ReservedName.rCURRENT:
+        anyCurrentRef.value = true;
+        if (declaredValue.pointer()!.isId()) {
+          this.message(ParserMessages.idDeclaredValue);
+        }
+        def.reset(new CurrentAttributeDefinition(
+          attributeName,
+          declaredValue.extract()!,
+          this.defDtd().allocCurrentAttributeIndex()
+        ));
+        if (isNotation) {
+          this.message(ParserMessages.dataAttributeDefaultValue);
+        } else if (this.haveDefLpd()) {
+          this.message(ParserMessages.linkAttributeDefaultValue);
+        } else if (this.options().warnCurrent) {
+          this.message(ParserMessages.currentAttribute);
+        }
+        break;
+      case Param.indicatedReservedName + Syntax.ReservedName.rCONREF:
+        if (declaredValue.pointer()!.isId()) {
+          this.message(ParserMessages.idDeclaredValue);
+        }
+        if (declaredValue.pointer()!.isNotation()) {
+          this.message(ParserMessages.notationConref);
+        }
+        def.reset(new ConrefAttributeDefinition(attributeName, declaredValue.extract()!));
+        if (isNotation) {
+          this.message(ParserMessages.dataAttributeDefaultValue);
+        } else if (this.haveDefLpd()) {
+          this.message(ParserMessages.linkAttributeDefaultValue);
+        } else if (this.options().warnConref) {
+          this.message(ParserMessages.conrefAttribute);
+        }
+        break;
+      case Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED:
+        def.reset(new ImpliedAttributeDefinition(attributeName, declaredValue.extract()!));
+        break;
+      default:
+        throw new Error('CANNOT_HAPPEN in parseDefaultValue');
+    }
+    return true;
+  }
+
+  // Port of Parser::parseAttlistDecl from parseDecl.cxx
+  protected parseAttlistDecl(): boolean {
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+    let attcnt = 0;
+    let idIndex = -1;
+    let notationIndex = -1;
+    const anyCurrent = { value: false };
+
+    const isNotation = { value: false };
+    const attributed = new Vector<ElementType | Notation>();
+    if (!this.parseAttributed(declInputLevel, parm, attributed, isNotation)) {
+      return false;
+    }
+
+    const defs: Owner<AttributeDefinition>[] = [];
+    const allowNameMdc = new AllowedParams(Param.paramName, Param.mdc);
+    const allowName = new AllowedParams(Param.paramName);
+    if (!this.parseParam(this.sd().www() ? allowNameMdc : allowName, declInputLevel, parm)) {
+      return false;
+    }
+
+    while (parm.type !== Param.mdc) {
+      const attributeName = new String<Char>();
+      const origAttributeName = new String<Char>();
+      attributeName.swap(parm.token);
+      origAttributeName.swap(parm.origToken);
+      attcnt++;
+
+      let duplicate = false;
+      for (let i = 0; i < defs.length; i++) {
+        if (defs[i].pointer()!.name().equals(attributeName)) {
+          this.message(ParserMessages.duplicateAttributeDef, new StringMessageArg(attributeName));
+          duplicate = true;
+          break;
+        }
+      }
+
+      const declaredValue = new Owner<DeclaredValue>(null);
+      if (!this.parseDeclaredValue(declInputLevel, isNotation.value, parm, declaredValue)) {
+        return false;
+      }
+
+      if (!duplicate) {
+        if (declaredValue.pointer()!.isId()) {
+          if (idIndex !== -1) {
+            this.message(ParserMessages.multipleIdAttributes, new StringMessageArg(defs[idIndex].pointer()!.name()));
+          }
+          idIndex = defs.length;
+        } else if (declaredValue.pointer()!.isNotation()) {
+          if (notationIndex !== -1) {
+            this.message(ParserMessages.multipleNotationAttributes, new StringMessageArg(defs[notationIndex].pointer()!.name()));
+          }
+          notationIndex = defs.length;
+        }
+      }
+
+      const tokensPtr = declaredValue.pointer()!.getTokens();
+      if (tokensPtr) {
+        const nTokens = tokensPtr.size();
+        if (!this.sd().www()) {
+          for (let i = 0; i < nTokens; i++) {
+            for (let j = 0; j < defs.length; j++) {
+              if (defs[j].pointer()!.containsToken(tokensPtr.get(i))) {
+                this.message(ParserMessages.duplicateAttributeToken, new StringMessageArg(tokensPtr.get(i)));
+                break;
+              }
+            }
+          }
+        }
+        attcnt += nTokens;
+      }
+
+      const def = new Owner<AttributeDefinition>(null);
+      if (!this.parseDefaultValue(declInputLevel, isNotation.value, parm, attributeName, declaredValue, def, anyCurrent)) {
+        return false;
+      }
+
+      if (this.haveDefLpd() && this.defLpd().type() === Lpd.Type.simpleLink && !def.pointer()!.isFixed()) {
+        this.message(ParserMessages.simpleLinkFixedAttribute);
+      }
+      def.pointer()!.setOrigName(origAttributeName);
+
+      if (!duplicate) {
+        defs.push(def);
+      }
+
+      if (!this.parseParam(allowNameMdc, declInputLevel, parm)) {
+        return false;
+      }
+    }
+
+    if (attcnt > this.syntax().attcnt()) {
+      this.message(ParserMessages.attcnt, new NumberMessageArg(attcnt), new NumberMessageArg(this.syntax().attcnt()));
+    }
+
+    // Create AttributeDefinitionList from defs
+    const defsVector = new Vector<CopyOwner<AttributeDefinition>>();
+    defsVector.resize(defs.length);
+    for (let i = 0; i < defs.length; i++) {
+      defsVector.set(i, new CopyOwner<AttributeDefinition>(defs[i].extract()));
+    }
+
+    if (this.haveDefLpd() && !isNotation.value) {
+      // LPD handling (simplified)
+      // Skip for now - full implementation would handle simple and complex link
+    } else {
+      const adl = new Ptr<AttributeDefinitionList>(
+        new AttributeDefinitionList(
+          defsVector,
+          this.defDtd().allocAttributeDefinitionListIndex(),
+          anyCurrent.value,
+          idIndex,
+          notationIndex
+        )
+      );
+
+      // Helper to get attribute def Ptr
+      const getAttrDefPtr = (attr: ElementType | Notation): Ptr<AttributeDefinitionList> => {
+        if (isNotation.value) {
+          return (attr as Notation).attributeDef().attributeDef();
+        } else {
+          return (attr as ElementType).attributeDef();
+        }
+      };
+
+      for (let i = 0; i < attributed.size(); i++) {
+        const attr = attributed.get(i);
+        if (getAttrDefPtr(attr).isNull()) {
+          attr.setAttributeDef(adl);
+          if (!isNotation.value) {
+            const e = attr as ElementType;
+            if (e.definition()) {
+              this.checkElementAttribute(e);
+            }
+          }
+        } else if (this.options().errorAfdr && !this.sd().www()) {
+          if (isNotation.value) {
+            this.message(ParserMessages.duplicateAttlistNotation, new StringMessageArg((attr as Notation).name()));
+          } else {
+            this.message(ParserMessages.duplicateAttlistElement, new StringMessageArg((attr as ElementType).name()));
+          }
+        } else {
+          // AFDR handling - append attributes to existing list
+          if (!this.hadAfdrDecl() && !this.sd().www()) {
+            this.message(ParserMessages.missingAfdrDecl);
+            this.setHadAfdrDecl();
+          }
+          const curAdl = getAttrDefPtr(attr).pointer()!;
+          const oldSize = curAdl.size();
+
+          // Copy if shared
+          if (curAdl.count() !== 1) {
+            const copy = new Vector<CopyOwner<AttributeDefinition>>();
+            copy.resize(oldSize);
+            for (let j = 0; j < oldSize; j++) {
+              copy.set(j, new CopyOwner<AttributeDefinition>(curAdl.def(j)!.copy()));
+            }
+            const adlCopy = new Ptr<AttributeDefinitionList>(
+              new AttributeDefinitionList(
+                copy,
+                this.defDtd().allocAttributeDefinitionListIndex(),
+                curAdl.anyCurrent(),
+                curAdl.idIndex(),
+                curAdl.notationIndex()
+              )
+            );
+            attr.setAttributeDef(adlCopy);
+          }
+
+          // Append new attributes
+          const finalAdl = getAttrDefPtr(attr).pointer()!;
+          for (let j = 0; j < adl.pointer()!.size(); j++) {
+            const index = { value: 0 };
+            if (!finalAdl.attributeIndex(adl.pointer()!.def(j)!.name(), index)) {
+              const idx = finalAdl.idIndex();
+              if (idx !== -1 && adl.pointer()!.def(j)!.isId()) {
+                this.message(ParserMessages.multipleIdAttributes, new StringMessageArg(finalAdl.def(idx)!.name()));
+              }
+              const nidx = finalAdl.notationIndex();
+              if (nidx !== -1 && adl.pointer()!.def(j)!.isNotation()) {
+                this.message(ParserMessages.multipleNotationAttributes, new StringMessageArg(finalAdl.def(nidx)!.name()));
+              }
+              finalAdl.append(adl.pointer()!.def(j)!.copy());
+            } else {
+              const tem = { value: false };
+              if (finalAdl.def(index.value)!.isSpecified(tem)) {
+                this.message(ParserMessages.specifiedAttributeRedeclared, new StringMessageArg(adl.pointer()!.def(j)!.name()));
+              }
+            }
+          }
+
+          if (!isNotation.value) {
+            const e = attr as ElementType;
+            if (e.definition()) {
+              this.checkElementAttribute(e, oldSize);
+            }
+          }
+        }
+      }
+    }
+
+    // Fire events
+    if (this.currentMarkup()) {
+      if (isNotation.value) {
+        const v = new Vector<ConstPtr<Notation>>();
+        v.resize(attributed.size());
+        for (let i = 0; i < attributed.size(); i++) {
+          v.set(i, new ConstPtr<Notation>(attributed.get(i) as Notation));
+        }
+        this.eventHandler().attlistNotationDecl(
+          new AttlistNotationDeclEvent(v, this.markupLocation(), this.currentMarkup()!)
+        );
+      } else {
+        const v = new Vector<ElementType>();
+        v.resize(attributed.size());
+        for (let i = 0; i < attributed.size(); i++) {
+          v.set(i, attributed.get(i) as ElementType);
+        }
+        if (this.haveDefLpd()) {
+          this.eventHandler().linkAttlistDecl(
+            new LinkAttlistDeclEvent(v, new ConstPtr<Lpd>(this.defLpdPointer().pointer()), this.markupLocation(), this.currentMarkup()!)
+          );
+        } else {
+          this.eventHandler().attlistDecl(
+            new AttlistDeclEvent(v, this.currentDtdPointer(), this.markupLocation(), this.currentMarkup()!)
+          );
+        }
+      }
+    }
+
+    // Update entities with notation attributes
+    if (isNotation.value) {
+      const entityIter = this.defDtd().generalEntityIter();
+      for (;;) {
+        const entity = entityIter.next();
+        if (entity.isNull()) {
+          break;
+        }
+        const external = entity.pointer()!.asExternalDataEntity();
+        if (external) {
+          const entityNotation = external.notation();
+          for (let i = 0; i < attributed.size(); i++) {
+            if (attributed.get(i) === entityNotation) {
+              const attributes = new AttributeList(entityNotation.attributeDef().attributeDefConst());
+              attributes.finish(this as any);
+              external.setNotation(new ConstPtr<Notation>(attributed.get(i) as Notation), attributes);
+            }
+          }
+        }
+      }
+    }
+
     return true;
   }
 
