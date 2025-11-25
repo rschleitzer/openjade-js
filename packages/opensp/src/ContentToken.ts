@@ -517,17 +517,46 @@ export class DataTagGroup extends SeqModelGroup {
 }
 
 // DataTagElementToken - element token in data tag pattern
-export class DataTagElementToken extends ElementToken {
-  private templateText_: Text;
+export class DataTagElementToken extends LeafContentToken {
+  private elementType_: ElementType | null;
+  private templates_: Vector<Text>;
+  private paddingText_: Text | null;
 
-  constructor(elementType: ElementType, occurrenceIndicator: number, templateText: Text) {
-    super(elementType, occurrenceIndicator);
-    this.templateText_ = new Text();
-    this.templateText_.swap(templateText);
+  constructor(elementType: ElementType | null, templates: Vector<Text>, paddingText?: Text) {
+    super(ContentToken.OccurrenceIndicator.none);
+    this.elementType_ = elementType;
+    this.templates_ = new Vector<Text>();
+    this.templates_.swap(templates);
+    this.paddingText_ = paddingText ? paddingText : null;
   }
 
-  templateText(): Text {
-    return this.templateText_;
+  elementType(): ElementType | null {
+    return this.elementType_;
+  }
+
+  nTemplates(): number {
+    return this.templates_.size();
+  }
+
+  templateText(i: number): Text {
+    return this.templates_.get(i);
+  }
+
+  hasPaddingText(): boolean {
+    return this.paddingText_ !== null;
+  }
+
+  paddingText(): Text | null {
+    return this.paddingText_;
+  }
+
+  finish(
+    minAndDepth: Vector<number>,
+    elementTransition: Vector<number>,
+    ambiguities: Vector<ContentModelAmbiguity>,
+    pcdataUnreachable: { value: Boolean }
+  ): void {
+    // TODO: Implement data tag element token finishing
   }
 }
 

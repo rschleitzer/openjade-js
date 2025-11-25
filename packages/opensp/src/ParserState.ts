@@ -61,6 +61,10 @@ import { TrieBuilder, TokenVector } from './TrieBuilder';
 import { ISet, ISetIter } from './ISet';
 import { EquivCode } from './types';
 import { Priority } from './Priority';
+import { GroupToken, AllowedGroupTokens, GroupConnector, AllowedGroupConnectors, AllowedGroupTokensMessageArg, AllowedGroupConnectorsMessageArg } from './Group';
+import { Param, AllowedParams, AllowedParamsMessageArg } from './Param';
+import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup } from './ContentToken';
+import { NameToken } from './NameToken';
 
 export enum Phase {
   noPhase,
@@ -5431,6 +5435,1275 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // For now, return empty vector - will prevent element inference
     v.clear();
   }
+
+  // ============================================================================
+  // parseParam.cxx port - Declaration parameter parsing
+  // ============================================================================
+
+  // Port of parseParam.cxx lines 19-266
+  protected parseParam(allow: AllowedParams, declInputLevel: number, parm: Param): Boolean {
+    for (;;) {
+      const token = this.getToken(allow.mainMode());
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.markupDeclarationCharacter,
+            new StringMessageArg(this.currentToken()),
+            new AllowedParamsMessageArg(allow, this.syntaxPointer())
+          );
+          return false;
+
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() <= declInputLevel) {
+            this.message(ParserMessages.declarationLevel);
+            return false;
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addEntityEnd();
+          }
+          this.popInputStack();
+          break;
+
+        case TokenEnum.tokenCom:
+          if (!this.parseComment(Mode.comMode)) {
+            return false;
+          }
+          if (this.options().warnPsComment) {
+            this.message(ParserMessages.psComment);
+          }
+          break;
+
+        case TokenEnum.tokenDso:
+          if (!allow.dso()) {
+            this.paramInvalidToken(TokenEnum.tokenDso, allow);
+            return false;
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dDSO);
+          }
+          parm.type = Param.dso;
+          return true;
+
+        case TokenEnum.tokenGrpo:
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dGRPO);
+          }
+          switch (allow.group()) {
+            case Param.invalid:
+              this.paramInvalidToken(TokenEnum.tokenGrpo, allow);
+              return false;
+            case Param.modelGroup:
+              {
+                const groupResult: { group: ModelGroup | null } = { group: null };
+                if (!this.parseModelGroup(1, declInputLevel, groupResult, Mode.grpsufMode)) {
+                  return false;
+                }
+                parm.type = Param.modelGroup;
+                parm.modelGroupPtr = new Owner<ModelGroup>(groupResult.group);
+              }
+              break;
+            case Param.nameGroup:
+              if (!this.parseNameGroup(declInputLevel, parm)) {
+                return false;
+              }
+              break;
+            case Param.nameTokenGroup:
+              if (!this.parseNameTokenGroup(declInputLevel, parm)) {
+                return false;
+              }
+              break;
+            default:
+              ASSERT(false); // CANNOT_HAPPEN
+          }
+          parm.type = allow.group();
+          return true;
+
+        case TokenEnum.tokenLita:
+        case TokenEnum.tokenLit:
+          parm.type = allow.literal();
+          parm.lita = token === TokenEnum.tokenLita;
+          switch (allow.literal()) {
+            case Param.invalid:
+              this.paramInvalidToken(token, allow);
+              return false;
+            case Param.minimumLiteral:
+              if (!this.parseMinimumLiteral(parm.lita, parm.literalText)) {
+                return false;
+              }
+              break;
+            case Param.attributeValueLiteral:
+              if (!this.parseAttributeValueLiteral(parm.lita, parm.literalText)) {
+                return false;
+              }
+              break;
+            case Param.tokenizedAttributeValueLiteral:
+              if (!this.parseTokenizedAttributeValueLiteral(parm.lita, parm.literalText)) {
+                return false;
+              }
+              break;
+            case Param.systemIdentifier:
+              if (!this.parseSystemIdentifier(parm.lita, parm.literalText)) {
+                return false;
+              }
+              break;
+            case Param.paramLiteral:
+              if (!this.parseParameterLiteral(parm.lita, parm.literalText)) {
+                return false;
+              }
+              break;
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addLiteral(parm.literalText);
+          }
+          return true;
+
+        case TokenEnum.tokenMdc:
+          if (!allow.mdc()) {
+            this.paramInvalidToken(TokenEnum.tokenMdc, allow);
+            return false;
+          }
+          if (this.inputLevel() > declInputLevel) {
+            this.message(ParserMessages.parameterEntityNotEnded);
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMDC);
+          }
+          parm.type = Param.mdc;
+          return true;
+
+        case TokenEnum.tokenMinus:
+          parm.type = Param.minus;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMINUS);
+          }
+          return true;
+
+        case TokenEnum.tokenMinusGrpo:
+          if (!allow.exclusions()) {
+            this.paramInvalidToken(TokenEnum.tokenMinusGrpo, allow);
+            return false;
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMINUS);
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dGRPO);
+          }
+          parm.type = Param.exclusions;
+          return this.parseElementNameGroup(declInputLevel, parm);
+
+        case TokenEnum.tokenPero:
+          parm.type = Param.pero;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dPERO);
+          }
+          return true;
+
+        case TokenEnum.tokenPeroGrpo:
+          if (!this.inInstance()) {
+            this.message(ParserMessages.peroGrpoProlog);
+          }
+          // fall through
+        case TokenEnum.tokenPeroNameStart:
+          {
+            if (this.inInstance()) {
+              if (this.options().warnInstanceParamEntityRef) {
+                this.message(ParserMessages.instanceParamEntityRef);
+              }
+            } else {
+              if (this.options().warnInternalSubsetPsParamEntityRef && this.inputLevel() === 1) {
+                this.message(ParserMessages.internalSubsetPsParamEntityRef);
+              }
+            }
+            const refResult = this.parseEntityReference(true, token === TokenEnum.tokenPeroGrpo ? 1 : 0);
+            if (!refResult.valid) {
+              return false;
+            }
+            if (refResult.entity) {
+              refResult.entity.pointer()?.declReference(this as any, refResult.origin!);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenPlusGrpo:
+          if (!allow.inclusions()) {
+            this.paramInvalidToken(TokenEnum.tokenPlusGrpo, allow);
+            return false;
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dPLUS);
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dGRPO);
+          }
+          parm.type = Param.inclusions;
+          return this.parseElementNameGroup(declInputLevel, parm);
+
+        case TokenEnum.tokenRni:
+          if (!allow.rni()) {
+            this.paramInvalidToken(TokenEnum.tokenRni, allow);
+            return false;
+          }
+          return this.parseIndicatedReservedName(allow, parm);
+
+        case TokenEnum.tokenS:
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addS(this.currentChar());
+          }
+          break;
+
+        case TokenEnum.tokenNameStart:
+          switch (allow.nameStart()) {
+            case Param.invalid:
+              this.paramInvalidToken(TokenEnum.tokenNameStart, allow);
+              return false;
+            case Param.reservedName:
+              return this.parseReservedName(allow, parm);
+            case Param.paramName:
+              {
+                this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+                parm.type = Param.paramName;
+                this.getCurrentToken(parm.origToken);
+                parm.token = new String<Char>();
+                parm.token.assign(parm.origToken);
+                const subst = this.syntax().generalSubstTable();
+                for (let i = 0; i < parm.token.size(); i++) {
+                  const c = parm.token.get(i);
+                  parm.token.set(i, subst.get(c));
+                }
+                if (this.currentMarkup()) {
+                  this.currentMarkup()!.addName(this.currentInput()!);
+                }
+                return true;
+              }
+            case Param.entityName:
+              this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+              parm.type = Param.entityName;
+              this.getCurrentTokenSubst(this.syntax().entitySubstTable(), parm.token);
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            case Param.paramEntityName:
+              this.extendNameToken(
+                this.syntax().penamelen(),
+                ParserMessages.parameterEntityNameLength
+              );
+              parm.type = Param.paramEntityName;
+              this.getCurrentTokenSubst(this.syntax().entitySubstTable(), parm.token);
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addName(this.currentInput()!);
+              }
+              return true;
+            case Param.attributeValue:
+              return this.parseAttributeValueParam(parm);
+          }
+          break;
+
+        case TokenEnum.tokenDigit:
+          switch (allow.digit()) {
+            case Param.invalid:
+              this.paramInvalidToken(TokenEnum.tokenDigit, allow);
+              return false;
+            case Param.number:
+              this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
+              parm.type = Param.number;
+              this.getCurrentToken(parm.token);
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addNumber(this.currentInput()!);
+              }
+              return true;
+            case Param.attributeValue:
+              return this.parseAttributeValueParam(parm);
+          }
+          break;
+
+        case TokenEnum.tokenLcUcNmchar:
+          switch (allow.nmchar()) {
+            case Param.invalid:
+              this.paramInvalidToken(TokenEnum.tokenLcUcNmchar, allow);
+              return false;
+            case Param.attributeValue:
+              return this.parseAttributeValueParam(parm);
+          }
+          break;
+
+        default:
+          ASSERT(false); // CANNOT_HAPPEN
+      }
+    }
+  }
+
+  // Port of parseParam.cxx lines 268-275
+  protected paramInvalidToken(token: Token, allow: AllowedParams): void {
+    if (!allow.silent()) {
+      this.message(
+        ParserMessages.paramInvalidToken,
+        new TokenMessageArg(token, allow.mainMode(), this.syntaxPointer(), this.sdPointer()),
+        new AllowedParamsMessageArg(allow, this.syntaxPointer())
+      );
+    }
+  }
+
+  // Port of parseParam.cxx lines 277-470
+  protected parseGroupToken(
+    allow: AllowedGroupTokens,
+    nestingLevel: number,
+    declInputLevel: number,
+    groupInputLevel: number,
+    gt: GroupToken
+  ): Boolean {
+    for (;;) {
+      const token = this.getToken(Mode.grpMode);
+      switch (token) {
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() <= groupInputLevel) {
+            this.message(ParserMessages.groupLevel);
+            if (this.inputLevel() <= declInputLevel) {
+              return false;
+            }
+          } else if (!this.sd().www()) {
+            this.message(ParserMessages.groupEntityEnd);
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addEntityEnd();
+          }
+          this.popInputStack();
+          break;
+
+        case TokenEnum.tokenPeroGrpo:
+          {
+            if (!this.inInstance()) {
+              this.message(ParserMessages.peroGrpoProlog);
+            }
+            const startResult: { value: Boolean } = { value: false };
+            if (this.inTag(startResult)) {
+              this.message(
+                startResult.value
+                  ? ParserMessages.peroGrpoStartTag
+                  : ParserMessages.peroGrpoEndTag
+              );
+            }
+            // fall through
+          }
+        case TokenEnum.tokenPeroNameStart:
+          {
+            if (this.options().warnInternalSubsetTsParamEntityRef && this.inputLevel() === 1) {
+              this.message(ParserMessages.internalSubsetTsParamEntityRef);
+            }
+            const refResult = this.parseEntityReference(true, token === TokenEnum.tokenPeroGrpo ? 1 : 0);
+            if (!refResult.valid) {
+              return false;
+            }
+            if (refResult.entity) {
+              refResult.entity.pointer()?.declReference(this as any, refResult.origin!);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.groupCharacter,
+            new StringMessageArg(this.currentToken()),
+            new AllowedGroupTokensMessageArg(allow, this.syntaxPointer())
+          );
+          return false;
+
+        case TokenEnum.tokenDtgo:
+          if (!allow.groupToken(GroupToken.Type.dataTagGroup)) {
+            this.groupTokenInvalidToken(TokenEnum.tokenDtgo, allow);
+            return false;
+          }
+          if (this.sd().datatag()) {
+            this.message(ParserMessages.datatagNotImplemented);
+          }
+          if (!this.defDtd().isBase()) {
+            this.message(ParserMessages.datatagBaseDtd);
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dDTGO);
+          }
+          return this.parseDataTagGroup(nestingLevel + 1, declInputLevel, gt);
+
+        case TokenEnum.tokenGrpo:
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dGRPO);
+          }
+          switch (allow.group()) {
+            case GroupToken.Type.modelGroup:
+              {
+                const groupResult: { group: ModelGroup | null } = { group: null };
+                if (!this.parseModelGroup(nestingLevel + 1, declInputLevel, groupResult, Mode.grpMode)) {
+                  return false;
+                }
+                gt.model = new Owner<ModelGroup>(groupResult.group);
+                gt.type = GroupToken.Type.modelGroup;
+                return true;
+              }
+            case GroupToken.Type.dataTagTemplateGroup:
+              return this.parseDataTagTemplateGroup(nestingLevel + 1, declInputLevel, gt);
+            default:
+              this.groupTokenInvalidToken(TokenEnum.tokenGrpo, allow);
+              return false;
+          }
+
+        case TokenEnum.tokenRni:
+          if (
+            !allow.groupToken(GroupToken.Type.pcdata) &&
+            !allow.groupToken(GroupToken.Type.all) &&
+            !allow.groupToken(GroupToken.Type.implicit)
+          ) {
+            this.groupTokenInvalidToken(TokenEnum.tokenRni, allow);
+            return false;
+          }
+          {
+            const rnResult: { rn: number } = { rn: 0 };
+            if (!this.getIndicatedReservedName(rnResult)) {
+              return false;
+            }
+            if (rnResult.rn === Syntax.ReservedName.rPCDATA && allow.groupToken(GroupToken.Type.pcdata)) {
+              gt.type = GroupToken.Type.pcdata;
+              gt.contentToken = new Owner<ContentToken>(new PcdataToken());
+              return true;
+            } else if (rnResult.rn === Syntax.ReservedName.rALL && allow.groupToken(GroupToken.Type.all)) {
+              this.message(ParserMessages.sorryAllImplicit);
+              return false;
+            } else if (rnResult.rn === Syntax.ReservedName.rIMPLICIT && allow.groupToken(GroupToken.Type.implicit)) {
+              this.message(ParserMessages.sorryAllImplicit);
+              return false;
+            } else {
+              const tokenStr = new String<Char>();
+              tokenStr.appendString(this.syntax().delimGeneral(Syntax.DelimGeneral.dRNI));
+              tokenStr.appendString(this.syntax().reservedName(rnResult.rn));
+              this.message(ParserMessages.groupTokenInvalidReservedName, new StringMessageArg(tokenStr));
+              return false;
+            }
+          }
+
+        case TokenEnum.tokenS:
+          if (this.currentMarkup()) {
+            this.extendS();
+            this.currentMarkup()!.addS(this.currentInput()!);
+          }
+          break;
+
+        case TokenEnum.tokenNameStart:
+          switch (allow.nameStart()) {
+            case GroupToken.Type.elementToken:
+              {
+                this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+                gt.type = GroupToken.Type.elementToken;
+                const buffer = this.nameBuffer();
+                this.getCurrentTokenSubst(this.syntax().generalSubstTable(), buffer);
+                if (this.currentMarkup()) {
+                  this.currentMarkup()!.addName(this.currentInput()!);
+                }
+                const e = this.lookupCreateElement(buffer);
+                const oi = this.getOccurrenceIndicator(Mode.grpMode);
+                gt.contentToken = new Owner<ContentToken>(new ElementToken(e, oi));
+                return true;
+              }
+            case GroupToken.Type.name:
+            case GroupToken.Type.nameToken:
+              this.extendNameToken(
+                this.syntax().namelen(),
+                allow.nameStart() === GroupToken.Type.name
+                  ? ParserMessages.nameLength
+                  : ParserMessages.nameTokenLength
+              );
+              this.getCurrentTokenSubst(this.syntax().generalSubstTable(), gt.token);
+              gt.type = allow.nameStart();
+              if (this.currentMarkup()) {
+                if (gt.type === GroupToken.Type.nameToken) {
+                  this.currentMarkup()!.addNameToken(this.currentInput()!);
+                } else {
+                  this.currentMarkup()!.addName(this.currentInput()!);
+                }
+              }
+              return true;
+            default:
+              this.groupTokenInvalidToken(TokenEnum.tokenNameStart, allow);
+              return false;
+          }
+
+        case TokenEnum.tokenDigit:
+        case TokenEnum.tokenLcUcNmchar:
+          if (!allow.groupToken(GroupToken.Type.nameToken)) {
+            this.groupTokenInvalidToken(token, allow);
+            return false;
+          }
+          this.extendNameToken(this.syntax().namelen(), ParserMessages.nameTokenLength);
+          this.getCurrentTokenSubst(this.syntax().generalSubstTable(), gt.token);
+          gt.type = GroupToken.Type.nameToken;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addNameToken(this.currentInput()!);
+          }
+          return true;
+
+        case TokenEnum.tokenLit:
+        case TokenEnum.tokenLita:
+          // parameter literal in data tag pattern
+          if (!allow.groupToken(GroupToken.Type.dataTagLiteral)) {
+            this.groupTokenInvalidToken(token, allow);
+            return false;
+          }
+          if (!this.parseDataTagParameterLiteral(token === TokenEnum.tokenLita, gt.text)) {
+            return false;
+          }
+          gt.type = GroupToken.Type.dataTagLiteral;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addLiteral(gt.text);
+          }
+          return true;
+
+        case TokenEnum.tokenAnd:
+        case TokenEnum.tokenSeq:
+        case TokenEnum.tokenOr:
+        case TokenEnum.tokenDtgc:
+        case TokenEnum.tokenGrpc:
+        case TokenEnum.tokenOpt:
+        case TokenEnum.tokenPlus:
+        case TokenEnum.tokenRep:
+          this.groupTokenInvalidToken(token, allow);
+          return false;
+      }
+    }
+  }
+
+  // Port of parseParam.cxx lines 473-478
+  protected groupTokenInvalidToken(token: Token, allow: AllowedGroupTokens): void {
+    this.message(
+      ParserMessages.groupTokenInvalidToken,
+      new TokenMessageArg(token, Mode.grpMode, this.syntaxPointer(), this.sdPointer()),
+      new AllowedGroupTokensMessageArg(allow, this.syntaxPointer())
+    );
+  }
+
+  // Port of parseParam.cxx lines 481-586
+  protected parseGroupConnector(
+    allow: AllowedGroupConnectors,
+    declInputLevel: number,
+    groupInputLevel: number,
+    gc: GroupConnector
+  ): Boolean {
+    for (;;) {
+      const token = this.getToken(Mode.grpMode);
+      switch (token) {
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() <= groupInputLevel) {
+            this.message(ParserMessages.groupLevel);
+            if (this.inputLevel() <= declInputLevel) {
+              return false;
+            }
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addEntityEnd();
+          }
+          this.popInputStack();
+          break;
+
+        case TokenEnum.tokenS:
+          if (this.currentMarkup()) {
+            this.extendS();
+            this.currentMarkup()!.addS(this.currentInput()!);
+          }
+          break;
+
+        case TokenEnum.tokenPeroGrpo:
+          if (this.inInstance()) {
+            this.message(ParserMessages.peroGrpoProlog);
+            break;
+          }
+          // fall through
+        case TokenEnum.tokenPeroNameStart:
+          if (!this.sd().www()) {
+            this.message(ParserMessages.groupEntityReference);
+          } else {
+            const refResult = this.parseEntityReference(true, token === TokenEnum.tokenPeroGrpo ? 1 : 0);
+            if (!refResult.valid) {
+              return false;
+            }
+            if (refResult.entity) {
+              refResult.entity.pointer()?.declReference(this as any, refResult.origin!);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.groupCharacter,
+            new StringMessageArg(this.currentToken()),
+            new AllowedGroupConnectorsMessageArg(allow, this.syntaxPointer())
+          );
+          return false;
+
+        case TokenEnum.tokenAnd:
+          if (!allow.groupConnector(GroupConnector.Type.andGC)) {
+            this.groupConnectorInvalidToken(TokenEnum.tokenAnd, allow);
+            return false;
+          }
+          gc.type = GroupConnector.Type.andGC;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dAND);
+          }
+          return true;
+
+        case TokenEnum.tokenSeq:
+          if (!allow.groupConnector(GroupConnector.Type.seqGC)) {
+            this.groupConnectorInvalidToken(TokenEnum.tokenSeq, allow);
+            return false;
+          }
+          gc.type = GroupConnector.Type.seqGC;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dSEQ);
+          }
+          return true;
+
+        case TokenEnum.tokenOr:
+          if (!allow.groupConnector(GroupConnector.Type.orGC)) {
+            this.groupConnectorInvalidToken(TokenEnum.tokenOr, allow);
+            return false;
+          }
+          gc.type = GroupConnector.Type.orGC;
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dOR);
+          }
+          return true;
+
+        case TokenEnum.tokenDtgc:
+          if (!allow.groupConnector(GroupConnector.Type.dtgcGC)) {
+            this.groupConnectorInvalidToken(TokenEnum.tokenDtgc, allow);
+            return false;
+          }
+          gc.type = GroupConnector.Type.dtgcGC;
+          if (this.inputLevel() > groupInputLevel) {
+            this.message(ParserMessages.groupParameterEntityNotEnded);
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dDTGC);
+          }
+          return true;
+
+        case TokenEnum.tokenGrpc:
+          if (!allow.groupConnector(GroupConnector.Type.grpcGC)) {
+            this.groupConnectorInvalidToken(TokenEnum.tokenGrpc, allow);
+            return false;
+          }
+          gc.type = GroupConnector.Type.grpcGC;
+          if (this.inputLevel() > groupInputLevel) {
+            this.message(ParserMessages.groupParameterEntityNotEnded);
+          }
+          if (this.currentMarkup()) {
+            this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dGRPC);
+          }
+          return true;
+
+        default:
+          this.groupConnectorInvalidToken(token, allow);
+          return false;
+      }
+    }
+  }
+
+  // Port of parseParam.cxx lines 588-594
+  protected groupConnectorInvalidToken(token: Token, allow: AllowedGroupConnectors): void {
+    this.message(
+      ParserMessages.connectorInvalidToken,
+      new TokenMessageArg(token, Mode.grpMode, this.syntaxPointer(), this.sdPointer()),
+      new AllowedGroupConnectorsMessageArg(allow, this.syntaxPointer())
+    );
+  }
+
+  // Port of parseParam.cxx lines 596-609
+  protected parseElementNameGroup(declInputLevel: number, parm: Param): Boolean {
+    const allowName = new AllowedGroupTokens(GroupToken.Type.name);
+    const allowCommonName = new AllowedGroupTokens(
+      GroupToken.Type.name,
+      GroupToken.Type.all,
+      GroupToken.Type.implicit
+    );
+    if (!this.parseGroup(this.sd().www() ? allowCommonName : allowName, declInputLevel, parm)) {
+      return false;
+    }
+    parm.elementVector.resize(parm.nameTokenVector.size());
+    for (let i = 0; i < parm.nameTokenVector.size(); i++) {
+      parm.elementVector.set(i, this.lookupCreateElement(parm.nameTokenVector.get(i).name));
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 657-660
+  protected parseNameGroup(declInputLevel: number, parm: Param): Boolean {
+    const allowName = new AllowedGroupTokens(GroupToken.Type.name);
+    return this.parseGroup(allowName, declInputLevel, parm);
+  }
+
+  // Port of parseParam.cxx lines 662-666
+  protected parseNameTokenGroup(declInputLevel: number, parm: Param): Boolean {
+    const allowNameToken = new AllowedGroupTokens(GroupToken.Type.nameToken);
+    return this.parseGroup(allowNameToken, declInputLevel, parm);
+  }
+
+  // Helper function - Port of parseParam.cxx lines 668-675
+  private groupContains(vec: Vector<NameToken>, str: StringC): Boolean {
+    for (let i = 0; i < vec.size(); i++) {
+      if (vec.get(i).name.equals(str)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Port of parseParam.cxx lines 677-728
+  protected parseGroup(
+    allowToken: AllowedGroupTokens,
+    declInputLevel: number,
+    parm: Param
+  ): Boolean {
+    const groupInputLevel = this.inputLevel();
+    let nDuplicates = 0;
+    const vec = parm.nameTokenVector;
+    vec.clear();
+    let connector: GroupConnector.Type = GroupConnector.Type.grpcGC;
+    const gt = new GroupToken();
+
+    for (;;) {
+      if (!this.parseGroupToken(allowToken, 0, declInputLevel, groupInputLevel, gt)) {
+        return false;
+      }
+      if (this.groupContains(vec, gt.token)) {
+        nDuplicates++;
+        this.message(ParserMessages.duplicateGroupToken, new StringMessageArg(gt.token));
+      } else {
+        vec.resize(vec.size() + 1);
+        const newToken = vec.get(vec.size() - 1);
+        gt.token.swap(newToken.name);
+        this.getCurrentToken(newToken.origName);
+        newToken.loc = this.currentLocation();
+      }
+
+      const gc = new GroupConnector();
+      const allowAnyConnectorGrpc = new AllowedGroupConnectors(
+        GroupConnector.Type.orGC,
+        GroupConnector.Type.andGC,
+        GroupConnector.Type.seqGC,
+        GroupConnector.Type.grpcGC
+      );
+
+      if (!this.parseGroupConnector(allowAnyConnectorGrpc, declInputLevel, groupInputLevel, gc)) {
+        return false;
+      }
+      if (gc.type === GroupConnector.Type.grpcGC) {
+        break;
+      }
+      if (this.options().warnNameGroupNotOr) {
+        if (gc.type !== GroupConnector.Type.orGC) {
+          this.message(ParserMessages.nameGroupNotOr);
+        }
+      } else if (this.options().warnShould) {
+        if (connector === GroupConnector.Type.grpcGC) {
+          connector = gc.type;
+        } else if (gc.type !== connector) {
+          this.message(ParserMessages.mixedConnectors);
+          connector = gc.type;
+        }
+      }
+    }
+
+    if (nDuplicates + vec.size() > this.syntax().grpcnt()) {
+      this.message(ParserMessages.groupCount, new NumberMessageArg(this.syntax().grpcnt()));
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 730-787
+  protected parseDataTagGroup(
+    nestingLevel: number,
+    declInputLevel: number,
+    result: GroupToken
+  ): Boolean {
+    if (nestingLevel - 1 === this.syntax().grplvl()) {
+      this.message(ParserMessages.grplvl, new NumberMessageArg(this.syntax().grplvl()));
+    }
+    const groupInputLevel = this.inputLevel();
+    const gt = new GroupToken();
+    const allowName = new AllowedGroupTokens(GroupToken.Type.name);
+
+    if (!this.parseGroupToken(allowName, nestingLevel, declInputLevel, groupInputLevel, gt)) {
+      return false;
+    }
+    const element = this.lookupCreateElement(gt.token);
+
+    const gc = new GroupConnector();
+    const allowSeq = new AllowedGroupConnectors(GroupConnector.Type.seqGC);
+    if (!this.parseGroupConnector(allowSeq, declInputLevel, groupInputLevel, gc)) {
+      return false;
+    }
+
+    const allowDataTagLiteralDataTagTemplateGroup = new AllowedGroupTokens(
+      GroupToken.Type.dataTagLiteral,
+      GroupToken.Type.dataTagTemplateGroup
+    );
+    if (!this.parseGroupToken(
+      allowDataTagLiteralDataTagTemplateGroup,
+      nestingLevel,
+      declInputLevel,
+      groupInputLevel,
+      gt
+    )) {
+      return false;
+    }
+
+    const templates = new Vector<Text>();
+    if (gt.type === GroupToken.Type.dataTagTemplateGroup) {
+      gt.textVector.swap(templates);
+    } else {
+      templates.resize(1);
+      gt.text.swap(templates.get(0));
+    }
+
+    const allowSeqDtgc = new AllowedGroupConnectors(
+      GroupConnector.Type.seqGC,
+      GroupConnector.Type.dtgcGC
+    );
+    if (!this.parseGroupConnector(allowSeqDtgc, declInputLevel, groupInputLevel, gc)) {
+      return false;
+    }
+
+    const vec = new NCVector<Owner<ContentToken>>();
+    vec.resize(2);
+    vec.set(1, new Owner<ContentToken>(new PcdataToken()));
+
+    if (gc.type !== GroupConnector.Type.dtgcGC) {
+      const allowDataTagLiteral = new AllowedGroupTokens(GroupToken.Type.dataTagLiteral);
+      if (!this.parseGroupToken(
+        allowDataTagLiteral,
+        nestingLevel,
+        declInputLevel,
+        groupInputLevel,
+        gt
+      )) {
+        return false;
+      }
+      vec.set(0, new Owner<ContentToken>(new DataTagElementToken(element, templates, gt.text)));
+      const allowDtgc = new AllowedGroupConnectors(GroupConnector.Type.dtgcGC);
+      if (!this.parseGroupConnector(allowDtgc, declInputLevel, groupInputLevel, gc)) {
+        return false;
+      }
+    } else {
+      vec.set(0, new Owner<ContentToken>(new DataTagElementToken(element, templates)));
+    }
+
+    const oi = this.getOccurrenceIndicator(Mode.grpMode);
+    result.contentToken = new Owner<ContentToken>(new DataTagGroup(vec, oi));
+    result.type = GroupToken.Type.dataTagGroup;
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 789-819
+  protected parseDataTagTemplateGroup(
+    nestingLevel: number,
+    declInputLevel: number,
+    result: GroupToken
+  ): Boolean {
+    if (nestingLevel - 1 === this.syntax().grplvl()) {
+      this.message(ParserMessages.grplvl, new NumberMessageArg(this.syntax().grplvl()));
+    }
+    const groupInputLevel = this.inputLevel();
+    const vec = result.textVector;
+
+    for (;;) {
+      const gt = new GroupToken();
+      const allowDataTagLiteral = new AllowedGroupTokens(GroupToken.Type.dataTagLiteral);
+      if (!this.parseGroupToken(
+        allowDataTagLiteral,
+        nestingLevel,
+        declInputLevel,
+        groupInputLevel,
+        gt
+      )) {
+        return false;
+      }
+      if (vec.size() === this.syntax().grpcnt()) {
+        this.message(ParserMessages.groupCount, new NumberMessageArg(this.syntax().grpcnt()));
+      }
+      vec.resize(vec.size() + 1);
+      gt.text.swap(vec.get(vec.size() - 1));
+
+      const allowOrGrpc = new AllowedGroupConnectors(
+        GroupConnector.Type.orGC,
+        GroupConnector.Type.grpcGC
+      );
+      const gc = new GroupConnector();
+      if (!this.parseGroupConnector(allowOrGrpc, declInputLevel, groupInputLevel, gc)) {
+        return false;
+      }
+      if (gc.type === GroupConnector.Type.grpcGC) {
+        break;
+      }
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 821-929
+  protected parseModelGroup(
+    nestingLevel: number,
+    declInputLevel: number,
+    groupResult: { group: ModelGroup | null },
+    oiMode: Mode
+  ): Boolean {
+    if (nestingLevel - 1 === this.syntax().grplvl()) {
+      this.message(ParserMessages.grplvl, new NumberMessageArg(this.syntax().grplvl()));
+    }
+    const groupInputLevel = this.inputLevel();
+    const gt = new GroupToken();
+    const tokenVector = new NCVector<Owner<ContentToken>>();
+    let connector: GroupConnector.Type = GroupConnector.Type.grpcGC;
+
+    const allowContentToken = new AllowedGroupTokens(
+      GroupToken.Type.pcdata,
+      GroupToken.Type.dataTagGroup,
+      GroupToken.Type.elementToken,
+      GroupToken.Type.modelGroup
+    );
+    const allowCommonContentToken = new AllowedGroupTokens(
+      GroupToken.Type.pcdata,
+      GroupToken.Type.all,
+      GroupToken.Type.implicit,
+      GroupToken.Type.dataTagGroup,
+      GroupToken.Type.elementToken,
+      GroupToken.Type.modelGroup
+    );
+    const allowAnyConnectorGrpc = new AllowedGroupConnectors(
+      GroupConnector.Type.orGC,
+      GroupConnector.Type.andGC,
+      GroupConnector.Type.seqGC,
+      GroupConnector.Type.grpcGC
+    );
+    const allowOrGrpc = new AllowedGroupConnectors(
+      GroupConnector.Type.orGC,
+      GroupConnector.Type.grpcGC
+    );
+    const allowAndGrpc = new AllowedGroupConnectors(
+      GroupConnector.Type.andGC,
+      GroupConnector.Type.grpcGC
+    );
+    const allowSeqGrpc = new AllowedGroupConnectors(
+      GroupConnector.Type.seqGC,
+      GroupConnector.Type.grpcGC
+    );
+
+    let connectorp = allowAnyConnectorGrpc;
+    const gc = new GroupConnector();
+    let pcdataCheck = false;
+
+    do {
+      if (!this.parseGroupToken(
+        this.sd().www() ? allowCommonContentToken : allowContentToken,
+        nestingLevel,
+        declInputLevel,
+        groupInputLevel,
+        gt
+      )) {
+        return false;
+      }
+
+      let contentToken: ContentToken;
+      if (gt.type === GroupToken.Type.modelGroup) {
+        contentToken = gt.model.extract()!;
+      } else {
+        contentToken = gt.contentToken.extract()!;
+      }
+
+      if (tokenVector.size() === this.syntax().grpcnt()) {
+        this.message(ParserMessages.groupCount, new NumberMessageArg(this.syntax().grpcnt()));
+      }
+      tokenVector.resize(tokenVector.size() + 1);
+      tokenVector.set(tokenVector.size() - 1, new Owner<ContentToken>(contentToken));
+
+      if (!this.parseGroupConnector(connectorp, declInputLevel, groupInputLevel, gc)) {
+        return false;
+      }
+
+      if (this.options().warnMixedContentRepOrGroup && gt.type === GroupToken.Type.pcdata) {
+        if (tokenVector.size() !== 1) {
+          this.message(ParserMessages.pcdataNotFirstInGroup);
+        } else if (gc.type === GroupConnector.Type.seqGC) {
+          this.message(ParserMessages.pcdataInSeqGroup);
+        } else {
+          pcdataCheck = true;
+        }
+        if (nestingLevel !== 1) {
+          this.message(ParserMessages.pcdataInNestedModelGroup);
+        }
+      } else if (pcdataCheck) {
+        if (gt.type === GroupToken.Type.modelGroup) {
+          this.message(ParserMessages.pcdataGroupMemberModelGroup);
+        }
+        if (contentToken.occurrenceIndicator() !== ContentToken.OccurrenceIndicator.none) {
+          this.message(ParserMessages.pcdataGroupMemberOccurrenceIndicator);
+        }
+      }
+
+      if (tokenVector.size() === 1) {
+        connector = gc.type;
+        switch (gc.type) {
+          case GroupConnector.Type.orGC:
+            connectorp = allowOrGrpc;
+            break;
+          case GroupConnector.Type.seqGC:
+            connectorp = allowSeqGrpc;
+            break;
+          case GroupConnector.Type.andGC:
+            connectorp = allowAndGrpc;
+            if (this.options().warnAndGroup) {
+              this.message(ParserMessages.andGroup);
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    } while (gc.type !== GroupConnector.Type.grpcGC);
+
+    const oi = this.getOccurrenceIndicator(oiMode);
+    switch (connector) {
+      case GroupConnector.Type.orGC:
+        groupResult.group = new OrModelGroup(tokenVector, oi);
+        if (pcdataCheck && oi !== ContentToken.OccurrenceIndicator.rep) {
+          this.message(ParserMessages.pcdataGroupNotRep);
+        }
+        break;
+      case GroupConnector.Type.grpcGC:
+        if (pcdataCheck && oi !== ContentToken.OccurrenceIndicator.rep && oi !== ContentToken.OccurrenceIndicator.none) {
+          this.message(ParserMessages.pcdataGroupNotRep);
+        }
+        // fall through
+      case GroupConnector.Type.seqGC:
+        groupResult.group = new SeqModelGroup(tokenVector, oi);
+        break;
+      case GroupConnector.Type.andGC:
+        groupResult.group = new AndModelGroup(tokenVector, oi);
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 931-952
+  protected getOccurrenceIndicator(oiMode: Mode): number {
+    const token = this.getToken(oiMode);
+    switch (token) {
+      case TokenEnum.tokenPlus:
+        if (this.currentMarkup()) {
+          this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dPLUS);
+        }
+        return ContentToken.OccurrenceIndicator.plus;
+      case TokenEnum.tokenOpt:
+        if (this.currentMarkup()) {
+          this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dOPT);
+        }
+        return ContentToken.OccurrenceIndicator.opt;
+      case TokenEnum.tokenRep:
+        if (this.currentMarkup()) {
+          this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dREP);
+        }
+        return ContentToken.OccurrenceIndicator.rep;
+      default:
+        this.currentInput()!.ungetToken();
+        return ContentToken.OccurrenceIndicator.none;
+    }
+  }
+
+  // Port of parseParam.cxx lines 954-964
+  protected parseMinimumLiteral(lita: Boolean, text: Text): Boolean {
+    return this.parseLiteral(
+      lita ? Mode.mlitaMode : Mode.mlitMode,
+      Mode.mlitMode,
+      Syntax.referenceQuantity(Syntax.Quantity.qLITLEN),
+      ParserMessages.minimumLiteralLength,
+      this.literalSingleSpace | this.literalMinimumData |
+        (this.eventsWanted().wantPrologMarkup() ? this.literalDelimInfo : 0),
+      text
+    );
+  }
+
+  // Port of parseParam.cxx lines 966-973
+  protected parseSystemIdentifier(lita: Boolean, text: Text): Boolean {
+    return this.parseLiteral(
+      lita ? Mode.slitaMode : Mode.slitMode,
+      Mode.slitMode,
+      this.syntax().litlen(),
+      ParserMessages.systemIdentifierLength,
+      this.eventsWanted().wantPrologMarkup() ? this.literalDelimInfo : 0,
+      text
+    );
+  }
+
+  // Port of parseParam.cxx lines 975-983
+  protected parseParameterLiteral(lita: Boolean, text: Text): Boolean {
+    return this.parseLiteral(
+      lita ? Mode.plitaMode : Mode.plitMode,
+      Mode.pliteMode,
+      this.syntax().litlen(),
+      ParserMessages.parameterLiteralLength,
+      this.eventsWanted().wantPrologMarkup() ? this.literalDelimInfo : 0,
+      text
+    );
+  }
+
+  // Port of parseParam.cxx lines 985-995
+  protected parseDataTagParameterLiteral(lita: Boolean, text: Text): Boolean {
+    return this.parseLiteral(
+      lita ? Mode.plitaMode : Mode.plitMode,
+      Mode.pliteMode,
+      this.syntax().dtemplen(),
+      ParserMessages.dataTagPatternLiteralLength,
+      this.literalDataTag |
+        (this.eventsWanted().wantPrologMarkup() ? this.literalDelimInfo : 0),
+      text
+    );
+  }
+
+  // Port of parseParam.cxx lines 997-1010
+  protected parseIndicatedReservedName(allow: AllowedParams, parm: Param): Boolean {
+    const rnResult: { rn: number } = { rn: 0 };
+    if (!this.getIndicatedReservedName(rnResult)) {
+      return false;
+    }
+    if (!allow.reservedName(rnResult.rn)) {
+      this.message(
+        ParserMessages.invalidReservedName,
+        new StringMessageArg(this.currentToken())
+      );
+      return false;
+    }
+    parm.type = Param.indicatedReservedName + rnResult.rn;
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 1012-1025
+  protected parseReservedName(allow: AllowedParams, parm: Param): Boolean {
+    const rnResult: { rn: number } = { rn: 0 };
+    if (!this.getReservedName(rnResult)) {
+      return false;
+    }
+    if (!allow.reservedName(rnResult.rn)) {
+      this.message(
+        ParserMessages.invalidReservedName,
+        new StringMessageArg(this.syntax().reservedName(rnResult.rn))
+      );
+      return false;
+    }
+    parm.type = Param.reservedName + rnResult.rn;
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 1028-1043
+  protected parseAttributeValueParam(parm: Param): Boolean {
+    this.extendNameToken(
+      this.syntax().litlen() > this.syntax().normsep()
+        ? this.syntax().litlen() - this.syntax().normsep()
+        : 0,
+      ParserMessages.attributeValueLength
+    );
+    parm.type = Param.attributeValue;
+    const text = new Text();
+    const input = this.currentInput()!;
+    text.addChars(input.currentTokenStart(), input.currentTokenLength(), this.currentLocation());
+    text.swap(parm.literalText);
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.addAttributeValue(input);
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 1045-1065
+  protected getIndicatedReservedName(result: { rn: number }): Boolean {
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dRNI);
+    }
+    const input = this.currentInput()!;
+    input.startToken();
+    if (!this.syntax().isNameStartCharacter(input.tokenChar(this as any))) {
+      this.message(ParserMessages.rniNameStart);
+      return false;
+    }
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+    const buffer = this.nameBuffer();
+    this.getCurrentTokenSubst(this.syntax().generalSubstTable(), buffer);
+    const rnResult: { value: number } = { value: 0 };
+    if (!this.syntax().lookupReservedName(buffer, rnResult)) {
+      this.message(ParserMessages.noSuchReservedName, new StringMessageArg(buffer));
+      return false;
+    }
+    result.rn = rnResult.value;
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.addReservedName(result.rn, input);
+    }
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 1067-1079
+  protected getReservedName(result: { rn: number }): Boolean {
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+    const buffer = this.nameBuffer();
+    this.getCurrentTokenSubst(this.syntax().generalSubstTable(), buffer);
+    const rnResult: { value: number } = { value: 0 };
+    if (!this.syntax().lookupReservedName(buffer, rnResult)) {
+      this.message(ParserMessages.noSuchReservedName, new StringMessageArg(buffer));
+      return false;
+    }
+    result.rn = rnResult.value;
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.addReservedName(result.rn, this.currentInput()!);
+    }
+    return true;
+  }
+
+  // Helper method to get current token with substitution
+  protected getCurrentTokenSubst(subst: SubstTable, result: StringC): void {
+    this.getCurrentToken(result);
+    for (let i = 0; i < result.size(); i++) {
+      result.set(i, subst.get(result.get(i)));
+    }
+  }
+
+  // Port of Parser::lookupCreateElement from parser.cxx
+  // Look up an element in the definition DTD and create it if it doesn't exist
+  protected lookupCreateElement(name: StringC): ElementType {
+    let elementType = this.defDtd().lookupElementType(name);
+    if (!elementType) {
+      elementType = this.lookupCreateUndefinedElement(
+        name,
+        this.currentLocation(),
+        this.defDtdNonConst(),
+        true
+      );
+    }
+    return elementType;
+  }
+
+  // Get the definition DTD (non-const version)
+  protected defDtdNonConst(): Dtd {
+    return this.defDtd_.pointer()!;
+  }
+
+  // Literal parsing flags - Port of Parser.h
+  protected readonly literalSingleSpace = 0o01;
+  protected readonly literalDataTag = 0o02;
+  protected readonly literalMinimumData = 0o04;
+  protected readonly literalDelimInfo = 0o010;
+  protected readonly literalNonSgml = 0o020;
+  protected readonly literalLcnmstrt = 0o040;
+  protected readonly literalLcnmchar = 0o0100;
+
 }
 
 // AttributeParameter enum for parseAttributeSpec
