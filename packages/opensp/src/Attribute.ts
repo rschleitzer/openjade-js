@@ -9,10 +9,10 @@ import { CopyOwner, Copyable } from './CopyOwner';
 import { StringC } from './StringC';
 import { String as StringOf } from './StringOf';
 import { Vector } from './Vector';
-import { Text } from './Text';
+import { Text, TextIter, TextItem } from './Text';
 import { Ptr, ConstPtr } from './Ptr';
 import { Message, Messenger } from './Message';
-import { StringMessageArg, NumberMessageArg } from './MessageArg';
+import { StringMessageArg, NumberMessageArg, StringVectorMessageArg } from './MessageArg';
 import * as ParserMessages from './ParserMessages';
 import { Location } from './Location';
 import { Syntax } from './Syntax';
@@ -56,11 +56,57 @@ export abstract class AttributeValue extends Resource {
     return false;
   }
 
-  // Port of AttributeValue::handleAsUnterminated from Attribute.cxx (lines 1377-1410)
+  // Port of AttributeValue::handleAsUnterminated from Attribute.cxx (lines 1377-1421)
   // This tries to guess if this attribute value looks like it had a missing ending quote.
   static handleAsUnterminated(text: Text, context: AttributeContext): Boolean {
-    // TODO: Implement full logic - requires TextIter
-    // For now, return false (no unterminated attribute handling)
+    const iter = new TextIter(text);
+    let lastStr: Char[] | null = null;
+    let lastLen = 0;
+    let startLoc = new Location();
+    const result = { type: TextItem.Type.data, p: null as Char[] | null, n: 0, loc: null as Location | null };
+
+    while (iter.next(result)) {
+      if (startLoc.origin().isNull() && result.loc && !result.loc.origin().isNull()) {
+        startLoc = result.loc;
+      }
+      switch (result.type) {
+        case TextItem.Type.data:
+          if (result.n !== 1 || !result.p || result.p[0] !== context.attributeSyntax().space()) {
+            lastStr = result.p;
+            lastLen = result.n;
+          }
+          break;
+        case TextItem.Type.endDelim:
+        case TextItem.Type.endDelimA:
+        case TextItem.Type.ignore:
+          break;
+        default:
+          lastStr = null;
+          break;
+      }
+    }
+
+    if (lastStr) {
+      while (lastLen > 0 && lastStr[lastLen - 1] === context.attributeSyntax().space()) {
+        lastLen--;
+      }
+      const vi = context.attributeSyntax().delimGeneral(Syntax.DelimGeneral.dVI);
+      if (lastLen >= vi.size()) {
+        // Check if ends with VI delimiter
+        let matches = true;
+        for (let i = 0; i < vi.size(); i++) {
+          if (lastStr[lastLen - vi.size() + i] !== vi.get(i)) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) {
+          context.setNextLocation(startLoc);
+          context.message(ParserMessages.literalClosingDelimiter);
+          return true;
+        }
+      }
+    }
     return false;
   }
 }
@@ -192,7 +238,19 @@ export class CdataDeclaredValue extends DeclaredValue {
     context: AttributeContext,
     specLength: { value: number }
   ): void {
-    // TODO: Implement normalization checking
+    // Port of CdataDeclaredValue::checkNormalizedLength from Attribute.cxx (lines 90-106)
+    const syntax = context.attributeSyntax();
+    const normsep = syntax.normsep();
+    const normalizedLength = text.normalizedLength(normsep);
+    specLength.value += normalizedLength;
+    const litlen = syntax.litlen();
+    // A length error will already have been given if
+    // length > litlen - normsep.
+    if (litlen >= normsep && text.size() <= litlen - normsep && normalizedLength > litlen) {
+      context.message(ParserMessages.normalizedAttributeValueLength,
+        new NumberMessageArg(litlen),
+        new NumberMessageArg(normalizedLength));
+    }
   }
 
   makeValue(
@@ -439,7 +497,21 @@ export class GroupDeclaredValue extends TokenizedDeclaredValue {
     name: StringC,
     specLength: { value: number }
   ): AttributeValue | null {
-    return this.makeTokenizedValue(text, context, name, specLength);
+    // Port of GroupDeclaredValue::makeValue from Attribute.cxx (lines 350-367)
+    const val = this.makeTokenizedValue(text, context, name, specLength);
+    if (!val || !context.validate()) {
+      return val;
+    }
+    for (let i = 0; i < this.allowedValues_.size(); i++) {
+      if (val.string().equals(this.allowedValues_.get(i))) {
+        return val;
+      }
+    }
+    context.message(ParserMessages.attributeValueNotInGroup,
+      new StringMessageArg(val.string()),
+      new StringMessageArg(name),
+      new StringVectorMessageArg(this.allowedValues_));
+    return val;
   }
 
   makeValueFromToken(
@@ -448,7 +520,17 @@ export class GroupDeclaredValue extends TokenizedDeclaredValue {
     name: StringC,
     specLength: { value: number }
   ): AttributeValue | null {
-    return this.makeTokenizedValue(text, context, name, specLength);
+    // Port of GroupDeclaredValue::makeValueFromToken from Attribute.cxx (lines 369-384)
+    const syntax = context.attributeSyntax();
+    const litlen = syntax.litlen();
+    const normsep = syntax.normsep();
+    if (normsep > litlen || text.size() > litlen - normsep) {
+      context.message(ParserMessages.normalizedAttributeValueLength,
+        new NumberMessageArg(litlen),
+        new NumberMessageArg(text.size() + normsep));
+    }
+    specLength.value += text.size() + normsep;
+    return new TokenizedAttributeValue(text, new Vector<number>());
   }
 
   getTokens(): Vector<StringC> | null {

@@ -36,6 +36,7 @@ export const attributeValueChar = new MessageType2(MessageType.Severity.error, n
 export const attributeValueMultiple = new MessageType1(MessageType.Severity.error, null, -1, 'value of attribute %1 must be a single token');
 export const attributeValueNumberToken = new MessageType2(MessageType.Severity.error, null, -1, 'value of attribute %2 invalid: %1 cannot start a number token');
 export const attributeValueName = new MessageType2(MessageType.Severity.error, null, -1, 'value of attribute %2 invalid: %1 cannot start a name');
+export const attributeValueNotInGroup = new MessageType3(MessageType.Severity.error, null, -1, 'value of attribute %2 cannot be %1; must be one of %3');
 export const nonSgmlCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'non-SGML character number %1');
 export const nameLength = new MessageType1(MessageType.Severity.error, null, -1, 'name exceeds NAMELEN limit (%1)');
 export const endTagCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'invalid character in end tag: %1');
