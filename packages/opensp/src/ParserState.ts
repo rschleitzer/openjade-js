@@ -13645,9 +13645,36 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   /**
    * findMissingMinimum - Find minimum characters missing from charset
+   * Port of Parser::findMissingMinimum from parseSd.cxx lines 652-675
    */
-  protected findMissingMinimum(charset: CharsetInfoClass, missing: ISet<WideChar>): void {
-    // Stub - check for required minimum data characters
+  protected findMissingMinimum(charset: CharsetInfoClass | UnivCharsetDesc, missing: ISet<WideChar>): void {
+    // Check letters A-Z and a-z
+    for (let i = 0; i < 26; i++) {
+      const result = { c: 0 as Char, set: new ISet<WideChar>() };
+      if ((charset as any).univToDesc(UnivCharsetDesc.A + i, result) <= 0) {
+        missing.add(UnivCharsetDesc.A + i);
+      }
+      if ((charset as any).univToDesc(UnivCharsetDesc.a + i, result) <= 0) {
+        missing.add(UnivCharsetDesc.a + i);
+      }
+    }
+
+    // Check digits 0-9
+    for (let i = 0; i < 10; i++) {
+      const result = { c: 0 as Char, set: new ISet<WideChar>() };
+      if ((charset as any).univToDesc(UnivCharsetDesc.zero + i, result) <= 0) {
+        missing.add(UnivCharsetDesc.zero + i);
+      }
+    }
+
+    // Check special characters: ' ( ) + , - . / : = ?
+    const special = [39, 40, 41, 43, 44, 45, 46, 47, 58, 61, 63];
+    for (const c of special) {
+      const result = { c: 0 as Char, set: new ISet<WideChar>() };
+      if ((charset as any).univToDesc(c, result) <= 0) {
+        missing.add(c);
+      }
+    }
   }
 
   /**
