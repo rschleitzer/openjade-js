@@ -60,4 +60,9 @@ export class Owner<T> {
     // In TypeScript, GC handles deletion
     this.p_ = null;
   }
+
+  // Same as assign but named reset for compatibility with smart pointers
+  reset(p: T | null = null): void {
+    this.p_ = p;
+  }
 }

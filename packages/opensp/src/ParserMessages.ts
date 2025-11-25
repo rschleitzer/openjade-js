@@ -7,6 +7,15 @@
 import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
+export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
+export const noSuchDeclarationType = new MessageType1(MessageType.Severity.error, null, -1, 'unknown declaration type %1');
+export const dtdSubsetDeclaration = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration not allowed in DTD subset');
+export const declSubsetCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 not allowed in declaration subset');
+export const documentEndDtdSubset = new MessageType0(MessageType.Severity.error, null, -1, 'end of document in DTD subset');
+export const specialParseEntityEnd = new MessageType0(MessageType.Severity.error, null, -1, 'entity end in character data, replaceable character data or ignored marked section');
+export const dataMarkedSectionDeclSubset = new MessageType0(MessageType.Severity.error, null, -1, 'data or replaceable character data in declaration subset');
+export const documentEndLpdSubset = new MessageType0(MessageType.Severity.error, null, -1, 'end of document in LPD subset');
+export const lpdSubsetDeclaration = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration not allowed in LPD subset');
 export const activeDocLink = new MessageType0(MessageType.Severity.error, null, -1, 'active document link');
 export const sorryActiveDoctypes = new MessageType0(MessageType.Severity.error, null, -1, 'sorry, multiple active doctypes not supported');
 export const linkActivateTooLate = new MessageType0(MessageType.Severity.warning, null, -1, 'link type activation too late');
@@ -91,7 +100,6 @@ export const dataTagPatternFunction = new MessageType0(MessageType.Severity.erro
 export const eroGrpoStartTag = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a general entity reference in a start tag');
 export const eroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a general entity reference in the prolog');
 export const internalSubsetLiteralParamEntityRef = new MessageType0(MessageType.Severity.warning, null, -1, 'reference to parameter entity in parameter literal in internal subset');
-export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
 export const entityReferenceMissingName = new MessageType0(MessageType.Severity.error, null, -1, 'missing name after entity reference open delimiter');
 export const parameterEntityNameLength = new MessageType1(MessageType.Severity.error, null, -1, 'parameter entity name exceeds NAMELEN limit (%1)');
 export const entityUndefined = new MessageType1(MessageType.Severity.error, null, -1, 'general entity %1 not defined and no default entity');
@@ -129,3 +137,4 @@ export const elementNotOpen = new MessageType1(MessageType.Severity.error, null,
 export const requiredElementExcluded = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded at this point because it is contextually required');
 export const invalidExclusion = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded because it is neither inherently optional nor a member of an OR group');
 export const immediateRecursion = new MessageType0(MessageType.Severity.warning, null, -1, 'immediately recursive element');
+export const lexicalAmbiguity = new MessageType2(MessageType.Severity.warning, null, -1, 'delimiter %1 and %2 are ambiguous');

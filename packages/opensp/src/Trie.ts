@@ -8,12 +8,13 @@ import { CopyOwner } from './CopyOwner';
 import { Priority, PriorityType } from './Priority';
 
 export class Trie {
-  protected next_: Trie[] | null;
-  protected nCodes_: number;
-  protected token_: Token;
-  protected tokenLength_: number;
-  protected priority_: PriorityType;
-  protected blank_: CopyOwner<BlankTrie>;
+  // Public for TrieBuilder access - matches C++ where TrieBuilder is a friend
+  next_: Trie[] | null;
+  nCodes_: number;
+  token_: Token;
+  tokenLength_: number;
+  priority_: PriorityType;
+  blank_: CopyOwner<BlankTrie>;
 
   constructor() {
     this.next_ = null;
@@ -78,9 +79,10 @@ export class Trie {
 }
 
 export class BlankTrie extends Trie {
-  private additionalLength_: number;
-  private maxBlanksToScan_: number;
-  private codeIsBlank_: Vector<PackedBoolean>;
+  // Public for TrieBuilder access - matches C++ where TrieBuilder is a friend
+  additionalLength_: number;
+  maxBlanksToScan_: number;
+  codeIsBlank_: Vector<PackedBoolean>;
 
   constructor() {
     super();

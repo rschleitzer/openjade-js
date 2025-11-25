@@ -5,6 +5,48 @@ import { IListBase } from './IListBase';
 import { Link } from './Link';
 import { Boolean } from './Boolean';
 
+class IListIterBase {
+  private p_: Link | null;
+
+  constructor(list: IListBase) {
+    this.p_ = list.head_;
+  }
+
+  done(): Boolean {
+    return this.p_ === null;
+  }
+
+  cur(): Link | null {
+    return this.p_;
+  }
+
+  next(): void {
+    if (this.p_) {
+      this.p_ = this.p_.next_;
+    }
+  }
+}
+
+export class IListIter<T extends Link> {
+  private base_: IListIterBase;
+
+  constructor(list: IList<T>) {
+    this.base_ = new IListIterBase(list.getBase_());
+  }
+
+  cur(): T | null {
+    return this.base_.cur() as T | null;
+  }
+
+  next(): void {
+    this.base_.next();
+  }
+
+  done(): Boolean {
+    return this.base_.done();
+  }
+}
+
 // This owns the objects that are put in it.
 
 export class IList<T extends Link> {
@@ -50,5 +92,10 @@ export class IList<T extends Link> {
 
   empty(): Boolean {
     return this.base_.empty();
+  }
+
+  // For IListIter access (C++ version uses friend class)
+  getBase_(): IListBase {
+    return this.base_;
   }
 }

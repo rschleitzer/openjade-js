@@ -54,6 +54,13 @@ import { ASSERT, SIZEOF } from './macros';
 import { InternalInputSource } from './InternalInputSource';
 import { Undo, UndoStartTag, UndoEndTag, UndoTransition, ParserState as ParserStateInterface } from './Undo';
 import * as ParserMessages from './ParserMessages';
+import { ModeInfo, TokenInfo } from './ModeInfo';
+import { Partition } from './Partition';
+import { SrInfo } from './SrInfo';
+import { TrieBuilder, TokenVector } from './TrieBuilder';
+import { ISet, ISetIter } from './ISet';
+import { EquivCode } from './types';
+import { Priority } from './Priority';
 
 export enum Phase {
   noPhase,
@@ -1585,8 +1592,433 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected doDeclSubset(): void {
-    // TODO: Port from parseDeclSubset section in parse*.cxx
-    throw new Error('doDeclSubset not yet implemented');
+    // Port of doDeclSubset from parseDecl.cxx (lines 234-458)
+    do {
+      if (this.cancelled()) {
+        this.allDone();
+        return;
+      }
+
+      const token = this.getToken(this.currentMode());
+      const startLevel = this.inputLevel();
+      const inDtd = !this.haveDefLpd();
+
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          if (this.reportNonSgmlCharacter()) {
+            break;
+          }
+          this.message(
+            ParserMessages.declSubsetCharacter,
+            new StringMessageArg(this.currentToken())
+          );
+          this.declSubsetRecover(startLevel);
+          break;
+
+        case TokenEnum.tokenEe:
+          // End of entity
+          if (this.inputLevel() === this.specialParseInputLevel_) {
+            this.message(ParserMessages.specialParseEntityEnd);
+          }
+          if (this.eventsWanted().wantPrologMarkup()) {
+            this.eventHandler().entityEnd(
+              new EntityEndEvent(this.currentLocation())
+            );
+          }
+          if (this.inputLevel() === 2) {
+            const originPtr = this.currentLocation().origin();
+            const entityDecl = originPtr && originPtr.pointer()
+              ? originPtr.pointer()!.entityDecl()
+              : null;
+            if (entityDecl) {
+              const declType = entityDecl.declType();
+              if (
+                declType === EntityDecl.DeclType.doctype ||
+                declType === EntityDecl.DeclType.linktype
+              ) {
+                // popInputStack may destroy entityDecl
+                const fake = entityDecl.defLocation().origin().isNull();
+                this.popInputStack();
+                if (inDtd) {
+                  this.parseDoctypeDeclEnd(fake);
+                } else {
+                  this.parseLinktypeDeclEnd();
+                }
+                this.setPhase(Phase.prologPhase);
+                return;
+              }
+            }
+          }
+          if (this.inputLevel() === 1) {
+            if (this.finalPhase_ === Phase.declSubsetPhase) {
+              this.checkDtd(this.defDtd());
+              this.endDtd();
+            } else {
+              this.message(
+                inDtd
+                  ? ParserMessages.documentEndDtdSubset
+                  : ParserMessages.documentEndLpdSubset
+              );
+            }
+            this.popInputStack();
+            this.allDone();
+          } else {
+            this.popInputStack();
+          }
+          return;
+
+        case TokenEnum.tokenDsc:
+          // End of declaration subset (DSC = ] )
+          if (!this.referenceDsEntity(this.currentLocation())) {
+            if (inDtd) {
+              this.parseDoctypeDeclEnd(false);
+            } else {
+              this.parseLinktypeDeclEnd();
+            }
+            this.setPhase(Phase.prologPhase);
+          }
+          return;
+
+        case TokenEnum.tokenMdoNameStart:
+          // Named markup declaration
+          {
+            const markup = this.startMarkup(
+              this.eventsWanted().wantPrologMarkup(),
+              this.currentLocation()
+            );
+            if (markup) {
+              markup.addDelim(Syntax.DelimGeneral.dMDO);
+            }
+            const result = this.parseDeclarationName(
+              inDtd && !this.options().errorAfdr
+            );
+            let parseResult = false;
+
+            if (result.valid) {
+              switch (result.name) {
+                case Syntax.ReservedName.rANY:
+                  // Used for <!AFDR (Architecture Form Definition Requirements)
+                  parseResult = this.parseAfdrDecl();
+                  break;
+                case Syntax.ReservedName.rELEMENT:
+                  if (inDtd) {
+                    parseResult = this.parseElementDecl();
+                  } else {
+                    this.message(
+                      ParserMessages.lpdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  break;
+                case Syntax.ReservedName.rATTLIST:
+                  parseResult = this.parseAttlistDecl();
+                  break;
+                case Syntax.ReservedName.rENTITY:
+                  parseResult = this.parseEntityDecl();
+                  break;
+                case Syntax.ReservedName.rNOTATION:
+                  parseResult = this.parseNotationDecl();
+                  if (!inDtd && !this.sd().www()) {
+                    this.message(
+                      ParserMessages.lpdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  break;
+                case Syntax.ReservedName.rSHORTREF:
+                  if (inDtd) {
+                    parseResult = this.parseShortrefDecl();
+                  } else {
+                    this.message(
+                      ParserMessages.lpdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  break;
+                case Syntax.ReservedName.rUSEMAP:
+                  if (inDtd) {
+                    parseResult = this.parseUsemapDecl();
+                  } else {
+                    this.message(
+                      ParserMessages.lpdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  break;
+                case Syntax.ReservedName.rLINK:
+                  if (inDtd) {
+                    this.message(
+                      ParserMessages.dtdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  } else {
+                    parseResult = this.parseLinkDecl();
+                  }
+                  break;
+                case Syntax.ReservedName.rIDLINK:
+                  if (inDtd) {
+                    this.message(
+                      ParserMessages.dtdSubsetDeclaration,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  } else {
+                    parseResult = this.parseIdlinkDecl();
+                  }
+                  break;
+                case Syntax.ReservedName.rDOCTYPE:
+                case Syntax.ReservedName.rLINKTYPE:
+                case Syntax.ReservedName.rUSELINK:
+                  this.message(
+                    inDtd
+                      ? ParserMessages.dtdSubsetDeclaration
+                      : ParserMessages.lpdSubsetDeclaration,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  break;
+                default:
+                  this.message(
+                    ParserMessages.noSuchDeclarationType,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  break;
+              }
+            }
+
+            if (!parseResult) {
+              this.declSubsetRecover(startLevel);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenMdoMdc:
+          // Empty comment declaration
+          this.emptyCommentDecl();
+          break;
+
+        case TokenEnum.tokenMdoCom:
+          // Comment declaration
+          if (!this.parseCommentDecl()) {
+            this.declSubsetRecover(startLevel);
+          }
+          break;
+
+        case TokenEnum.tokenMdoDso:
+          // Marked section declaration start
+          if (!this.parseMarkedSectionDeclStart()) {
+            this.declSubsetRecover(startLevel);
+          }
+          break;
+
+        case TokenEnum.tokenMscMdc:
+          // Marked section end
+          this.handleMarkedSectionEnd();
+          break;
+
+        case TokenEnum.tokenPeroGrpo:
+          // Parameter entity reference with name group
+          this.message(ParserMessages.peroGrpoProlog);
+          // Fall through
+        case TokenEnum.tokenPeroNameStart:
+          // Parameter entity reference
+          {
+            const result = this.parseEntityReference(
+              true,
+              token === TokenEnum.tokenPeroGrpo ? 1 : 0
+            );
+            if (result.valid && result.entity && !result.entity.isNull() && result.origin) {
+              result.entity.pointer()!.dsReference(this, result.origin);
+            } else {
+              this.declSubsetRecover(startLevel);
+            }
+          }
+          break;
+
+        case TokenEnum.tokenPio:
+          // Processing instruction
+          if (!this.parseProcessingInstruction()) {
+            this.declSubsetRecover(startLevel);
+          }
+          break;
+
+        case TokenEnum.tokenS:
+          // White space
+          if (this.eventsWanted().wantPrologMarkup()) {
+            this.extendS();
+            const input = this.currentInput();
+            if (input) {
+              const data = new Uint32Array(input.currentTokenStart());
+              this.eventHandler().sSep(
+                new SSepEvent(
+                  data,
+                  input.currentTokenLength(),
+                  this.currentLocation(),
+                  true
+                )
+              );
+            }
+          }
+          break;
+
+        case TokenEnum.tokenIgnoredChar:
+          // Character from an ignored marked section
+          if (this.eventsWanted().wantPrologMarkup()) {
+            const input = this.currentInput();
+            if (input) {
+              const data = new Uint32Array(input.currentTokenStart());
+              this.eventHandler().ignoredChars(
+                new IgnoredCharsEvent(
+                  data,
+                  input.currentTokenLength(),
+                  this.currentLocation(),
+                  true
+                )
+              );
+            }
+          }
+          break;
+
+        case TokenEnum.tokenRe:
+        case TokenEnum.tokenRs:
+        case TokenEnum.tokenCroNameStart:
+        case TokenEnum.tokenCroDigit:
+        case TokenEnum.tokenHcroHexDigit:
+        case TokenEnum.tokenEroNameStart:
+        case TokenEnum.tokenEroGrpo:
+        case TokenEnum.tokenChar:
+          // These can occur in a CDATA or RCDATA marked section
+          this.message(ParserMessages.dataMarkedSectionDeclSubset);
+          this.declSubsetRecover(startLevel);
+          break;
+
+        default:
+          // CANNOT_HAPPEN()
+          throw new Error(`CANNOT_HAPPEN in doDeclSubset: unexpected token ${token}`);
+      }
+    } while (this.eventQueueEmpty());
+  }
+
+  protected declSubsetRecover(startLevel: number): void {
+    // Port of declSubsetRecover from parseDecl.cxx (lines 460-489)
+    for (;;) {
+      const token = this.getToken(this.currentMode());
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          this.getChar();
+          break;
+        case TokenEnum.tokenEe:
+          if (this.inputLevel() <= startLevel) {
+            return;
+          }
+          this.popInputStack();
+          break;
+        case TokenEnum.tokenMdoCom:
+        case TokenEnum.tokenDsc:
+        case TokenEnum.tokenMdoNameStart:
+        case TokenEnum.tokenMdoMdc:
+        case TokenEnum.tokenMdoDso:
+        case TokenEnum.tokenMscMdc:
+        case TokenEnum.tokenPio:
+          if (this.inputLevel() === startLevel) {
+            const input = this.currentInput();
+            if (input) {
+              input.ungetToken();
+            }
+            return;
+          }
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  // Declaration parsing stubs - to be implemented
+  protected parseAfdrDecl(): boolean {
+    // AFDR (Architecture Form Definition Requirements) parsing
+    // Stub - returns false to trigger recovery
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseElementDecl(): boolean {
+    // Element declaration parsing
+    // Full implementation in parseDecl.cxx lines 538-894
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseAttlistDecl(): boolean {
+    // Attribute list declaration parsing
+    // Full implementation in parseDecl.cxx lines 896-1555
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseEntityDecl(): boolean {
+    // Entity declaration parsing
+    // Full implementation in parseDecl.cxx lines 1612-1935
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseNotationDecl(): boolean {
+    // Notation declaration parsing
+    // Full implementation in parseDecl.cxx lines 1558-1610
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseShortrefDecl(): boolean {
+    // Shortref declaration parsing
+    // Full implementation in parseDecl.cxx lines 1938-2062
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseUsemapDecl(): boolean {
+    // Usemap declaration parsing
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseLinkDecl(): boolean {
+    // Link declaration parsing (for LPD)
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseIdlinkDecl(): boolean {
+    // ID link declaration parsing (for LPD)
+    // Stub - skip the declaration for now
+    this.skipDeclaration(this.inputLevel());
+    return true;
+  }
+
+  protected parseDoctypeDeclEnd(fake: boolean = false): boolean {
+    // End of DOCTYPE declaration parsing
+    // Port from parseDecl.cxx
+    this.checkDtd(this.defDtd());
+    this.endDtd();
+    return true;
+  }
+
+  protected parseLinktypeDeclEnd(): boolean {
+    // End of LINKTYPE declaration parsing
+    // Port from parseDecl.cxx
+    this.endLpd();
+    return true;
+  }
+
+  protected checkDtd(dtd: Dtd): void {
+    // Validate the DTD
+    // Simplified stub - full implementation checks for undefined elements, etc.
   }
 
   protected doInstanceStart(): void {
@@ -1920,44 +2352,479 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.allDone();
   }
 
+  // Mode table flags from parseMode.cxx
+  private static readonly modeUsedInSd = 0o01;
+  private static readonly modeUsedInProlog = 0o02;
+  private static readonly modeUsedInInstance = 0o04;
+  private static readonly modeUsesSr = 0o010;
+
+  // Mode table from parseMode.cxx
+  private static readonly modeTable: Array<{ mode: Mode; flags: number }> = [
+    { mode: Mode.grpMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.alitMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.alitaMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.aliteMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.talitMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.talitaMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.taliteMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.mdMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.mdMinusMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.mdPeroMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.sdMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.comMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.sdcomMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.piMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.refMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance | ParserState.modeUsedInSd },
+    { mode: Mode.imsMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.cmsMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.rcmsMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInInstance },
+    { mode: Mode.proMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.dsMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.dsiMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.plitMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.plitaMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.pliteMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.sdplitMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.sdplitaMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.grpsufMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.mlitMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInSd },
+    { mode: Mode.mlitaMode, flags: ParserState.modeUsedInProlog | ParserState.modeUsedInSd },
+    { mode: Mode.asMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.piPasMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.slitMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.slitaMode, flags: ParserState.modeUsedInProlog },
+    { mode: Mode.sdslitMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.sdslitaMode, flags: ParserState.modeUsedInSd },
+    { mode: Mode.cconMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.rcconMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.cconnetMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.rcconnetMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.rcconeMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.tagMode, flags: ParserState.modeUsedInInstance },
+    { mode: Mode.econMode, flags: ParserState.modeUsedInInstance | ParserState.modeUsesSr },
+    { mode: Mode.mconMode, flags: ParserState.modeUsedInInstance | ParserState.modeUsesSr },
+    { mode: Mode.econnetMode, flags: ParserState.modeUsedInInstance | ParserState.modeUsesSr },
+    { mode: Mode.mconnetMode, flags: ParserState.modeUsedInInstance | ParserState.modeUsesSr },
+  ];
+
+  protected compileSdModes(): void {
+    const modes: Mode[] = [];
+    for (let i = 0; i < ParserState.modeTable.length; i++) {
+      if (ParserState.modeTable[i].flags & ParserState.modeUsedInSd) {
+        modes.push(ParserState.modeTable[i].mode);
+      }
+    }
+    this.compileModes(modes, modes.length, null);
+  }
+
   protected compilePrologModes(): void {
-    // Simplified compilePrologModes() from parseMode.cxx
-    // Full implementation:
-    // - Builds recognizers for prolog modes based on SGML declaration
-    // - Handles different scope settings (scopeInstance)
-    // - Compiles shortref table if needed
-    // - Creates MarkupScan for each mode
+    const scopeInstance = this.sd().scopeInstance();
+    const haveSr = this.syntax().hasShortrefs();
+    const modes: Mode[] = [];
 
-    // For now: assume recognizers are already set up or not needed
-    // TODO: Port full mode compilation from parseMode.cxx (~600 lines)
-
-    // Stub: do nothing for now
+    for (let i = 0; i < ParserState.modeTable.length; i++) {
+      if (scopeInstance) {
+        if (ParserState.modeTable[i].flags & ParserState.modeUsedInProlog) {
+          modes.push(ParserState.modeTable[i].mode);
+        }
+      } else if (haveSr) {
+        if (
+          (ParserState.modeTable[i].flags &
+            (ParserState.modeUsedInInstance | ParserState.modeUsedInProlog)) &&
+          !(ParserState.modeTable[i].flags & ParserState.modeUsesSr)
+        ) {
+          modes.push(ParserState.modeTable[i].mode);
+        }
+      } else {
+        if (
+          ParserState.modeTable[i].flags &
+          (ParserState.modeUsedInInstance | ParserState.modeUsedInProlog)
+        ) {
+          modes.push(ParserState.modeTable[i].mode);
+        }
+      }
+    }
+    this.compileModes(modes, modes.length, null);
   }
 
   protected compileInstanceModes(): void {
-    // Simplified compileInstanceModes() from parseMode.cxx
-    // Full implementation:
-    // - Compiles normal character map
-    // - Builds recognizers for instance modes
-    // - Integrates shortref maps from DTD
-    // - Handles different scope settings
-
-    // For now: assume recognizers are already set up or not needed
-    // TODO: Port full mode compilation from parseMode.cxx (~600 lines)
-
-    // Stub: do nothing for now
+    const scopeInstance = this.sd().scopeInstance();
+    this.compileNormalMap();
+    if (!scopeInstance && !this.syntax().hasShortrefs()) {
+      return;
+    }
+    const modes: Mode[] = [];
+    for (let i = 0; i < ParserState.modeTable.length; i++) {
+      if (scopeInstance) {
+        if (ParserState.modeTable[i].flags & ParserState.modeUsedInInstance) {
+          modes.push(ParserState.modeTable[i].mode);
+        }
+      } else {
+        if (ParserState.modeTable[i].flags & ParserState.modeUsesSr) {
+          modes.push(ParserState.modeTable[i].mode);
+        }
+      }
+    }
+    this.compileModes(modes, modes.length, this.currentDtd());
   }
 
-  protected compileSdModes(): void {
-    // Simplified compileSdModes() from parseMode.cxx
-    // Full implementation:
-    // - Builds recognizers for SGML declaration parsing modes
-    // - Sets up reference concrete syntax
+  protected compileModes(modes: Mode[], n: number, dtd: Dtd | null): void {
+    const sets: PackedBoolean[] = new Array(Syntax.nSet).fill(false);
+    const delims: PackedBoolean[] = new Array(Syntax.nDelimGeneral).fill(false);
+    const functions: PackedBoolean[] = new Array(3).fill(false);
+    let i: number;
+    let includesShortref: Boolean = false;
 
-    // For now: assume recognizers are already set up or not needed
-    // TODO: Port full mode compilation from parseMode.cxx (~600 lines)
+    for (i = 0; i < n; i++) {
+      const iter = new ModeInfo(modes[i], this.sd());
+      const ti = new TokenInfo();
+      while (iter.nextToken(ti)) {
+        switch (ti.type) {
+          case TokenInfo.Type.delimType:
+            delims[ti.delim1] = true;
+            break;
+          case TokenInfo.Type.delimDelimType:
+            delims[ti.delim1] = true;
+            delims[ti.delim2] = true;
+            break;
+          case TokenInfo.Type.delimSetType:
+            delims[ti.delim1] = true;
+            // fall through
+          case TokenInfo.Type.setType:
+            sets[ti.set] = true;
+            break;
+          case TokenInfo.Type.functionType:
+            functions[ti.function] = true;
+            break;
+        }
+      }
+      if (!includesShortref && iter.includesShortref()) {
+        includesShortref = true;
+      }
+    }
 
-    // Stub: do nothing for now
+    const chars = new ISet<Char>();
+
+    for (i = 0; i < 3; i++) {
+      if (functions[i]) {
+        chars.add(this.syntax().standardFunction(i));
+      }
+    }
+    for (i = 0; i < Syntax.nDelimGeneral; i++) {
+      if (delims[i]) {
+        const str = this.syntax().delimGeneral(i);
+        for (let j = 0; j < str.size(); j++) {
+          chars.add(str.get(j));
+        }
+      }
+    }
+    if (includesShortref && dtd) {
+      const nSr = dtd.nShortref();
+      for (let si = 0; si < nSr; si++) {
+        const delim = dtd.shortref(si);
+        const len = delim.size();
+        for (let j = 0; j < len; j++) {
+          if (delim.get(j) === this.sd().execToInternal('B'.charCodeAt(0))) {
+            sets[Syntax.Set.blank] = true;
+          } else {
+            chars.add(delim.get(j));
+          }
+        }
+      }
+    }
+
+    const csets: Array<ISet<Char> | null> = [];
+    let usedSets = 0;
+    for (i = 0; i < Syntax.nSet; i++) {
+      if (sets[i]) {
+        csets[usedSets++] = this.syntax().charSet(i);
+      }
+    }
+
+    const partition = new Partition(
+      chars,
+      csets,
+      usedSets,
+      this.syntax().generalSubstTable()
+    );
+
+    const setCodes: Array<String<EquivCode>> = new Array(Syntax.nSet);
+    for (i = 0; i < Syntax.nSet; i++) {
+      setCodes[i] = new String<EquivCode>();
+    }
+
+    let nCodes = 0;
+    for (i = 0; i < Syntax.nSet; i++) {
+      if (sets[i]) {
+        setCodes[i] = partition.setCodes(nCodes++);
+      }
+    }
+
+    const delimCodes: Array<String<EquivCode>> = new Array(Syntax.nDelimGeneral);
+    for (i = 0; i < Syntax.nDelimGeneral; i++) {
+      delimCodes[i] = new String<EquivCode>();
+      if (delims[i]) {
+        const str = this.syntax().delimGeneral(i);
+        for (let j = 0; j < str.size(); j++) {
+          delimCodes[i].appendChar(partition.charCode(str.get(j)));
+        }
+      }
+    }
+
+    const functionCode: Array<String<EquivCode>> = new Array(3);
+    for (i = 0; i < 3; i++) {
+      functionCode[i] = new String<EquivCode>();
+      if (functions[i]) {
+        functionCode[i].appendChar(
+          partition.charCode(this.syntax().standardFunction(i))
+        );
+      }
+    }
+
+    const srInfo: SrInfo[] = [];
+    let nShortref: number;
+    if (!includesShortref || !dtd) {
+      nShortref = 0;
+    } else {
+      nShortref = dtd.nShortref();
+      for (i = 0; i < nShortref; i++) {
+        srInfo.push(new SrInfo());
+      }
+
+      for (i = 0; i < nShortref; i++) {
+        const delim = dtd.shortref(i);
+        const p = srInfo[i];
+        let j: number;
+        for (j = 0; j < delim.size(); j++) {
+          if (delim.get(j) === this.sd().execToInternal('B'.charCodeAt(0))) {
+            break;
+          }
+          p.chars.appendChar(partition.charCode(delim.get(j)));
+        }
+        if (j < delim.size()) {
+          p.bSequenceLength = 1;
+          for (++j; j < delim.size(); j++) {
+            if (delim.get(j) !== this.sd().execToInternal('B'.charCodeAt(0))) {
+              break;
+            }
+            p.bSequenceLength += 1;
+          }
+          for (; j < delim.size(); j++) {
+            p.chars2.appendChar(partition.charCode(delim.get(j)));
+          }
+        } else {
+          p.bSequenceLength = 0;
+        }
+      }
+    }
+
+    const emptyString = new String<EquivCode>();
+    const multicode = this.syntax().multicode();
+
+    for (i = 0; i < n; i++) {
+      const tb = new TrieBuilder(partition.maxCode() + 1);
+      const ambiguities = new Vector<Token>();
+      const suppressTokens = new Vector<Token>();
+
+      if (multicode) {
+        suppressTokens.assign(partition.maxCode() + 1, 0);
+        suppressTokens.set(partition.eECode(), TokenEnum.tokenEe);
+      }
+      tb.recognizeEE(partition.eECode(), TokenEnum.tokenEe);
+
+      const iter = new ModeInfo(modes[i], this.sd());
+      const ti = new TokenInfo();
+      // Handle the possibility that some delimiters may be empty
+      while (iter.nextToken(ti)) {
+        switch (ti.type) {
+          case TokenInfo.Type.delimType:
+            if (delimCodes[ti.delim1].size() > 0) {
+              tb.recognize(delimCodes[ti.delim1], ti.token, ti.priority, ambiguities);
+            }
+            break;
+          case TokenInfo.Type.delimDelimType:
+            {
+              const str = new String<EquivCode>();
+              str.appendString(delimCodes[ti.delim1]);
+              if (str.size() > 0 && delimCodes[ti.delim2].size() > 0) {
+                str.appendString(delimCodes[ti.delim2]);
+                tb.recognize(str, ti.token, ti.priority, ambiguities);
+              }
+            }
+            break;
+          case TokenInfo.Type.delimSetType:
+            if (delimCodes[ti.delim1].size() > 0) {
+              tb.recognize(
+                delimCodes[ti.delim1],
+                setCodes[ti.set],
+                ti.token,
+                ti.priority,
+                ambiguities
+              );
+            }
+            break;
+          case TokenInfo.Type.setType:
+            tb.recognize(
+              emptyString,
+              setCodes[ti.set],
+              ti.token,
+              ti.priority,
+              ambiguities
+            );
+            if (multicode) {
+              const equivCodes = setCodes[ti.set];
+              for (let j = 0; j < equivCodes.size(); j++) {
+                suppressTokens.set(equivCodes.get(j), ti.token);
+              }
+            }
+            break;
+          case TokenInfo.Type.functionType:
+            tb.recognize(
+              functionCode[ti.function],
+              ti.token,
+              ti.priority,
+              ambiguities
+            );
+            if (multicode) {
+              suppressTokens.set(functionCode[ti.function].get(0), ti.token);
+            }
+            break;
+        }
+      }
+
+      if (iter.includesShortref()) {
+        for (let j = 0; j < nShortref; j++) {
+          const p = srInfo[j];
+          if (p.bSequenceLength > 0) {
+            tb.recognizeB(
+              p.chars,
+              p.bSequenceLength,
+              this.syntax().quantity(Syntax.Quantity.qBSEQLEN),
+              setCodes[Syntax.Set.blank],
+              p.chars2,
+              TokenEnum.tokenFirstShortref + j,
+              ambiguities
+            );
+          } else {
+            tb.recognize(
+              p.chars,
+              TokenEnum.tokenFirstShortref + j,
+              Priority.delim,
+              ambiguities
+            );
+          }
+        }
+      }
+
+      const trie = tb.extractTrie();
+      if (trie) {
+        if (multicode) {
+          this.setRecognizer(
+            modes[i],
+            new ConstPtr(new Recognizer(trie, partition.map(), suppressTokens))
+          );
+        } else {
+          this.setRecognizer(
+            modes[i],
+            new ConstPtr(new Recognizer(trie, partition.map()))
+          );
+        }
+      }
+
+      // Report ambiguities
+      for (let j = 0; j < ambiguities.size(); j += 2) {
+        this.message(
+          ParserMessages.lexicalAmbiguity,
+          new TokenMessageArg(
+            ambiguities.get(j),
+            modes[i],
+            this.syntaxPointer(),
+            this.sdPointer()
+          ),
+          new TokenMessageArg(
+            ambiguities.get(j + 1),
+            modes[i],
+            this.syntaxPointer(),
+            this.sdPointer()
+          )
+        );
+      }
+    }
+  }
+
+  protected compileNormalMap(): void {
+    const map = new XcharMap<PackedBoolean>(false);
+    const sgmlCharSet = this.syntax().charSet(Syntax.Set.sgmlChar);
+    if (sgmlCharSet) {
+      const sgmlCharIter = new ISetIter<Char>(sgmlCharSet);
+      const result = { fromMin: 0 as Char, fromMax: 0 as Char };
+      while (sgmlCharIter.next(result)) {
+        map.setRange(result.fromMin, result.fromMax, true);
+      }
+    }
+
+    const iter = new ModeInfo(Mode.mconnetMode, this.sd());
+    const ti = new TokenInfo();
+    while (iter.nextToken(ti)) {
+      switch (ti.type) {
+        case TokenInfo.Type.delimType:
+        case TokenInfo.Type.delimDelimType:
+        case TokenInfo.Type.delimSetType:
+          {
+            const delim = this.syntax().delimGeneral(ti.delim1);
+            if (delim.size() === 0) break;
+            const c = delim.get(0);
+            map.setChar(c, false);
+            const str = this.syntax().generalSubstTable().inverse(c);
+            for (let i = 0; i < str.size(); i++) {
+              map.setChar(str.get(i), false);
+            }
+          }
+          break;
+        case TokenInfo.Type.setType:
+          if (ti.token !== TokenEnum.tokenChar) {
+            const charSet = this.syntax().charSet(ti.set);
+            if (charSet) {
+              const setIter = new ISetIter<Char>(charSet);
+              const result = { fromMin: 0 as Char, fromMax: 0 as Char };
+              while (setIter.next(result)) {
+                map.setRange(result.fromMin, result.fromMax, false);
+              }
+            }
+          }
+          break;
+        case TokenInfo.Type.functionType:
+          if (ti.token !== TokenEnum.tokenChar) {
+            map.setChar(this.syntax().standardFunction(ti.function), false);
+          }
+          break;
+      }
+    }
+
+    const nShortref = this.currentDtd().nShortref();
+    for (let i = 0; i < nShortref; i++) {
+      const shortref = this.currentDtd().shortref(i);
+      if (shortref.size() === 0) continue;
+      const c = shortref.get(0);
+      if (c === this.sd().execToInternal('B'.charCodeAt(0))) {
+        const blankSet = this.syntax().charSet(Syntax.Set.blank);
+        if (blankSet) {
+          const setIter = new ISetIter<Char>(blankSet);
+          const result = { fromMin: 0 as Char, fromMax: 0 as Char };
+          while (setIter.next(result)) {
+            map.setRange(result.fromMin, result.fromMax, false);
+          }
+        }
+      } else {
+        map.setChar(c, false);
+        const str = this.syntax().generalSubstTable().inverse(c);
+        for (let j = 0; j < str.size(); j++) {
+          map.setChar(str.get(j), false);
+        }
+      }
+    }
+
+    this.setNormalMap(map);
   }
 
   // Core parsing utilities from parseCommon.cxx

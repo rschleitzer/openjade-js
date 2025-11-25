@@ -5,7 +5,8 @@ import { Link } from './Link';
 import { Boolean } from './Boolean';
 
 export class IListBase {
-  private head_: Link | null;
+  // Public for IListIterBase access (C++ version uses friend class)
+  head_: Link | null;
 
   constructor();
   constructor(head: Link | null);
