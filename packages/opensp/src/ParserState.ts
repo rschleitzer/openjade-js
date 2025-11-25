@@ -994,13 +994,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return entity;
   }
 
-  defineId(str: StringC, loc: Location, prevLoc: Location): Boolean {
+  defineId(str: StringC, loc: Location, prevLoc: { value: Location }): Boolean {
     if (!this.inInstance() || !this.validate()) {
       return true;
     }
     const id = this.lookupCreateId(str);
     if (id.defined()) {
-      // prevLoc = id.defLocation(); // Assignment to reference - need to handle differently
+      prevLoc.value = id.defLocation();
       return false;
     }
     id.define(loc);
