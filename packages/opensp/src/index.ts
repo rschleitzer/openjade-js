@@ -229,6 +229,7 @@ export {
 export { Text, TextItem, TextIter } from './Text';
 export { SdText, SdTextItem, SdTextIter } from './SdText';
 export { SdFormalError } from './SdFormalError';
+export { SdParam, AllowedSdParams, AllowedSdParamsMessageArg, StandardSyntaxSpec, coreSyntax, refSyntax } from './SdParam';
 
 // Character mapping utilities
 export { CharMap, CharMapResource } from './CharMap';
