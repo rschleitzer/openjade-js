@@ -770,7 +770,7 @@ export class ImpliedAttributeValue extends AttributeValue {
 
 // CdataAttributeValue
 export class CdataAttributeValue extends AttributeValue {
-  private text_: Text;
+  protected text_: Text;
 
   constructor(text: Text) {
     super();
@@ -786,6 +786,36 @@ export class CdataAttributeValue extends AttributeValue {
 
   text(): Text | null {
     return this.text_;
+  }
+
+  // Port of Attribute.cxx (lines 1100-1122)
+  // Error recovery for unquoted CDATA attribute value - adds the unquoted string to the value
+  recoverUnquoted(
+    str: StringC,
+    strLoc: Location,
+    context: AttributeContext,
+    _name: StringC
+  ): Boolean {
+    const iter = new TextIter(this.text_);
+    const result = { type: TextItem.Type.data, p: null as Char[] | null, n: 0, loc: null as Location | null };
+
+    if (iter.next(result)
+        && result.type === TextItem.Type.data
+        && result.n === this.text_.size()
+        && result.loc
+        && !result.loc.origin().isNull()
+        && !strLoc.origin().isNull()
+        && result.loc.origin().pointer() === strLoc.origin().pointer()
+        && result.loc.index() + result.n === strLoc.index()) {
+      // Check that there are no more items
+      if (!iter.next(result)) {
+        this.text_.addChars(str, strLoc);
+        context.setNextLocation(strLoc);
+        context.message(ParserMessages.unquotedAttributeValue);
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -860,6 +890,39 @@ export class TokenizedAttributeValue extends AttributeValue {
       return null;
     }
     return declaredValue.makeSemantics(this, context, name, nIdrefs, nEntityNames);
+  }
+
+  // Port of Attribute.cxx (lines 289-312)
+  // Error recovery for unquoted attribute value
+  recoverUnquoted(
+    str: StringC,
+    strLoc: Location,
+    context: AttributeContext,
+    name: StringC
+  ): Boolean {
+    const iter = new TextIter(this.text_);
+    const result = { type: TextItem.Type.data, p: null as Char[] | null, n: 0, loc: null as Location | null };
+
+    if (iter.next(result)
+        && result.type === TextItem.Type.data
+        && result.n === this.text_.size()
+        && result.loc
+        && !result.loc.origin().isNull()
+        && !strLoc.origin().isNull()
+        && result.loc.origin().pointer() === strLoc.origin().pointer()
+        && result.loc.index() + result.n === strLoc.index()) {
+      // Check that there are no more items
+      if (!iter.next(result)) {
+        context.setNextLocation(strLoc);
+        const charStr = new StringOf<Char>();
+        charStr.appendChar(str.get(0));
+        context.message(ParserMessages.attributeValueChar,
+          new StringMessageArg(charStr),
+          new StringMessageArg(name));
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -1689,6 +1752,24 @@ export class AttributeList {
           break;
         }
       }
+    }
+    return false;
+  }
+
+  // Port of AttributeList.cxx (lines 1338-1355)
+  recoverUnquoted(str: StringC, strLoc: Location, context: AttributeContext): boolean {
+    if (this.nSpec_ > 0) {
+      for (let i = 0; i < this.vec_.size(); i++) {
+        if (this.vec_.get(i).specified() && this.vec_.get(i).specIndex() === this.nSpec_ - 1) {
+          const val = this.vec_.get(i).value();
+          if (val) {
+            // Note: We cast to non-const AttributeValue to call recoverUnquoted
+            return val.recoverUnquoted(str, strLoc, context, this.name(i)) === true;
+          }
+          break;
+        }
+      }
+      return true;
     }
     return false;
   }

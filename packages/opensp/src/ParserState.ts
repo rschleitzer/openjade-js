@@ -7852,16 +7852,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case AttributeParameterType.recoverUnquoted:
           {
             // Error recovery for unquoted attribute value
-            // TODO: Implement atts.recoverUnquoted
-            // if (!atts.recoverUnquoted(this.currentToken(), this.currentLocation(), this)) {
-            //   const input = this.currentInput();
-            //   if (input) input.endToken(1);
-            //   if (!atts.handleAsUnterminated(this)) {
-            //     this.message(ParserMessages.attributeSpecCharacter,
-            //       new StringMessageArg(this.currentToken()));
-            //   }
-            //   return false;
-            // }
+            // Port of parseAttribute.cxx (lines 70-79)
+            if (!atts.recoverUnquoted(this.currentToken(), this.currentLocation(), this as any)) {
+              const input = this.currentInput();
+              if (input) input.endToken(1);
+              if (!atts.handleAsUnterminated(this as any)) {
+                this.message(ParserMessages.attributeSpecCharacter,
+                  new StringMessageArg(this.currentToken()));
+              }
+              return false;
+            }
             if (!this.parseAttributeParameter(mode, false, curParmObj, netEnabling)) {
               return false;
             }
