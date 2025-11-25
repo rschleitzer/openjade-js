@@ -84,6 +84,7 @@ export const namedCharRef = new MessageType0(MessageType.Severity.warning, null,
 export const nestcWithoutNet = new MessageType0(MessageType.Severity.error, null, -1, 'NET-enabling start-tag not immediately followed by null end-tag');
 export const netEnablingStartTagShorttag = new MessageType0(MessageType.Severity.error, null, -1, 'NET-enabling start-tag requires SHORTTAG YES');
 export const noSuchAttributeToken = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a member of a group specified for any attribute');
+export const noSuchAttribute = new MessageType1(MessageType.Severity.error, null, -1, 'there is no attribute %1');
 export const nonSgmlCharRef = new MessageType0(MessageType.Severity.warning, null, -1, 'reference to non-SGML character');
 export const pass2 = new MessageType0(MessageType.Severity.error, null, -1, 'unexpected entity end while starting second pass');
 export const psComment = new MessageType0(MessageType.Severity.warning, null, -1, 'comment in parameter separator');

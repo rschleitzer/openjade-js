@@ -1394,7 +1394,17 @@ export class AttributeDefinitionList extends Resource {
     this.index_ = index;
   }
 
+  // Port of Attribute.cxx (lines 943-953)
   append(def: AttributeDefinition): void {
+    if (def.isId() && this.idIndex_ === -1) {
+      this.idIndex_ = this.defs_.size();
+    }
+    if (def.isNotation() && this.notationIndex_ === -1) {
+      this.notationIndex_ = this.defs_.size();
+    }
+    if (def.isCurrent()) {
+      this.anyCurrent_ = true;
+    }
     this.defs_.push_back(new CopyOwner<AttributeDefinition>(def));
   }
 }
@@ -1628,6 +1638,12 @@ export class AttributeList {
         this.vec_.get(i).clear();
       }
     }
+  }
+
+  // Port of AttributeList.cxx (lines 1210-1214)
+  changeDef(def: ConstPtr<AttributeDefinitionList>): void {
+    this.vec_.resize(def.isNull() ? 0 : def.pointer()!.size());
+    this.def_ = def;
   }
 
   // Port of AttributeList.cxx (lines 1216-1241)

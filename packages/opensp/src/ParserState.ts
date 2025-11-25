@@ -7948,14 +7948,56 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const indexResult = { value: 0 };
     if (!atts.attributeIndex(name, indexResult)) {
       // Attribute not in definition - create implied attribute
-      // TODO: Implement full implied attribute creation logic
-      // For now, just note this is needed and fail gracefully
-      // Full implementation requires:
-      // - AttributeDefinitionList creation
-      // - Notation lookup for data attributes
-      // - ImpliedAttributeDefinition creation
-      // - atts.changeDef() and atts.size()
-      return false;
+      // Port of parseAttribute.cxx (lines 146-189)
+      if (newAttDef.isNull()) {
+        newAttDef.assign(new AttributeDefinitionList(atts.defPtr()));
+      }
+      let newDef: AttributeDefinition | null = null;
+
+      if (!this.inInstance()) {
+        // We are parsing a data attribute specification
+        let notation: Ptr<Notation> | null = null;
+        const notationIter = this.currentDtdNonConst().notationIter();
+        for (;;) {
+          notation = notationIter.next();
+          if (notation === null || atts.defPtr().equals(notation.pointer()!.attributeDef().attributeDefConst())) {
+            break;
+          }
+        }
+        if (notation !== null && !notation.isNull()) {
+          if (!notation.pointer()!.defined()) {
+            const nt = this.lookupCreateNotation(
+              this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
+            );
+            const common = nt.pointer()!.attributeDef().attributeDefConst();
+            if (!common.isNull() && common.pointer()!.attributeIndex(name, indexResult)) {
+              newDef = common.pointer()!.def(indexResult.value).copy();
+              newDef.setSpecified(true);
+            }
+          }
+          if (!newDef) {
+            const nt = this.lookupCreateNotation(
+              this.syntax().rniReservedName(Syntax.ReservedName.rALL)
+            );
+            const common = nt.pointer()!.attributeDef().attributeDefConst();
+            if (!common.isNull() && common.pointer()!.attributeIndex(name, indexResult)) {
+              newDef = common.pointer()!.def(indexResult.value).copy();
+              newDef.setSpecified(false);
+            }
+          }
+        }
+      }
+
+      if (!newDef) {
+        if (!this.implydefAttlist()) {
+          this.message(ParserMessages.noSuchAttribute, new StringMessageArg(name));
+        }
+        newDef = new ImpliedAttributeDefinition(name, new CdataDeclaredValue());
+      }
+
+      newAttDef.pointer()!.append(newDef);
+      atts.changeDef(new ConstPtr<AttributeDefinitionList>(newAttDef.pointer()!));
+      indexResult.value = atts.size() - 1;
     }
 
     atts.setSpec(indexResult.value, this as any);
