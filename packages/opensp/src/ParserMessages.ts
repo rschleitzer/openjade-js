@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType, MessageType1L } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
@@ -266,3 +266,63 @@ export const conrefAttribute = new MessageType0(MessageType.Severity.warning, nu
 export const notationConref = new MessageType0(MessageType.Severity.error, null, -1, 'NOTATION attribute cannot have default value #CONREF');
 export const idDeclaredValue = new MessageType0(MessageType.Severity.error, null, -1, 'ID attribute cannot have default value');
 export const attcnt = new MessageType2(MessageType.Severity.error, null, -1, 'number of tokens in attribute definition list %1 exceeds ATTCNT (%2)');
+
+// Shortref declaration messages
+export const shortrefOnlyInBaseDtd = new MessageType0(MessageType.Severity.error, null, -1, 'SHORTREF declaration not allowed in DTD subset that is not base');
+export const duplicateShortrefDeclaration = new MessageType1L(MessageType.Severity.error, null, -1, 'short reference map %1 already defined');
+export const unknownShortrefDelim = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a short reference delimiter');
+export const delimDuplicateMap = new MessageType1(MessageType.Severity.error, null, -1, 'short reference delimiter %1 already mapped in this declaration');
+
+// Usemap declaration messages
+export const usemapOnlyInBaseDtd = new MessageType0(MessageType.Severity.error, null, -1, 'USEMAP declaration not allowed in DTD subset that is not base');
+export const undefinedShortrefMapInstance = new MessageType1(MessageType.Severity.error, null, -1, 'short reference map %1 not defined');
+export const usemapAssociatedElementTypeInstance = new MessageType0(MessageType.Severity.error, null, -1, 'USEMAP declaration in document instance cannot have associated element type');
+export const usemapAssociatedElementTypeDtd = new MessageType0(MessageType.Severity.error, null, -1, 'USEMAP declaration in DTD subset must have associated element type');
+
+// AFDR declaration messages
+export const afdrVersion = new MessageType1(MessageType.Severity.error, null, -1, 'minimum data of AFDR declaration must be "ISO/IEC 10744:1997" not %1');
+
+// Link declaration messages
+export const idlinkDeclSimple = new MessageType0(MessageType.Severity.error, null, -1, 'ID link set declaration not allowed in simple link declaration subset');
+export const linkDeclSimple = new MessageType0(MessageType.Severity.error, null, -1, 'link set declaration not allowed in simple link declaration subset');
+export const duplicateIdLinkSet = new MessageType0(MessageType.Severity.error, null, -1, 'only one ID link set declaration allowed in an LPD subset');
+export const duplicateLinkSet = new MessageType1(MessageType.Severity.error, null, -1, 'link set %1 already defined');
+export const assocElementDifferentAtts = new MessageType0(MessageType.Severity.error, null, -1, 'element types have different link attribute definitions');
+export const multipleIdLinkRuleAttribute = new MessageType1(MessageType.Severity.error, null, -1, 'multiple link rules for ID %1 but not all have link attribute specifications');
+export const multipleLinkRuleAttribute = new MessageType1(MessageType.Severity.error, null, -1, 'multiple link rules for element type %1 but not all have link attribute specifications');
+export const duplicateImpliedResult = new MessageType1(MessageType.Severity.error, null, -1, '#IMPLIED already linked to result element type %1');
+export const emptyResultAttributeSpec = new MessageType0(MessageType.Severity.error, null, -1, 'empty result attribute specification');
+export const noSuchResultElement = new MessageType1(MessageType.Severity.error, null, -1, 'no result element type %1');
+
+// Uselink declaration messages
+export const uselinkBadLinkType = new MessageType1(MessageType.Severity.error, null, -1, 'no link type %1');
+export const uselinkSimpleLpd = new MessageType1(MessageType.Severity.error, null, -1, 'link set use declaration for simple link process');
+export const uselinkBadLinkSet = new MessageType2(MessageType.Severity.error, null, -1, 'link type %1 does not have a link set %2');
+
+// DOCTYPE declaration messages
+export const multipleDtds = new MessageType0(MessageType.Severity.error, null, -1, 'DTDs other than base allowed only if CONCUR YES or EXPLICIT YES');
+export const dtdAfterLpd = new MessageType0(MessageType.Severity.error, null, -1, 'DTD not allowed after an LPD');
+export const impliedDoctypeConcurLink = new MessageType0(MessageType.Severity.error, null, -1, 'can\'t use #IMPLICIT doctype unless CONCUR NO and LINK EXPLICIT NO');
+export const sorryImpliedDoctype = new MessageType0(MessageType.Severity.error, null, -1, 'Sorry, #IMPLIED doctypes not implemented');
+export const duplicateDtd = new MessageType1(MessageType.Severity.error, null, -1, 'document type %1 already defined');
+export const noDtdSubset = new MessageType0(MessageType.Severity.error, null, -1, 'no internal or external document type declaration subset; will parse without validation');
+export const noDtd = new MessageType0(MessageType.Severity.error, null, -1, 'no document type declaration; will parse without validation');
+export const omittedProlog = new MessageType0(MessageType.Severity.error, null, -1, 'prolog can\'t be omitted unless CONCUR NO and LINK EXPLICIT NO and either IMPLYDEF ELEMENT YES or IMPLYDEF DOCTYPE YES');
+export const implyingDtd = new MessageType1(MessageType.Severity.error, null, -1, 'no document type declaration; implying %1');
+
+// LINKTYPE declaration messages
+export const lpdBeforeBaseDtd = new MessageType0(MessageType.Severity.error, null, -1, 'LPD not allowed before first DTD');
+export const duplicateDtdLpd = new MessageType1(MessageType.Severity.error, null, -1, 'both document type and link type %1');
+export const duplicateLpd = new MessageType1(MessageType.Severity.error, null, -1, 'link type %1 already defined');
+export const noSuchDtd = new MessageType1(MessageType.Severity.error, null, -1, 'no DTD %1 declared');
+export const simpleLinkFeature = new MessageType0(MessageType.Severity.error, null, -1, 'simple link requires SIMPLE YES');
+export const implicitLinkFeature = new MessageType0(MessageType.Severity.error, null, -1, 'implicit link requires IMPLICIT YES');
+export const explicitLinkFeature = new MessageType0(MessageType.Severity.error, null, -1, 'explicit link requires EXPLICIT YES');
+export const simpleLinkResultNotImplied = new MessageType0(MessageType.Severity.error, null, -1, 'result document type in simple link specification must be implied');
+export const simpleLinkCount = new MessageType1(MessageType.Severity.error, null, -1, 'number of active simple link processes exceeds quantity specified for SIMPLE parameter in SGML declaration (%1)');
+export const oneImplicitLink = new MessageType0(MessageType.Severity.error, null, -1, 'only one implicit link process can be active');
+export const duplicateExplicitChain = new MessageType0(MessageType.Severity.error, null, -1, 'only one chain of explicit link processes can be active');
+export const explicitNoRequiresSourceTypeBase = new MessageType1(MessageType.Severity.error, null, -1, 'source document type name for link type %1 must be base document type since EXPLICIT NO');
+export const explicit1RequiresSourceTypeBase = new MessageType1(MessageType.Severity.error, null, -1, 'source document type name for link type %1 must be base document type since EXPLICIT YES 1');
+export const sorryLink = new MessageType1(MessageType.Severity.warning, null, -1, 'sorry, link type %1 not activated: only one implicit or explicit link process can be active (with base document type as source document type)');
+export const noLpdSubset = new MessageType1(MessageType.Severity.warning, null, -1, 'LPD %1 has neither internal nor external subset');

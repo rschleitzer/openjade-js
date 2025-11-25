@@ -35,7 +35,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -59,10 +59,11 @@ import { NCVector } from './NCVector';
 import { Owner } from './Owner';
 import { CopyOwner } from './CopyOwner';
 import { Attributed } from './Attributed';
-import { Lpd, ComplexLpd } from './Lpd';
+import { Lpd, ComplexLpd, SimpleLpd, LinkSet, SourceLinkRuleResource, IdLinkRule, IdLinkRuleGroup } from './Lpd';
 import { LpdEntityRef } from './LpdEntityRef';
 import { Markup } from './Markup';
 import { ContentState } from './ContentState';
+import { ShortReferenceMap } from './ShortReferenceMap';
 import { Xchar, Char, Token, Offset } from './types';
 import { XcharMap } from './XcharMap';
 import { OwnerTable, OwnerTableIter } from './OwnerTable';
@@ -1619,6 +1620,48 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.setPhase(Phase.instanceStartPhase);
   }
 
+  // Port of Parser::prologRecover from parseDecl.cxx (lines 197-232)
+  protected prologRecover(): void {
+    let skipCount = 0;
+    const skipMax = 250;
+    for (;;) {
+      let token = this.getToken(Mode.proMode);
+      skipCount++;
+      if (token === TokenEnum.tokenUnrecognized) {
+        token = this.getToken(Mode.mdMode);
+        if (token === TokenEnum.tokenMdc) {
+          token = this.getToken(Mode.proMode);
+          if (token === TokenEnum.tokenS) {
+            return;
+          }
+        }
+      }
+      switch (token) {
+        case TokenEnum.tokenUnrecognized:
+          this.getChar();
+          break;
+        case TokenEnum.tokenEe:
+          return;
+        case TokenEnum.tokenMdoMdc:
+        case TokenEnum.tokenMdoCom:
+        case TokenEnum.tokenMdoNameStart:
+        case TokenEnum.tokenPio:
+          this.currentInput()!.ungetToken();
+          return;
+        case TokenEnum.tokenS:
+          if (
+            this.currentChar() === this.syntax().standardFunction(Syntax.StandardFunction.fRE) &&
+            skipCount >= skipMax
+          ) {
+            return;
+          }
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
   protected doDeclSubset(): void {
     // Port of doDeclSubset from parseDecl.cxx (lines 234-458)
     do {
@@ -1960,11 +2003,32 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
-  // Declaration parsing stubs - to be implemented
+  // Port of Parser::parseAfdrDecl from parseDecl.cxx
   protected parseAfdrDecl(): boolean {
-    // AFDR (Architecture Form Definition Requirements) parsing
-    // Stub - returns false to trigger recovery
-    this.skipDeclaration(this.inputLevel());
+    const declInputLevel = this.inputLevel();
+    const allowMinimumLiteral = new AllowedParams(Param.minimumLiteral);
+    const parm = new Param();
+
+    this.setHadAfdrDecl();
+
+    if (!this.parseParam(allowMinimumLiteral, declInputLevel, parm)) {
+      return false;
+    }
+
+    const expectedVersion = this.sd().execToInternal('ISO/IEC 10744:1997');
+    if (!parm.literalText.string().equals(expectedVersion)) {
+      this.message(ParserMessages.afdrVersion, new StringMessageArg(parm.literalText.string()));
+    }
+
+    const allowMdc = new AllowedParams(Param.mdc);
+    if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+      return false;
+    }
+
+    this.eventHandler().ignoredMarkup(
+      new IgnoredMarkupEvent(this.markupLocation(), this.currentMarkup())
+    );
+
     return true;
   }
 
@@ -3334,32 +3398,1268 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return true;
   }
 
+  // Port of Parser::parseShortrefDecl from parseDecl.cxx
   protected parseShortrefDecl(): boolean {
-    // Shortref declaration parsing
-    // Full implementation in parseDecl.cxx lines 1938-2062
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+    if (!this.defDtd().isBase()) {
+      this.message(ParserMessages.shortrefOnlyInBaseDtd);
+    }
+
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowName = new AllowedParams(Param.paramName);
+    if (!this.parseParam(allowName, declInputLevel, parm)) {
+      return false;
+    }
+
+    const map = this.lookupCreateMap(parm.token);
+    let valid = true;
+    if (map.defined()) {
+      this.message(ParserMessages.duplicateShortrefDeclaration, new StringMessageArg(parm.token), map.defLocation());
+      valid = false;
+    } else {
+      map.setDefLocation(this.markupLocation());
+    }
+
+    const allowParamLiteral = new AllowedParams(Param.paramLiteral);
+    if (!this.parseParam(allowParamLiteral, declInputLevel, parm)) {
+      return false;
+    }
+
+    const vec = new Vector<String<Char>>();
+    do {
+      const delim = new String<Char>(parm.literalText.string().data(), parm.literalText.string().size());
+      this.instanceSyntax().generalSubstTable()?.subst(delim);
+
+      const srIndexRef = { value: 0 };
+      if (!this.defDtd().shortrefIndex(delim, this.instanceSyntax(), srIndexRef)) {
+        this.message(ParserMessages.unknownShortrefDelim, new StringMessageArg(this.prettifyDelim(delim)));
+        valid = false;
+      }
+
+      const allowEntityName = new AllowedParams(Param.entityName);
+      if (!this.parseParam(allowEntityName, declInputLevel, parm)) {
+        return false;
+      }
+
+      if (valid) {
+        const srIndex = srIndexRef.value;
+        if (srIndex >= vec.size()) {
+          vec.resize(srIndex + 1);
+        }
+        if (vec.get(srIndex).size() > 0) {
+          this.message(ParserMessages.delimDuplicateMap, new StringMessageArg(this.prettifyDelim(delim)));
+          valid = false;
+        } else {
+          vec.set(srIndex, parm.token);
+        }
+      }
+
+      const allowParamLiteralMdc = new AllowedParams(Param.paramLiteral, Param.mdc);
+      if (!this.parseParam(allowParamLiteralMdc, declInputLevel, parm)) {
+        return false;
+      }
+    } while (parm.type !== Param.mdc);
+
+    if (valid) {
+      map.setNameMap(vec);
+      if (this.currentMarkup()) {
+        this.eventHandler().shortrefDecl(
+          new ShortrefDeclEvent(map, this.currentDtdPointer(), this.markupLocation(), this.currentMarkup()!)
+        );
+      }
+    }
     return true;
   }
 
+  // Port of Parser::prettifyDelim from parseDecl.cxx
+  protected prettifyDelim(delim: StringC): StringC {
+    const prettyDelim = new String<Char>();
+    for (let i = 0; i < delim.size(); i++) {
+      const nameP: { name: StringC | null } = { name: null };
+      if (this.syntax().charFunctionName(delim.get(i), nameP)) {
+        prettyDelim.appendString(this.syntax().delimGeneral(Syntax.DelimGeneral.dCRO));
+        if (nameP.name) {
+          prettyDelim.appendString(nameP.name);
+        }
+        prettyDelim.appendString(this.syntax().delimGeneral(Syntax.DelimGeneral.dREFC));
+      } else {
+        prettyDelim.append([delim.get(i)], 1);
+      }
+    }
+    return prettyDelim;
+  }
+
+  // Port of Parser::lookupCreateMap from parseDecl.cxx
+  protected lookupCreateMap(name: StringC): ShortReferenceMap {
+    let map = this.defDtd().lookupShortReferenceMap(name);
+    if (!map) {
+      map = new ShortReferenceMap(name);
+      this.defDtd().insertShortReferenceMap(map);
+    }
+    return map;
+  }
+
+  // Port of Parser::parseUsemapDecl from parseDecl.cxx
   protected parseUsemapDecl(): boolean {
-    // Usemap declaration parsing
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+    if (!this.inInstance() && !this.defDtd().isBase()) {
+      this.message(ParserMessages.usemapOnlyInBaseDtd);
+    }
+
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowNameEmpty = new AllowedParams(
+      Param.paramName,
+      Param.indicatedReservedName + Syntax.ReservedName.rEMPTY
+    );
+    if (!this.parseParam(allowNameEmpty, declInputLevel, parm)) {
+      return false;
+    }
+
+    let map: ShortReferenceMap | null = null;
+    if (parm.type === Param.paramName) {
+      if (this.inInstance()) {
+        map = this.currentDtd().lookupShortReferenceMap(parm.token);
+        if (!map) {
+          this.message(ParserMessages.undefinedShortrefMapInstance, new StringMessageArg(parm.token));
+        }
+      } else {
+        const tem = this.lookupCreateMap(parm.token);
+        tem.setUsed();
+        map = tem;
+      }
+    } else {
+      map = ContentState.theEmptyMap;
+    }
+
+    const allowNameNameGroupMdc = new AllowedParams(Param.paramName, Param.nameGroup, Param.mdc);
+    if (!this.parseParam(allowNameNameGroupMdc, declInputLevel, parm)) {
+      return false;
+    }
+
+    if (parm.type !== Param.mdc) {
+      if (this.inInstance()) {
+        this.message(ParserMessages.usemapAssociatedElementTypeInstance);
+        const allowMdc = new AllowedParams(Param.mdc);
+        if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+          return false;
+        }
+      } else {
+        const v = new Vector<ElementType>();
+        if (parm.type === Param.paramName) {
+          const e = this.lookupCreateElement(parm.token);
+          v.push_back(e);
+          if (!e.map()) {
+            e.setMap(map);
+          }
+        } else {
+          v.resize(parm.nameTokenVector.size());
+          for (let i = 0; i < parm.nameTokenVector.size(); i++) {
+            const e = this.lookupCreateElement(parm.nameTokenVector.get(i).name);
+            v.set(i, e);
+            if (!e.map()) {
+              e.setMap(map);
+            }
+          }
+        }
+        const allowMdc = new AllowedParams(Param.mdc);
+        if (!this.parseParam(allowMdc, declInputLevel, parm)) {
+          return false;
+        }
+        if (this.currentMarkup()) {
+          this.eventHandler().usemap(
+            new UsemapEvent(map, v, this.currentDtdPointer(), this.markupLocation(), this.currentMarkup()!)
+          );
+        }
+      }
+    } else {
+      if (!this.inInstance()) {
+        this.message(ParserMessages.usemapAssociatedElementTypeDtd);
+      } else if (map) {
+        if (map !== ContentState.theEmptyMap && !map.defined()) {
+          this.message(ParserMessages.undefinedShortrefMapInstance, new StringMessageArg(map.name()));
+        } else {
+          if (this.currentMarkup()) {
+            const v = new Vector<ElementType>();
+            this.eventHandler().usemap(
+              new UsemapEvent(map, v, this.currentDtdPointer(), this.markupLocation(), this.currentMarkup()!)
+            );
+          }
+          this.currentElement().setMap(map);
+        }
+      }
+    }
     return true;
   }
 
+  // Port of Parser::parseLinkDecl from parseDecl.cxx
   protected parseLinkDecl(): boolean {
-    // Link declaration parsing (for LPD)
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+    return this.parseLinkSet(false);
+  }
+
+  // Port of Parser::parseIdlinkDecl from parseDecl.cxx
+  protected parseIdlinkDecl(): boolean {
+    return this.parseLinkSet(true);
+  }
+
+  // Port of Parser::parseLinkSet from parseDecl.cxx
+  protected parseLinkSet(idlink: boolean): boolean {
+    if (this.defLpd().type() === Lpd.Type.simpleLink) {
+      this.message(idlink ? ParserMessages.idlinkDeclSimple : ParserMessages.linkDeclSimple);
+      return false;
+    }
+
+    if (idlink) {
+      if (this.defComplexLpd().hadIdLinkSet()) {
+        this.message(ParserMessages.duplicateIdLinkSet);
+      } else {
+        this.defComplexLpd().setHadIdLinkSet();
+      }
+    }
+
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const isExplicit = this.defLpd().type() === Lpd.Type.explicitLink;
+    let linkSet: LinkSet | null = null;
+
+    if (idlink) {
+      const allowName = new AllowedParams(Param.paramName);
+      if (!this.parseParam(allowName, declInputLevel, parm)) {
+        return false;
+      }
+      linkSet = null;
+    } else {
+      const allowNameInitial = new AllowedParams(
+        Param.paramName,
+        Param.indicatedReservedName + Syntax.ReservedName.rINITIAL
+      );
+      if (!this.parseParam(allowNameInitial, declInputLevel, parm)) {
+        return false;
+      }
+      if (parm.type === Param.paramName) {
+        linkSet = this.lookupCreateLinkSet(parm.token);
+      } else {
+        linkSet = this.defComplexLpd().initialLinkSet();
+      }
+      if (linkSet && linkSet.defined()) {
+        this.message(ParserMessages.duplicateLinkSet, new StringMessageArg(linkSet.name()));
+      }
+      const allowExplicitLinkRule = new AllowedParams(
+        Param.paramName,
+        Param.nameGroup,
+        Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+      );
+      const allowNameNameGroup = new AllowedParams(Param.paramName, Param.nameGroup);
+      if (!this.parseParam(isExplicit ? allowExplicitLinkRule : allowNameNameGroup, declInputLevel, parm)) {
+        return false;
+      }
+    }
+
+    const allowNameNameGroupMdc = new AllowedParams(Param.paramName, Param.nameGroup, Param.mdc);
+    const allowExplicitLinkRuleMdc = new AllowedParams(
+      Param.mdc,
+      Param.paramName,
+      Param.nameGroup,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+    );
+    const allowNameMdc = new AllowedParams(Param.paramName, Param.mdc);
+
+    do {
+      let id = new String<Char>();
+      if (idlink) {
+        id = parm.token;
+        parm.token = new String<Char>();
+        if (!this.parseParam(
+          isExplicit ? allowExplicitLinkRuleMdc : allowNameNameGroupMdc,
+          declInputLevel,
+          parm
+        )) {
+          return false;
+        }
+      }
+
+      if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED) {
+        // Handle #IMPLIED result element spec
+        const allowName = new AllowedParams(Param.paramName);
+        if (!this.parseParam(allowName, declInputLevel, parm)) {
+          return false;
+        }
+        // Parse result element spec for implied
+        const resultInfo = this.parseResultElementSpec(declInputLevel, parm, idlink);
+        if (!resultInfo.success) {
+          return false;
+        }
+        if (resultInfo.resultType && linkSet) {
+          const dummy: { value: AttributeList | null } = { value: null };
+          if (linkSet.impliedResultAttributes(resultInfo.resultType, dummy)) {
+            this.message(ParserMessages.duplicateImpliedResult, new StringMessageArg(resultInfo.resultType.name()));
+          } else {
+            linkSet.addImplied(resultInfo.resultType, resultInfo.attributes);
+          }
+        }
+      } else {
+        // Handle explicit link rule
+        const linkRuleResource = idlink ? null : new Ptr<SourceLinkRuleResource>(new SourceLinkRuleResource());
+        const idLinkRule = idlink ? new IdLinkRule() : null;
+        const linkRule = idlink ? idLinkRule! : linkRuleResource!.pointer()!;
+
+        const assocElementTypes = new Vector<ElementType | null>();
+        if (parm.type === Param.paramName) {
+          assocElementTypes.resize(1);
+          assocElementTypes.set(0, this.lookupCreateElement(parm.token));
+        } else {
+          assocElementTypes.resize(parm.nameTokenVector.size());
+          for (let i = 0; i < assocElementTypes.size(); i++) {
+            assocElementTypes.set(i, this.lookupCreateElement(parm.nameTokenVector.get(i).name));
+          }
+        }
+
+        // Parse USELINK if present
+        const allow2 = isExplicit
+          ? new AllowedParams(
+              Param.indicatedReservedName + Syntax.ReservedName.rUSELINK,
+              Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+              Param.dso,
+              Param.paramName,
+              Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+            )
+          : idlink
+          ? new AllowedParams(
+              Param.indicatedReservedName + Syntax.ReservedName.rUSELINK,
+              Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+              Param.dso,
+              Param.mdc,
+              Param.paramName
+            )
+          : new AllowedParams(
+              Param.indicatedReservedName + Syntax.ReservedName.rUSELINK,
+              Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+              Param.dso,
+              Param.mdc,
+              Param.paramName,
+              Param.nameGroup
+            );
+
+        if (!this.parseParam(allow2, declInputLevel, parm)) {
+          return false;
+        }
+
+        if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rUSELINK) {
+          const allowLinkSetEmpty = new AllowedParams(
+            Param.paramName,
+            Param.indicatedReservedName + Syntax.ReservedName.rINITIAL,
+            Param.indicatedReservedName + Syntax.ReservedName.rEMPTY
+          );
+          if (!this.parseParam(allowLinkSetEmpty, declInputLevel, parm)) {
+            return false;
+          }
+          let uselink: LinkSet | null = null;
+          if (parm.type === Param.paramName) {
+            uselink = this.lookupCreateLinkSet(parm.token);
+          } else if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rINITIAL) {
+            uselink = this.defComplexLpd().initialLinkSet();
+          } else {
+            uselink = this.defComplexLpd().emptyLinkSet();
+          }
+          linkRule.setUselink(uselink);
+
+          // Parse next param after USELINK
+          const allow3 = isExplicit
+            ? new AllowedParams(
+                Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+                Param.dso,
+                Param.paramName,
+                Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+              )
+            : idlink
+            ? new AllowedParams(
+                Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+                Param.dso,
+                Param.mdc,
+                Param.paramName
+              )
+            : new AllowedParams(
+                Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK,
+                Param.dso,
+                Param.mdc,
+                Param.paramName,
+                Param.nameGroup
+              );
+
+          if (!this.parseParam(allow3, declInputLevel, parm)) {
+            return false;
+          }
+        }
+
+        if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rPOSTLINK) {
+          const allowLinkSetSpec = new AllowedParams(
+            Param.paramName,
+            Param.indicatedReservedName + Syntax.ReservedName.rINITIAL,
+            Param.indicatedReservedName + Syntax.ReservedName.rEMPTY,
+            Param.indicatedReservedName + Syntax.ReservedName.rRESTORE
+          );
+          if (!this.parseParam(allowLinkSetSpec, declInputLevel, parm)) {
+            return false;
+          }
+          if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rRESTORE) {
+            linkRule.setPostlinkRestore();
+          } else {
+            let postlink: LinkSet | null = null;
+            if (parm.type === Param.paramName) {
+              postlink = this.lookupCreateLinkSet(parm.token);
+            } else if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rINITIAL) {
+              postlink = this.defComplexLpd().initialLinkSet();
+            } else {
+              postlink = this.defComplexLpd().emptyLinkSet();
+            }
+            linkRule.setPostlink(postlink);
+          }
+
+          // Parse next param after POSTLINK
+          const allow4 = isExplicit
+            ? new AllowedParams(
+                Param.dso,
+                Param.paramName,
+                Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+              )
+            : idlink
+            ? new AllowedParams(Param.dso, Param.mdc, Param.paramName)
+            : new AllowedParams(Param.dso, Param.mdc, Param.paramName, Param.nameGroup);
+
+          if (!this.parseParam(allow4, declInputLevel, parm)) {
+            return false;
+          }
+        }
+
+        // Get attribute definition for associated elements
+        const attributes = new AttributeList();
+        let attDef: ConstPtr<AttributeDefinitionList> | null = null;
+        for (let i = 0; i < assocElementTypes.size(); i++) {
+          const e = assocElementTypes.get(i);
+          if (e) {
+            if (i === 0) {
+              attDef = this.defComplexLpd().attributeDef(e);
+            } else if (attDef && !attDef.equals(this.defComplexLpd().attributeDef(e))) {
+              this.message(ParserMessages.assocElementDifferentAtts);
+            }
+          }
+        }
+        attributes.init(attDef || new ConstPtr<AttributeDefinitionList>(null));
+
+        if (parm.type === Param.dso) {
+          const netEnabling = { value: false };
+          const newAttDef = new Ptr<AttributeDefinitionList>(null);
+          if (!this.parseAttributeSpec(Mode.asMode, attributes, netEnabling, newAttDef)) {
+            return false;
+          }
+          if (!newAttDef.isNull()) {
+            newAttDef.pointer()!.setIndex(this.defComplexLpd().allocAttributeDefinitionListIndex());
+            for (let i = 0; i < assocElementTypes.size(); i++) {
+              const e = assocElementTypes.get(i);
+              if (e && this.defComplexLpd().attributeDef(e).equals(attDef)) {
+                this.defComplexLpd().setAttributeDef(e, new ConstPtr<AttributeDefinitionList>(newAttDef.pointer()));
+              }
+            }
+          }
+          const allow5 = isExplicit
+            ? new AllowedParams(Param.paramName, Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED)
+            : idlink
+            ? allowNameMdc
+            : allowNameNameGroupMdc;
+
+          if (!this.parseParam(allow5, declInputLevel, parm)) {
+            return false;
+          }
+        } else {
+          attributes.finish(this as any);
+        }
+        linkRule.setLinkAttributes(attributes);
+
+        if (isExplicit) {
+          const resultInfo = this.parseResultElementSpec(declInputLevel, parm, idlink);
+          if (!resultInfo.success) {
+            return false;
+          }
+          if (!resultInfo.implied) {
+            linkRule.setResult(resultInfo.resultType, resultInfo.attributes);
+          }
+        }
+
+        // Install the link rule
+        if (idlink && idLinkRule) {
+          idLinkRule.setAssocElementTypes(assocElementTypes);
+          this.addIdLinkRule(id, idLinkRule);
+        } else if (linkSet && linkRuleResource) {
+          if (!linkSet.defined()) {
+            for (let i = 0; i < assocElementTypes.size(); i++) {
+              const e = assocElementTypes.get(i);
+              if (e) {
+                this.addLinkRule(linkSet, e, new ConstPtr<SourceLinkRuleResource>(linkRuleResource.pointer()));
+              }
+            }
+          }
+        }
+      }
+    } while (parm.type !== Param.mdc);
+
+    if (linkSet) {
+      linkSet.setDefined();
+    }
+
+    if (this.currentMarkup()) {
+      const lpdPtr = new ConstPtr<ComplexLpd>(this.defComplexLpdPointer().pointer());
+      if (idlink) {
+        this.eventHandler().idLinkDecl(
+          new IdLinkDeclEvent(lpdPtr as any, this.markupLocation(), this.currentMarkup()!)
+        );
+      } else {
+        this.eventHandler().linkDecl(
+          new LinkDeclEvent(linkSet, lpdPtr as any, this.markupLocation(), this.currentMarkup()!)
+        );
+      }
+    }
+
     return true;
   }
 
-  protected parseIdlinkDecl(): boolean {
-    // ID link declaration parsing (for LPD)
-    // Stub - skip the declaration for now
-    this.skipDeclaration(this.inputLevel());
+  // Port of Parser::lookupCreateLinkSet from parseDecl.cxx
+  protected lookupCreateLinkSet(name: StringC): LinkSet {
+    let linkSet = this.defComplexLpd().lookupLinkSet(name);
+    if (!linkSet) {
+      const sourceDtd = this.defComplexLpd().sourceDtd().pointer();
+      linkSet = new LinkSet(name, sourceDtd);
+      this.defComplexLpd().insertLinkSet(linkSet);
+    }
+    return linkSet;
+  }
+
+  // Port of Parser::parseResultElementSpec from parseDecl.cxx
+  protected parseResultElementSpec(
+    declInputLevel: number,
+    parm: Param,
+    idlink: boolean
+  ): { success: boolean; implied: boolean; resultType: ElementType | null; attributes: AttributeList } {
+    const result = {
+      success: false,
+      implied: false,
+      resultType: null as ElementType | null,
+      attributes: new AttributeList()
+    };
+
+    const allowNameMdc = new AllowedParams(Param.paramName, Param.mdc);
+    const allowExplicitLinkRuleMdc = new AllowedParams(
+      Param.mdc,
+      Param.paramName,
+      Param.nameGroup,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+    );
+
+    if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED) {
+      if (!this.parseParam(idlink ? allowNameMdc : allowExplicitLinkRuleMdc, declInputLevel, parm)) {
+        return result;
+      }
+      result.implied = true;
+      result.success = true;
+      return result;
+    }
+
+    result.implied = false;
+    const e = this.lookupResultElementType(parm.token);
+    result.resultType = e;
+
+    const allow = new AllowedParams(
+      Param.dso,
+      Param.mdc,
+      Param.paramName,
+      Param.nameGroup,
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED
+    );
+    const allowNameDsoMdc = new AllowedParams(Param.dso, Param.mdc, Param.paramName);
+
+    if (!this.parseParam(idlink ? allowNameDsoMdc : allow, declInputLevel, parm)) {
+      return result;
+    }
+
+    let attDef: ConstPtr<AttributeDefinitionList> | null = null;
+    if (e) {
+      attDef = new ConstPtr<AttributeDefinitionList>(e.attributeDef().pointer());
+    }
+    result.attributes.init(attDef || new ConstPtr<AttributeDefinitionList>(null));
+
+    if (parm.type === Param.dso) {
+      this.setResultAttributeSpecMode();
+      const netEnabling = { value: false };
+      const newAttDef = new Ptr<AttributeDefinitionList>(null);
+      if (!this.parseAttributeSpec(Mode.asMode, result.attributes, netEnabling, newAttDef)) {
+        this.clearResultAttributeSpecMode();
+        return result;
+      }
+      if (!newAttDef.isNull()) {
+        const r = this.defComplexLpd().resultDtd();
+        if (!r.isNull()) {
+          newAttDef.pointer()!.setIndex(r.pointer()!.allocAttributeDefinitionListIndex());
+          if (e) {
+            e.setAttributeDef(newAttDef);
+          }
+        }
+      }
+      this.clearResultAttributeSpecMode();
+
+      if (result.attributes.nSpec() === 0) {
+        this.message(ParserMessages.emptyResultAttributeSpec);
+      }
+
+      if (!this.parseParam(idlink ? allowNameMdc : allowExplicitLinkRuleMdc, declInputLevel, parm)) {
+        return result;
+      }
+    } else {
+      this.setResultAttributeSpecMode();
+      result.attributes.finish(this as any);
+      this.clearResultAttributeSpecMode();
+    }
+
+    result.success = true;
+    return result;
+  }
+
+  // Port of Parser::lookupResultElementType from parseDecl.cxx
+  protected lookupResultElementType(name: StringC): ElementType | null {
+    const dtd = this.defComplexLpd().resultDtd().pointer();
+    if (!dtd) {
+      return null;
+    }
+    const e = dtd.lookupElementType(name);
+    if (!e) {
+      this.message(ParserMessages.noSuchResultElement, new StringMessageArg(name));
+    }
+    return e;
+  }
+
+  // Port of Parser::addIdLinkRule from parseDecl.cxx
+  protected addIdLinkRule(id: StringC, rule: IdLinkRule): void {
+    const group = this.defComplexLpd().lookupCreateIdLink(id);
+    const nRules = group.nLinkRules();
+    if ((nRules === 1 && group.linkRule(0).attributes().nSpec() === 0) ||
+        (nRules >= 1 && rule.attributes().nSpec() === 0)) {
+      this.message(ParserMessages.multipleIdLinkRuleAttribute, new StringMessageArg(id));
+    }
+    group.addLinkRule(rule);
+  }
+
+  // Port of Parser::addLinkRule from parseDecl.cxx
+  protected addLinkRule(
+    linkSet: LinkSet,
+    sourceElement: ElementType,
+    linkRule: ConstPtr<SourceLinkRuleResource>
+  ): void {
+    const nRules = linkSet.nLinkRules(sourceElement);
+    if ((nRules === 1 && linkSet.linkRule(sourceElement, 0).attributes().nSpec() === 0) ||
+        (nRules >= 1 && linkRule.pointer()!.attributes().nSpec() === 0)) {
+      this.message(ParserMessages.multipleLinkRuleAttribute, new StringMessageArg(sourceElement.name()));
+    }
+    linkSet.addLinkRule(sourceElement, linkRule);
+  }
+
+  // Port of Parser::parseUselinkDecl from parseDecl.cxx
+  protected parseUselinkDecl(): boolean {
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowLinkSetSpec = new AllowedParams(
+      Param.paramName,
+      Param.indicatedReservedName + Syntax.ReservedName.rINITIAL,
+      Param.indicatedReservedName + Syntax.ReservedName.rEMPTY,
+      Param.indicatedReservedName + Syntax.ReservedName.rRESTORE
+    );
+    if (!this.parseParam(allowLinkSetSpec, declInputLevel, parm)) {
+      return false;
+    }
+
+    const parm2 = new Param();
+    const allowName = new AllowedParams(Param.paramName);
+    if (!this.parseParam(allowName, declInputLevel, parm2)) {
+      return false;
+    }
+
+    const linkType = parm2.token;
+    parm2.token = new String<Char>();
+
+    const allowMdc = new AllowedParams(Param.mdc);
+    if (!this.parseParam(allowMdc, declInputLevel, parm2)) {
+      return false;
+    }
+
+    const lpd = this.lookupLpd(linkType);
+    if (lpd.isNull()) {
+      this.message(ParserMessages.uselinkBadLinkType, new StringMessageArg(linkType));
+    } else if (lpd.pointer()!.type() === Lpd.Type.simpleLink) {
+      this.message(ParserMessages.uselinkSimpleLpd, new StringMessageArg(linkType));
+    } else {
+      const complexLpd = lpd.pointer() as ComplexLpd;
+      let linkSet: LinkSet | null = null;
+      let restore = false;
+
+      if (parm.type === Param.paramName) {
+        linkSet = complexLpd.lookupLinkSet(parm.token);
+        if (!linkSet) {
+          this.message(
+            ParserMessages.uselinkBadLinkSet,
+            new StringMessageArg(complexLpd.name()),
+            new StringMessageArg(parm.token)
+          );
+          return true;
+        }
+      } else if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rINITIAL) {
+        linkSet = complexLpd.initialLinkSet();
+      } else if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rEMPTY) {
+        linkSet = complexLpd.emptyLinkSet();
+      } else {
+        linkSet = null;
+        restore = true;
+      }
+
+      if (lpd.pointer()!.active()) {
+        this.eventHandler().uselink(
+          new UselinkEvent(lpd, linkSet, restore, this.markupLocation(), this.currentMarkup())
+        );
+      } else {
+        this.eventHandler().ignoredMarkup(
+          new IgnoredMarkupEvent(this.markupLocation(), this.currentMarkup())
+        );
+      }
+    }
+
+    return true;
+  }
+
+  // Port of Parser::implyDtd from parseDecl.cxx (lines 2266-2348)
+  protected implyDtd(gi: StringC): void {
+    this.startMarkup(this.eventsWanted().wantPrologMarkup(), this.currentLocation());
+
+    // Check if prolog can be omitted
+    if (
+      this.sd().concur() > 0 ||
+      this.sd().explicitLink() > 0 ||
+      (this.sd().implydefElement() === Sd.ImplydefElement.implydefElementNo &&
+        !this.sd().implydefDoctype())
+    ) {
+      this.message(ParserMessages.omittedProlog);
+    }
+
+    // If IMPLYDEF ELEMENT is enabled but not IMPLYDEF DOCTYPE
+    if (
+      this.sd().implydefElement() !== Sd.ImplydefElement.implydefElementNo &&
+      !this.sd().implydefDoctype()
+    ) {
+      this.eventHandler().startDtd(
+        new StartDtdEvent(
+          gi,
+          new ConstPtr<Entity>(),
+          false,
+          this.markupLocation(),
+          this.currentMarkup()
+        )
+      );
+      this.startDtd(gi);
+      this.parseDoctypeDeclEnd(true);
+      return;
+    }
+
+    // Create external entity for the DTD
+    const id = new ExternalId();
+    // The null location indicates that this is a fake entity.
+    let tem: ExternalTextEntity = new ExternalTextEntity(gi, Entity.DeclType.doctype, new Location(), id);
+    let entity: ConstPtr<Entity> = new ConstPtr<Entity>(tem);
+
+    if (this.sd().implydefDoctype()) {
+      tem.generateSystemId(this);
+    } else {
+      // Don't use Entity::generateSystemId because we don't want an error if it fails.
+      const str = new String<Char>();
+      if (
+        !this.entityCatalog().lookup(
+          entity.pointer()!,
+          this.syntax(),
+          this.sd().internalCharset(),
+          this.messenger(),
+          str
+        )
+      ) {
+        this.message(ParserMessages.noDtd);
+        this.enableImplydef();
+        this.eventHandler().startDtd(
+          new StartDtdEvent(
+            gi,
+            new ConstPtr<Entity>(),
+            false,
+            this.markupLocation(),
+            this.currentMarkup()
+          )
+        );
+        this.startDtd(gi);
+        this.parseDoctypeDeclEnd(true);
+        return;
+      }
+      id.setEffectiveSystem(str);
+
+      // Create new entity with effective system id
+      entity = new ConstPtr<Entity>(
+        new ExternalTextEntity(gi, Entity.DeclType.doctype, new Location(), id)
+      );
+
+      // Build implied DOCTYPE declaration string for message
+      const declStr = new String<Char>();
+      declStr.appendString(this.syntax().delimGeneral(Syntax.DelimGeneral.dMDO));
+      declStr.appendString(this.syntax().reservedName(Syntax.ReservedName.rDOCTYPE));
+      declStr.append([this.syntax().space()], 1);
+      declStr.appendString(gi);
+      declStr.append([this.syntax().space()], 1);
+      declStr.appendString(this.syntax().reservedName(Syntax.ReservedName.rSYSTEM));
+      declStr.appendString(this.syntax().delimGeneral(Syntax.DelimGeneral.dMDC));
+      this.message(ParserMessages.implyingDtd, new StringMessageArg(declStr));
+    }
+
+    const origin = EntityOrigin.makeEntity(this.internalAllocator(), entity, this.currentLocation());
+    this.eventHandler().startDtd(
+      new StartDtdEvent(
+        gi,
+        entity,
+        false,
+        this.markupLocation(),
+        this.currentMarkup()
+      )
+    );
+    this.startDtd(gi);
+
+    const entityPtr = entity.pointer();
+    if (entityPtr) {
+      entityPtr.dsReference(this, new Ptr<EntityOrigin>(origin));
+    }
+
+    if (this.inputLevel() === 1) {
+      this.parseDoctypeDeclEnd(true);
+    } else {
+      this.setPhase(Phase.declSubsetPhase);
+    }
+  }
+
+  // Port of Parser::parseDoctypeDeclStart from parseDecl.cxx
+  protected parseDoctypeDeclStart(): boolean {
+    if (this.hadDtd() && !this.sd().concur() && !this.sd().explicitLink()) {
+      this.message(ParserMessages.multipleDtds);
+    }
+    if (this.hadLpd()) {
+      this.message(ParserMessages.dtdAfterLpd);
+    }
+
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowImpliedName = new AllowedParams(
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED,
+      Param.paramName
+    );
+    const allowName = new AllowedParams(Param.paramName);
+
+    if (!this.parseParam(this.sd().www() ? allowImpliedName : allowName, declInputLevel, parm)) {
+      return false;
+    }
+
+    if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED) {
+      if (this.sd().concur() > 0 || this.sd().explicitLink() > 0) {
+        this.message(ParserMessages.impliedDoctypeConcurLink);
+      }
+      this.message(ParserMessages.sorryImpliedDoctype);
+      return false;
+    }
+
+    const name = parm.token;
+    parm.token = new String<Char>();
+
+    if (!this.lookupDtd(name).isNull()) {
+      this.message(ParserMessages.duplicateDtd, new StringMessageArg(name));
+    }
+
+    const allowPublicSystemDsoMdc = new AllowedParams(
+      Param.reservedName + Syntax.ReservedName.rPUBLIC,
+      Param.reservedName + Syntax.ReservedName.rSYSTEM,
+      Param.dso,
+      Param.mdc
+    );
+    if (!this.parseParam(allowPublicSystemDsoMdc, declInputLevel, parm)) {
+      return false;
+    }
+
+    let entity: ConstPtr<Entity> = new ConstPtr<Entity>(null);
+    let notation = new String<Char>();
+    let dataType: number = EntityDecl.DataType.sgmlText;
+    const id = new ExternalId();
+
+    if (parm.type === Param.reservedName + Syntax.ReservedName.rPUBLIC ||
+        parm.type === Param.reservedName + Syntax.ReservedName.rSYSTEM) {
+      const allowSystemIdentifierDsoMdc = new AllowedParams(
+        Param.systemIdentifier,
+        Param.dso,
+        Param.mdc
+      );
+      const allowSystemIdentifierDsoMdcData = new AllowedParams(
+        Param.systemIdentifier,
+        Param.dso,
+        Param.mdc,
+        Param.reservedName + Syntax.ReservedName.rCDATA,
+        Param.reservedName + Syntax.ReservedName.rSDATA,
+        Param.reservedName + Syntax.ReservedName.rNDATA
+      );
+      const allowDsoMdc = new AllowedParams(Param.dso, Param.mdc);
+      const allowDsoMdcData = new AllowedParams(
+        Param.dso,
+        Param.mdc,
+        Param.reservedName + Syntax.ReservedName.rCDATA,
+        Param.reservedName + Syntax.ReservedName.rSDATA,
+        Param.reservedName + Syntax.ReservedName.rNDATA
+      );
+
+      if (!this.parseExternalId(
+        this.sd().www() ? allowSystemIdentifierDsoMdcData : allowSystemIdentifierDsoMdc,
+        this.sd().www() ? allowDsoMdcData : allowDsoMdc,
+        true,
+        declInputLevel,
+        parm,
+        id
+      )) {
+        return false;
+      }
+
+      switch (parm.type) {
+        case Param.reservedName + Syntax.ReservedName.rCDATA:
+          dataType = EntityDecl.DataType.cdata;
+          break;
+        case Param.reservedName + Syntax.ReservedName.rSDATA:
+          dataType = EntityDecl.DataType.sdata;
+          break;
+        case Param.reservedName + Syntax.ReservedName.rNDATA:
+          dataType = EntityDecl.DataType.ndata;
+          break;
+        default:
+          dataType = EntityDecl.DataType.sgmlText;
+          break;
+      }
+
+      if (dataType === EntityDecl.DataType.sgmlText) {
+        const tem = new Ptr<Entity>(
+          new ExternalTextEntity(name, EntityDecl.DeclType.doctype, this.markupLocation(), id)
+        );
+        tem.pointer()!.generateSystemId(this);
+        entity = new ConstPtr<Entity>(tem.pointer());
+      } else {
+        // external subset uses some DTD notation
+        const allowNameOnly = new AllowedParams(Param.paramName);
+        if (!this.parseParam(allowNameOnly, declInputLevel, parm)) {
+          return false;
+        }
+        notation = parm.token;
+        parm.token = new String<Char>();
+        const allowDsoMdcOnly = new AllowedParams(Param.dso, Param.mdc);
+        if (!this.parseParam(allowDsoMdcOnly, declInputLevel, parm)) {
+          return false;
+        }
+      }
+    } else if (this.sd().implydefDoctype()) {
+      // no external subset specified but IMPLYDEF DOCTYPE YES
+      const tem = new Ptr<Entity>(
+        new ExternalTextEntity(name, EntityDecl.DeclType.doctype, this.markupLocation(), id)
+      );
+      tem.pointer()!.generateSystemId(this);
+      entity = new ConstPtr<Entity>(tem.pointer());
+    } else if (parm.type === Param.mdc) {
+      if (this.sd().implydefElement() === Sd.ImplydefElement.implydefElementNo) {
+        this.message(ParserMessages.noDtdSubset);
+        this.enableImplydef();
+      }
+    }
+
+    // Discard mdc or dso
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.resize(this.currentMarkup()!.size() - 1);
+    }
+
+    this.eventHandler().startDtd(
+      new StartDtdEvent(
+        name,
+        entity,
+        parm.type === Param.dso,
+        this.markupLocation(),
+        this.currentMarkup()
+      )
+    );
+    this.startDtd(name);
+
+    if (notation.size() > 0) {
+      // External subset with notation
+      const ntPtr = this.lookupCreateNotation(notation);
+      const nt = new ConstPtr<Notation>(ntPtr.pointer());
+      const attDef = nt.pointer()?.attributeDef().attributeDefConst() || new ConstPtr<AttributeDefinitionList>(null);
+      const attrs = new AttributeList(attDef);
+      attrs.finish(this as any);
+
+      const tem = new Ptr<Entity>(
+        new ExternalDataEntity(
+          name,
+          dataType,
+          this.markupLocation(),
+          id,
+          nt,
+          attrs,
+          EntityDecl.DeclType.doctype
+        )
+      );
+      tem.pointer()!.generateSystemId(this);
+
+      // Set empty name to add as parameter entity
+      const emptyName = new String<Char>();
+      tem.pointer()!.setName(emptyName);
+      this.defDtd().insertEntity(tem, true);
+      entity = new ConstPtr<Entity>(tem.pointer());
+    }
+
+    if (parm.type === Param.mdc) {
+      // unget the mdc
+      this.currentInput()?.ungetToken();
+      if (entity.isNull()) {
+        this.parseDoctypeDeclEnd();
+        return true;
+      }
+      // reference the entity
+      const origin = EntityOrigin.makeEntity(this.internalAllocator(), entity, this.currentLocation());
+      entity.pointer()!.dsReference(this, new Ptr<EntityOrigin>(origin));
+      if (this.inputLevel() === 1) {
+        // reference failed
+        this.parseDoctypeDeclEnd();
+        return true;
+      }
+    } else if (!entity.isNull()) {
+      this.setDsEntity(entity);
+    }
+
+    this.setPhase(Phase.declSubsetPhase);
+    return true;
+  }
+
+  // Port of Parser::parseLinktypeDeclStart from parseDecl.cxx
+  protected parseLinktypeDeclStart(): boolean {
+    if (this.baseDtd().isNull()) {
+      this.message(ParserMessages.lpdBeforeBaseDtd);
+    }
+
+    const declInputLevel = this.inputLevel();
+    const parm = new Param();
+
+    const allowName = new AllowedParams(Param.paramName);
+    if (!this.parseParam(allowName, declInputLevel, parm)) {
+      return false;
+    }
+
+    const name = parm.token;
+    parm.token = new String<Char>();
+
+    if (!this.lookupDtd(name).isNull()) {
+      this.message(ParserMessages.duplicateDtdLpd, new StringMessageArg(name));
+    } else if (!this.lookupLpd(name).isNull()) {
+      this.message(ParserMessages.duplicateLpd, new StringMessageArg(name));
+    }
+
+    const allowSimpleName = new AllowedParams(
+      Param.indicatedReservedName + Syntax.ReservedName.rSIMPLE,
+      Param.paramName
+    );
+    if (!this.parseParam(allowSimpleName, declInputLevel, parm)) {
+      return false;
+    }
+
+    let simple = false;
+    let sourceDtd: Ptr<Dtd>;
+
+    if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rSIMPLE) {
+      simple = true;
+      sourceDtd = this.baseDtd();
+      if (sourceDtd.isNull()) {
+        sourceDtd = new Ptr<Dtd>(new Dtd(new String<Char>(), true));
+      }
+    } else {
+      simple = false;
+      sourceDtd = this.lookupDtd(parm.token);
+      if (sourceDtd.isNull()) {
+        this.message(ParserMessages.noSuchDtd, new StringMessageArg(parm.token));
+        sourceDtd = new Ptr<Dtd>(new Dtd(parm.token, false));
+      }
+    }
+
+    const allowImpliedName = new AllowedParams(
+      Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED,
+      Param.paramName
+    );
+    if (!this.parseParam(allowImpliedName, declInputLevel, parm)) {
+      return false;
+    }
+
+    let resultDtd: Ptr<Dtd> = new Ptr<Dtd>(null);
+    let implied = false;
+
+    if (parm.type === Param.indicatedReservedName + Syntax.ReservedName.rIMPLIED) {
+      if (simple) {
+        if (!this.sd().simpleLink()) {
+          this.message(ParserMessages.simpleLinkFeature);
+        }
+      } else {
+        implied = true;
+        if (!this.sd().implicitLink()) {
+          this.message(ParserMessages.implicitLinkFeature);
+        }
+      }
+    } else {
+      if (simple) {
+        this.message(ParserMessages.simpleLinkResultNotImplied);
+      } else {
+        if (!this.sd().explicitLink()) {
+          this.message(ParserMessages.explicitLinkFeature);
+        }
+        resultDtd = this.lookupDtd(parm.token);
+        if (resultDtd.isNull()) {
+          this.message(ParserMessages.noSuchDtd, new StringMessageArg(parm.token));
+        }
+      }
+    }
+
+    const allowPublicSystemDsoMdc = new AllowedParams(
+      Param.reservedName + Syntax.ReservedName.rPUBLIC,
+      Param.reservedName + Syntax.ReservedName.rSYSTEM,
+      Param.dso,
+      Param.mdc
+    );
+    if (!this.parseParam(allowPublicSystemDsoMdc, declInputLevel, parm)) {
+      return false;
+    }
+
+    let entity: ConstPtr<Entity> = new ConstPtr<Entity>(null);
+
+    if (parm.type === Param.reservedName + Syntax.ReservedName.rPUBLIC ||
+        parm.type === Param.reservedName + Syntax.ReservedName.rSYSTEM) {
+      const allowSystemIdentifierDsoMdc = new AllowedParams(
+        Param.systemIdentifier,
+        Param.dso,
+        Param.mdc
+      );
+      const allowDsoMdc = new AllowedParams(Param.dso, Param.mdc);
+      const id = new ExternalId();
+      if (!this.parseExternalId(allowSystemIdentifierDsoMdc, allowDsoMdc, true, declInputLevel, parm, id)) {
+        return false;
+      }
+      const tem = new Ptr<Entity>(
+        new ExternalTextEntity(name, EntityDecl.DeclType.linktype, this.markupLocation(), id)
+      );
+      tem.pointer()!.generateSystemId(this);
+      entity = new ConstPtr<Entity>(tem.pointer());
+    }
+
+    let lpd: Ptr<Lpd>;
+    if (simple) {
+      lpd = new Ptr<Lpd>(new SimpleLpd(name, this.markupLocation(), sourceDtd));
+    } else {
+      lpd = new Ptr<Lpd>(
+        new ComplexLpd(
+          name,
+          implied ? Lpd.Type.implicitLink : Lpd.Type.explicitLink,
+          this.markupLocation(),
+          this.syntax(),
+          sourceDtd,
+          resultDtd
+        )
+      );
+    }
+
+    if (!this.baseDtd().isNull() && this.shouldActivateLink(name)) {
+      const nActive = this.nActiveLink();
+      if (simple) {
+        let nSimple = 0;
+        for (let i = 0; i < nActive; i++) {
+          if (this.activeLpd(i).type() === Lpd.Type.simpleLink) {
+            nSimple++;
+          }
+        }
+        if (nSimple === this.sd().simpleLink()) {
+          this.message(ParserMessages.simpleLinkCount, new NumberMessageArg(this.sd().simpleLink()));
+        }
+        lpd.pointer()!.activate();
+      } else {
+        let haveImplicit = false;
+        let haveExplicit = false;
+        for (let i = 0; i < nActive; i++) {
+          if (this.activeLpd(i).type() === Lpd.Type.implicitLink) {
+            haveImplicit = true;
+          } else if (this.activeLpd(i).type() === Lpd.Type.explicitLink) {
+            haveExplicit = true;
+          }
+        }
+        const lpdSourceDtd = lpd.pointer()!.sourceDtd().pointer();
+        if (implied && haveImplicit) {
+          this.message(ParserMessages.oneImplicitLink);
+        } else if (this.sd().explicitLink() <= 1 && lpdSourceDtd !== this.baseDtd().pointer()) {
+          this.message(
+            this.sd().explicitLink() === 0
+              ? ParserMessages.explicitNoRequiresSourceTypeBase
+              : ParserMessages.explicit1RequiresSourceTypeBase,
+            new StringMessageArg(lpd.pointer()!.name())
+          );
+        } else if (this.sd().explicitLink() === 1 && haveExplicit && !implied) {
+          this.message(ParserMessages.duplicateExplicitChain);
+        } else if (haveExplicit || haveImplicit || lpdSourceDtd !== this.baseDtd().pointer()) {
+          this.message(ParserMessages.sorryLink, new StringMessageArg(lpd.pointer()!.name()));
+        } else {
+          lpd.pointer()!.activate();
+        }
+      }
+    }
+
+    // Discard mdc or dso
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.resize(this.currentMarkup()!.size() - 1);
+    }
+
+    this.eventHandler().startLpd(
+      new StartLpdEvent(
+        lpd.pointer()!.active(),
+        name,
+        entity,
+        parm.type === Param.dso,
+        this.markupLocation(),
+        this.currentMarkup()
+      )
+    );
+    this.startLpd(lpd);
+
+    if (parm.type === Param.mdc) {
+      // unget the mdc
+      this.currentInput()?.ungetToken();
+      if (entity.isNull()) {
+        this.message(ParserMessages.noLpdSubset, new StringMessageArg(name));
+        this.parseLinktypeDeclEnd();
+        return true;
+      }
+      // reference the entity
+      const origin = EntityOrigin.makeEntity(this.internalAllocator(), entity, this.currentLocation());
+      entity.pointer()!.dsReference(this, new Ptr<EntityOrigin>(origin));
+      if (this.inputLevel() === 1) {
+        // reference failed
+        this.parseLinktypeDeclEnd();
+        return true;
+      }
+    } else if (!entity.isNull()) {
+      this.setDsEntity(entity);
+    }
+
+    this.setPhase(Phase.declSubsetPhase);
     return true;
   }
 
@@ -3376,6 +4676,141 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Port from parseDecl.cxx
     this.endLpd();
     return true;
+  }
+
+  // Port of Parser::addCommonAttributes from parseDecl.cxx (lines 2589-2703)
+  // This function merges #implicit and #all attributes with element types and notations
+  protected addCommonAttributes(dtd: Dtd): void {
+    // Get #implicit and #all for elements
+    const implicitElement = this.lookupCreateElement(
+      this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
+    );
+    const implicitElementAdl = implicitElement.attributeDef();
+
+    const allElement = dtd.removeElementType(
+      this.syntax().rniReservedName(Syntax.ReservedName.rALL)
+    );
+    const allElementAdl = allElement ? allElement.attributeDef() : new Ptr<AttributeDefinitionList>();
+
+    // Get #implicit and #all for notations
+    const implicitNotation = this.lookupCreateNotation(
+      this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
+    );
+    const implicitNotationAdl = implicitNotation.pointer()?.attributeDef().attributeDef() ?? new Ptr<AttributeDefinitionList>();
+
+    const allNotation = dtd.removeNotation(
+      this.syntax().rniReservedName(Syntax.ReservedName.rALL)
+    );
+    const allNotationAdl = !allNotation.isNull()
+      ? allNotation.pointer()!.attributeDef().attributeDef()
+      : new Ptr<AttributeDefinitionList>();
+
+    // Track which attribute definition lists have been processed
+    const done1Adl: boolean[] = new Array(dtd.nAttributeDefinitionList()).fill(false);
+    const done2Adl: boolean[] = new Array(dtd.nAttributeDefinitionList()).fill(false);
+
+    // Mark #all ADLs as done
+    if (!allElementAdl.isNull()) {
+      done1Adl[allElementAdl.pointer()!.index()] = true;
+    }
+    if (!allNotationAdl.isNull()) {
+      done1Adl[allNotationAdl.pointer()!.index()] = true;
+    }
+
+    // Mark #implicit ADLs as done
+    if (!implicitElementAdl.isNull()) {
+      done2Adl[implicitElementAdl.pointer()!.index()] = true;
+    }
+    if (!implicitNotationAdl.isNull()) {
+      done2Adl[implicitNotationAdl.pointer()!.index()] = true;
+    }
+
+    // Merge attributes for elements
+    {
+      const elementIter = dtd.elementTypeIter();
+      let e: ElementType | null;
+      while ((e = elementIter.next()) !== null) {
+        const eAdl = e.attributeDef();
+
+        // Merge #implicit attributes for undefined elements
+        if (!implicitElementAdl.isNull() && e.definition() === null) {
+          if (eAdl.isNull()) {
+            e.setAttributeDef(implicitElementAdl);
+          } else if (!done2Adl[eAdl.pointer()!.index()]) {
+            done2Adl[eAdl.pointer()!.index()] = true;
+            this.mergeAttributeDefinitions(eAdl.pointer()!, implicitElementAdl.pointer()!);
+          }
+        }
+
+        // Merge #all attributes for all elements
+        if (!allElementAdl.isNull()) {
+          const curAdl = e.attributeDef();
+          if (curAdl.isNull()) {
+            e.setAttributeDef(allElementAdl);
+          } else if (!done1Adl[curAdl.pointer()!.index()]) {
+            done1Adl[curAdl.pointer()!.index()] = true;
+            this.mergeAttributeDefinitions(curAdl.pointer()!, allElementAdl.pointer()!);
+          }
+        }
+      }
+    }
+
+    // Merge attributes for notations
+    {
+      const notationIter = dtd.notationIter();
+      let np: Ptr<Notation>;
+      while (!(np = notationIter.next()).isNull()) {
+        const nt = np.pointer()!;
+        const nAdl = nt.attributeDef().attributeDef();
+
+        // Merge #implicit attributes for undefined notations
+        if (!implicitNotationAdl.isNull() && !nt.defined()) {
+          if (nAdl.isNull()) {
+            nt.setAttributeDef(implicitNotationAdl);
+          } else if (!done2Adl[nAdl.pointer()!.index()]) {
+            done2Adl[nAdl.pointer()!.index()] = true;
+            this.mergeAttributeDefinitions(nAdl.pointer()!, implicitNotationAdl.pointer()!);
+          }
+        }
+
+        // Merge #all attributes for all notations
+        if (!allNotationAdl.isNull()) {
+          const curAdl = nt.attributeDef().attributeDef();
+          if (curAdl.isNull()) {
+            nt.setAttributeDef(allNotationAdl);
+          } else if (!done1Adl[curAdl.pointer()!.index()]) {
+            done1Adl[curAdl.pointer()!.index()] = true;
+            this.mergeAttributeDefinitions(curAdl.pointer()!, allNotationAdl.pointer()!);
+          }
+        }
+      }
+    }
+
+    // Remove and save #implicit element attribute def
+    const implicitE = dtd.removeElementType(
+      this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
+    );
+    if (implicitE) {
+      dtd.setImplicitElementAttributeDef(implicitE.attributeDef());
+    }
+
+    // Remove and save #implicit notation attribute def
+    const implicitN = dtd.removeNotation(
+      this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
+    );
+    if (!implicitN.isNull()) {
+      dtd.setImplicitNotationAttributeDef(implicitN.pointer()!.attributeDef().attributeDef());
+    }
+  }
+
+  // Helper method to merge attribute definitions from source into target
+  private mergeAttributeDefinitions(target: AttributeDefinitionList, source: AttributeDefinitionList): void {
+    for (let j = 0; j < source.size(); j++) {
+      const indexRef = { value: 0 };
+      if (!target.attributeIndex(source.def(j)!.name(), indexRef)) {
+        target.append(source.def(j)!.copy());
+      }
+    }
   }
 
   protected checkDtd(dtd: Dtd): void {
@@ -5659,6 +7094,55 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
+  // Port of Parser::maybeStatusKeyword from parseDecl.cxx (lines 2707-2735)
+  protected maybeStatusKeyword(entity: Entity): boolean {
+    const internal = entity.asInternalEntity();
+    if (!internal) {
+      return false;
+    }
+    const text = internal.string();
+    const statusKeywords = [
+      Syntax.ReservedName.rINCLUDE,
+      Syntax.ReservedName.rIGNORE
+    ];
+
+    for (let i = 0; i < statusKeywords.length; i++) {
+      const keyword = this.instanceSyntax().reservedName(statusKeywords[i]);
+      let j = 0;
+
+      // Skip leading whitespace
+      while (j < text.size() && this.instanceSyntax().isS(text.get(j))) {
+        j++;
+      }
+
+      let k = 0;
+      const substTable = this.instanceSyntax().generalSubstTable();
+
+      // Match keyword characters
+      while (
+        j < text.size() &&
+        k < keyword.size() &&
+        substTable &&
+        substTable.get(text.get(j)) === keyword.get(k)
+      ) {
+        j++;
+        k++;
+      }
+
+      if (k === keyword.size()) {
+        // Skip trailing whitespace
+        while (j < text.size() && this.instanceSyntax().isS(text.get(j))) {
+          j++;
+        }
+        if (j === text.size()) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   protected parseMarkedSectionDeclStart(): boolean {
     // Port of parseMarkedSectionDeclStart from parseDecl.cxx (lines 3402-3523)
 
@@ -5901,6 +7385,44 @@ export class ParserState extends ContentState implements ParserStateInterface {
           break;
       }
     }
+  }
+
+  // Port of Parser::lookingAtStartTag from parseDecl.cxx (lines 491-513)
+  protected lookingAtStartTag(gi: String<Char>): boolean {
+    // This is harder than might be expected since we may not have compiled
+    // the recognizers for the instance yet.
+    const stago = this.instanceSyntax().delimGeneral(Syntax.DelimGeneral.dSTAGO);
+    const input = this.currentInput();
+    if (!input) return false;
+
+    for (let i = input.currentTokenLength(); i < stago.size(); i++) {
+      if (input.tokenChar(this.messenger()) === InputSource.eE) {
+        return false;
+      }
+    }
+
+    const delim = new String<Char>();
+    this.getCurrentToken(this.instanceSyntax().generalSubstTable(), delim);
+    if (!delim.equals(stago)) {
+      return false;
+    }
+
+    let c = input.tokenChar(this.messenger());
+    if (!this.instanceSyntax().isNameStartCharacter(c)) {
+      return false;
+    }
+
+    do {
+      const substTable = this.instanceSyntax().generalSubstTable();
+      if (substTable) {
+        gi.append([substTable.get(c as Char)], 1);
+      } else {
+        gi.append([c as Char], 1);
+      }
+      c = input.tokenChar(this.messenger());
+    } while (this.instanceSyntax().isNameCharacter(c));
+
+    return true;
   }
 
   protected parseDeclarationName(allowAfdr: boolean = false): { valid: boolean; name?: any } {
