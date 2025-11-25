@@ -13638,9 +13638,27 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   /**
    * checkSwitches - Check character switches against charset
+   * Port of Parser::checkSwitches from parseSd.cxx lines 2764-2790
    */
-  protected checkSwitches(switcher: CharSwitcher, charset: CharsetInfoClass): void {
-    // Stub - validate switch targets are in charset
+  protected checkSwitches(switcher: CharSwitcher, charset: CharsetInfoClass): boolean {
+    let valid = true;
+    for (let i = 0; i < switcher.nSwitches(); i++) {
+      const c = [switcher.switchFrom(i), switcher.switchTo(i)];
+      for (let j = 0; j < 2; j++) {
+        const univResult = { value: 0 as UnivChar };
+        if ((charset as any).descToUniv(c[j], univResult)) {
+          const univChar = univResult.value;
+          // Check that it is not Digit, Lcletter or Ucletter
+          if ((UnivCharsetDesc.a <= univChar && univChar < UnivCharsetDesc.a + 26) ||
+              (UnivCharsetDesc.A <= univChar && univChar < UnivCharsetDesc.A + 26) ||
+              (UnivCharsetDesc.zero <= univChar && univChar < UnivCharsetDesc.zero + 10)) {
+            this.message(ParserMessages.switchLetterDigit, new NumberMessageArg(univChar));
+            valid = false;
+          }
+        }
+      }
+    }
+    return valid;
   }
 
   /**
@@ -13742,16 +13760,20 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   /**
    * checkSwitchesMarkup - Check character switches for markup conflicts
-   * Validates no switched characters conflict with markup delimiters
+   * Port of Parser::checkSwitchesMarkup from parseSd.cxx lines 2792-2805
+   * Validates that switched characters were actually markup characters
    */
-  protected checkSwitchesMarkup(switcher: CharSwitcher): void {
-    // Check that switch target characters don't conflict with markup
-    // This is a validation for the SWITCHES feature in the SGML declaration
-    for (let i = 0; i < switcher.nSwitches(); i++) {
-      const to = switcher.switchTo(i);
-      // Could check if 'to' conflicts with any delimiter character
-      // For now, this validation is optional
+  protected checkSwitchesMarkup(switcher: CharSwitcher): boolean {
+    let valid = true;
+    const nSwitches = switcher.nSwitches();
+    for (let i = 0; i < nSwitches; i++) {
+      if (!switcher.switchUsed(i)) {
+        // If the switch wasn't used, then the character wasn't a markup character
+        this.message(ParserMessages.switchNotMarkup, new NumberMessageArg(switcher.switchFrom(i)));
+        valid = false;
+      }
     }
+    return valid;
   }
 
   /**

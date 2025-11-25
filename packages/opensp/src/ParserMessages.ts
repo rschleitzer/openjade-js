@@ -475,3 +475,6 @@ export const immednetRequiresEmptynrm = new MessageType0(MessageType.Severity.er
 export const delimiterLength = new MessageType2(MessageType.Severity.error, null, -1, 'delimiter %1 longer than NAMELEN (%2)');
 export const reservedNameLength = new MessageType2(MessageType.Severity.warning, null, -1, 'reserved name %1 longer than NAMELEN (%2)');
 export const ambiguousDocCharacter = new MessageType1(MessageType.Severity.warning, null, -1, 'document character %1 has multiple representations in internal charset');
+export const switchLetterDigit = new MessageType1(MessageType.Severity.error, null, -1, 'character number %1 in switch is a letter or digit');
+export const switchNotMarkup = new MessageType1(MessageType.Severity.error, null, -1, 'character number %1 was not a markup character');
+export const generalDelimAllFunction = new MessageType1(MessageType.Severity.error, null, -1, 'general delimiter %1 consists entirely of function characters');
