@@ -33,6 +33,45 @@ import { AttributeList } from './Attribute';
 // Forward declaration
 export abstract class EventHandler {
   abstract message(event: MessageEvent): void;
+  startElement(event: any): void {}
+  endElement(event: any): void {}
+  data(event: any): void {}
+  sdataEntity(event: any): void {}
+  pi(event: any): void {}
+  externalDataEntity(event: any): void {}
+  subdocEntity(event: any): void {}
+  nonSgmlChar(event: any): void {}
+  appinfo(event: any): void {}
+  uselink(event: any): void {}
+  usemap(event: any): void {}
+  startDtd(event: any): void {}
+  startLpd(event: any): void {}
+  endDtd(event: any): void {}
+  endLpd(event: any): void {}
+  endProlog(event: any): void {}
+  sgmlDecl(event: any): void {}
+  commentDecl(event: any): void {}
+  sSep(event: any): void {}
+  ignoredRs(event: any): void {}
+  ignoredRe(event: any): void {}
+  reOrigin(event: any): void {}
+  ignoredChars(event: any): void {}
+  markedSectionStart(event: any): void {}
+  markedSectionEnd(event: any): void {}
+  entityStart(event: any): void {}
+  entityEnd(event: any): void {}
+  entityDecl(event: any): void {}
+  notationDecl(event: any): void {}
+  elementDecl(event: any): void {}
+  attlistDecl(event: any): void {}
+  attlistNotationDecl(event: any): void {}
+  linkAttlistDecl(event: any): void {}
+  linkDecl(event: any): void {}
+  idLinkDecl(event: any): void {}
+  shortrefDecl(event: any): void {}
+  ignoredMarkup(event: any): void {}
+  entityDefaulted(event: any): void {}
+  sgmlDeclEntity(event: any): void {}
 }
 
 export abstract class Event extends Link {
@@ -172,7 +211,7 @@ export class StartElementEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.startElement(this);
+    handler.startElement(this);
   }
 
   // Port of StartElementEvent::mustOmitEnd from Event.h (lines 942-947)
@@ -250,7 +289,7 @@ export class EndElementEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.endElement(this);
+    handler.endElement(this);
   }
 
   setIncluded(): void {
@@ -299,7 +338,7 @@ export class DataEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.data(this);
+    handler.data(this);
   }
 
   data(): Uint32Array | null {
@@ -377,7 +416,7 @@ export class SdataEntityEvent extends DataEntityEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.sdataEntity(this);
+    handler.sdataEntity(this);
   }
 }
 
@@ -404,7 +443,7 @@ export class PiEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.pi(this);
+    handler.pi(this);
   }
 }
 
@@ -466,7 +505,7 @@ export class ExternalDataEntityEvent extends ExternalEntityEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.externalDataEntity(this);
+    handler.externalDataEntity(this);
   }
 
   entity(): ExternalDataEntity | null {
@@ -483,7 +522,7 @@ export class SubdocEntityEvent extends ExternalEntityEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.subdocEntity(this);
+    handler.subdocEntity(this);
   }
 
   entity(): SubdocEntity | null {
@@ -504,7 +543,7 @@ export class NonSgmlCharEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.nonSgmlChar(this);
+    handler.nonSgmlChar(this);
   }
 }
 
@@ -529,7 +568,7 @@ export class AppinfoEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.appinfo(this);
+    handler.appinfo(this);
   }
 
   // Port of AppinfoEvent::literal from Event.h (lines 1035-1041)
@@ -561,7 +600,7 @@ export class UselinkEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.uselink(this);
+    handler.uselink(this);
   }
 
   lpd(): ConstPtr<Lpd> {
@@ -597,7 +636,7 @@ export class UsemapEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.usemap(this);
+    handler.usemap(this);
   }
 
   map(): ShortReferenceMap | null {
@@ -653,7 +692,7 @@ export class StartDtdEvent extends StartSubsetEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.startDtd(this);
+    handler.startDtd(this);
   }
 }
 
@@ -673,7 +712,7 @@ export class StartLpdEvent extends StartSubsetEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.startLpd(this);
+    handler.startLpd(this);
   }
 
   active(): Boolean {
@@ -690,7 +729,7 @@ export class EndDtdEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.endDtd(this);
+    handler.endDtd(this);
   }
 
   dtd(): Dtd | null {
@@ -711,7 +750,7 @@ export class EndLpdEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.endLpd(this);
+    handler.endLpd(this);
   }
 
   lpd(): Lpd | null {
@@ -764,7 +803,7 @@ export class EndPrologEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.endProlog(this);
+    handler.endProlog(this);
   }
 
   dtd(): Dtd | null {
@@ -844,7 +883,7 @@ export class SgmlDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.sgmlDecl(this);
+    handler.sgmlDecl(this);
   }
 
   sd(): Sd | null {
@@ -890,7 +929,7 @@ export class CommentDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.commentDecl(this);
+    handler.commentDecl(this);
   }
 }
 
@@ -900,7 +939,7 @@ export class SSepEvent extends ImmediateDataEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.sSep(this);
+    handler.sSep(this);
   }
 }
 
@@ -913,7 +952,7 @@ export class IgnoredRsEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.ignoredRs(this);
+    handler.ignoredRs(this);
   }
 
   rs(): Char {
@@ -932,7 +971,7 @@ export class IgnoredReEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.ignoredRe(this);
+    handler.ignoredRe(this);
   }
 
   re(): Char {
@@ -969,7 +1008,7 @@ export class ReOriginEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.reOrigin(this);
+    handler.reOrigin(this);
   }
 
   re(): Char {
@@ -987,7 +1026,7 @@ export class IgnoredCharsEvent extends ImmediateDataEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.ignoredChars(this);
+    handler.ignoredChars(this);
   }
 }
 
@@ -1017,7 +1056,7 @@ export class MarkedSectionStartEvent extends MarkedSectionEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.markedSectionStart(this);
+    handler.markedSectionStart(this);
   }
 }
 
@@ -1027,7 +1066,7 @@ export class MarkedSectionEndEvent extends MarkedSectionEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.markedSectionEnd(this);
+    handler.markedSectionEnd(this);
   }
 }
 
@@ -1040,7 +1079,7 @@ export class EntityStartEvent extends Event {
   }
 
   handle(handler: EventHandler): void {
-    // handler.entityStart(this);
+    handler.entityStart(this);
   }
 
   entity(): any {
@@ -1059,7 +1098,7 @@ export class EntityEndEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.entityEnd(this);
+    handler.entityEnd(this);
   }
 }
 
@@ -1079,7 +1118,7 @@ export class EntityDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.entityDecl(this);
+    handler.entityDecl(this);
   }
 
   entity(): Entity | null {
@@ -1104,7 +1143,7 @@ export class NotationDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.notationDecl(this);
+    handler.notationDecl(this);
   }
 
   notation(): Notation | null {
@@ -1133,7 +1172,7 @@ export class ElementDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.elementDecl(this);
+    handler.elementDecl(this);
   }
 
   elements(): Vector<ElementType | null> {
@@ -1158,7 +1197,7 @@ export class AttlistDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.attlistDecl(this);
+    handler.attlistDecl(this);
   }
 
   elements(): Vector<ElementType | null> {
@@ -1180,7 +1219,7 @@ export class AttlistNotationDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.attlistNotationDecl(this);
+    handler.attlistNotationDecl(this);
   }
 
   notations(): Vector<ConstPtr<Notation>> {
@@ -1205,7 +1244,7 @@ export class LinkAttlistDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.linkAttlistDecl(this);
+    handler.linkAttlistDecl(this);
   }
 
   elements(): Vector<ElementType | null> {
@@ -1233,7 +1272,7 @@ export class LinkDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.linkDecl(this);
+    handler.linkDecl(this);
   }
 
   linkSet(): LinkSet | null {
@@ -1254,7 +1293,7 @@ export class IdLinkDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.idLinkDecl(this);
+    handler.idLinkDecl(this);
   }
 
   lpd(): any {
@@ -1278,7 +1317,7 @@ export class ShortrefDeclEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.shortrefDecl(this);
+    handler.shortrefDecl(this);
   }
 
   map(): ShortReferenceMap | null {
@@ -1292,7 +1331,7 @@ export class IgnoredMarkupEvent extends MarkupEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.ignoredMarkup(this);
+    handler.ignoredMarkup(this);
   }
 }
 
@@ -1305,7 +1344,7 @@ export class EntityDefaultedEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.entityDefaulted(this);
+    handler.entityDefaulted(this);
   }
 
   entity(): Entity | null {
@@ -1335,7 +1374,7 @@ export class SgmlDeclEntityEvent extends LocatedEvent {
   }
 
   handle(handler: EventHandler): void {
-    // handler.sgmlDeclEntity(this);
+    handler.sgmlDeclEntity(this);
   }
 
   publicId(): any {

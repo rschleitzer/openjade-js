@@ -35,14 +35,14 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
 import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
-import { Location, ReplacementOrigin, BracketOrigin } from './Location';
+import { Location, ReplacementOrigin, BracketOrigin, NamedCharRef } from './Location';
 import { Message, Messenger, MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType0L, MessageType1L } from './Message';
 import { MessageArg } from './MessageArg';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
@@ -1677,7 +1677,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.compileInstanceModes();
 
     // Queue end prolog event
-    // TODO: eventHandler().endProlog(...)
+    this.eventHandler().endProlog(
+      new EndPrologEvent(this.currentDtdPointer(), this.currentLocation())
+    );
 
     // Move to instance start phase
     this.setPhase(Phase.instanceStartPhase);
@@ -4981,16 +4983,20 @@ export class ParserState extends ContentState implements ParserStateInterface {
             }
             const result = this.parseNumericCharRef(token === TokenEnum.tokenHcroHexDigit);
             if (result.valid && result.char !== undefined && result.location) {
-              // TODO: acceptPcdata(result.location)
+              this.acceptPcdata(result.location);
               this.noteData();
               const translateResult = this.translateNumericCharRef(result.char);
               if (translateResult.valid && translateResult.char !== undefined) {
-                // TODO: Fire data event or nonSgmlChar event based on isSgmlChar
-                // if (translateResult.isSgmlChar) {
-                //   eventHandler().data(new ImmediateDataEvent(...))
-                // } else {
-                //   eventHandler().nonSgmlChar(new NonSgmlCharEvent(...))
-                // }
+                if (translateResult.isSgmlChar) {
+                  const data = new Uint32Array([translateResult.char]);
+                  this.eventHandler().data(
+                    new ImmediateDataEvent(Event.Type.characterData, data, 1, result.location, false)
+                  );
+                } else {
+                  this.eventHandler().nonSgmlChar(
+                    new NonSgmlCharEvent(translateResult.char, result.location)
+                  );
+                }
               }
             }
           }
@@ -6160,8 +6166,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     input.startToken();
-    // TODO: input.pushCharRef(c, NamedCharRef(...))
-    // This requires NamedCharRef class and InputSource.pushCharRef method
+    if (valid) {
+      const origName = new String<Char>();
+      this.getCurrentToken(origName);
+      const ref = new NamedCharRef(
+        startIndex,
+        refEndType as NamedCharRef.RefEndType,
+        origName
+      );
+      input.pushCharRef(c, ref);
+    }
 
     return true;
   }
@@ -6671,9 +6685,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
       if (!newAttDef.isNull()) {
         const newDef = newAttDef.pointer();
         if (newDef) {
-          // TODO: Implement setIndex and setAttributeDef
-          // newDef.setIndex(this.currentDtdNonConst().allocAttributeDefinitionListIndex());
-          // elementType.setAttributeDef(newAttDef);
+          newDef.setIndex(this.currentDtdNonConst().allocAttributeDefinitionListIndex());
+          elementType.setAttributeDef(newAttDef);
         }
       }
     }
@@ -6721,8 +6734,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Handle ranked elements (SGML rank feature)
     if (this.sd().rank()) {
       if (!elementType) {
-        // TODO: Implement completeRankStem
-        // elementType = this.completeRankStem(name);
+        elementType = this.completeRankStem(name);
       }
     }
 
@@ -6898,16 +6910,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!this.sd().omittag()) {
       this.message(
         ParserMessages.omitEndTagOmittag,
-        new StringMessageArg(this.currentElement().type().name())
-        // TODO: Add currentElement().startLocation() as second arg
+        new StringMessageArg(this.currentElement().type().name()),
+        this.currentElement().startLocation()
       );
     } else {
       const def = this.currentElement().type().definition();
       if (def && !def.canOmitEndTag()) {
         this.message(
           ParserMessages.omitEndTagDeclare,
-          new StringMessageArg(this.currentElement().type().name())
-          // TODO: Add currentElement().startLocation() as second arg
+          new StringMessageArg(this.currentElement().type().name()),
+          this.currentElement().startLocation()
         );
       }
     }
@@ -7573,7 +7585,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return true;
   }
 
-  protected parseDeclarationName(allowAfdr: boolean = false): { valid: boolean; name?: any } {
+  protected parseDeclarationName(allowAfdr: boolean = false): { valid: boolean; name?: number } {
     // Port of parseDeclarationName from parseDecl.cxx (lines 515-534)
     // Parses and validates a declaration name (DOCTYPE, ELEMENT, etc.)
 
@@ -7581,19 +7593,22 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!input) return { valid: false };
 
     input.discardInitial();
-    this.extendNameToken(this.syntax().namelen(), ParserMessages.numberLength);
+    this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
 
     const name = this.nameBuffer();
     this.getCurrentToken(this.syntax().generalSubstTable(), name);
 
-    // TODO: syntax().lookupReservedName(name, result)
-    // This requires Syntax.ReservedName enum and lookup method
-    // Reserved names: DOCTYPE, ELEMENT, ATTLIST, ENTITY, NOTATION,
-    //                 SHORTREF, USEMAP, USELINK, LINKTYPE, etc.
+    const result = { value: 0 };
+    if (!this.syntax().lookupReservedName(name, result)) {
+      this.message(ParserMessages.noSuchReservedName, new StringMessageArg(name));
+      return { valid: false };
+    }
 
-    // TODO: if (currentMarkup()) currentMarkup().addReservedName(result, input)
+    if (this.currentMarkup()) {
+      this.currentMarkup()!.addReservedName(result.value, input);
+    }
 
-    return { valid: false };
+    return { valid: true, name: result.value };
   }
 
   protected acceptPcdata(startLocation: Location): void {
@@ -7647,26 +7662,27 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Handles short reference substitution
     // Short references are delimiter strings that map to entities
 
-    // TODO: Requires currentElement().map() - short reference map lookup
-    // For now, comment out the entity lookup since currentElement().map() isn't available
-    // const entity = this.currentElement().map()?.entity(index);
-    // if (entity && !entity.isNull()) {
-    //   let markupOwner: Owner<Markup> | null = null;
-    //   if (this.eventsWanted().wantInstanceMarkup()) {
-    //     const markup = new Markup();
-    //     markup.addShortref(this.currentInput()!);
-    //     markupOwner = new Owner(markup);
-    //   }
-    //   const origin = new Ptr(EntityOrigin.makeEntity(
-    //     this.internalAllocator(),
-    //     entity,
-    //     this.currentLocation(),
-    //     this.currentInput()!.currentTokenLength(),
-    //     markupOwner || new Owner<Markup>()
-    //   ));
-    //   entity.pointer()!.contentReference(this, origin);
-    //   return;
-    // }
+    const map = this.currentElement().map();
+    if (map) {
+      const entity = map.entity(index);
+      if (!entity.isNull()) {
+        let markupOwner: Owner<Markup> = new Owner<Markup>();
+        if (this.eventsWanted().wantInstanceMarkup()) {
+          const markup = new Markup();
+          markup.addShortref(this.currentInput()!);
+          markupOwner = new Owner(markup);
+        }
+        const origin = new Ptr(EntityOrigin.makeEntity(
+          this.internalAllocator(),
+          entity,
+          this.currentLocation(),
+          this.currentInput()!.currentTokenLength(),
+          markupOwner
+        ));
+        entity.pointer()!.contentReference(this as any, origin);
+        return;
+      }
+    }
 
     // If no entity mapping, treat as character data
     const input = this.currentInput();
@@ -7783,8 +7799,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
             } else {
               // Omitted attribute value (shorttag): just name
               if (this.currentMarkup()) {
-                // TODO: Implement changeToAttributeValue
-                // this.currentMarkup().changeToAttributeValue(nameMarkupIndex);
+                this.currentMarkup()!.changeToAttributeValue(nameMarkupIndex);
               }
               if (!this.handleAttributeNameToken(text, atts, specLengthObj)) {
                 return false;
@@ -7842,8 +7857,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     // Finish attribute list processing
-    // TODO: Implement atts.finish()
-    // atts.finish(this);
+    atts.finish(this as any);
 
     // Check total attribute specification length
     if (specLengthObj.value > this.syntax().attsplen()) {
@@ -8023,9 +8037,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     // Set the attribute value
-    // TODO: Implement atts.setValue() - this sets the parsed value
-    // return atts.setValue(indexResult.value, text, this, specLength);
-    return true; // Stub for now
+    return atts.setValue(indexResult.value, text, this as any, specLength);
   }
 
   // Port of parseAttribute.cxx lines 253-371
@@ -8718,16 +8730,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!this.sd().omittag()) {
       this.message(
         ParserMessages.omitEndTagOmittag,
-        new StringMessageArg(e.name())
-        // TODO: Add start location as second arg
+        new StringMessageArg(e.name()),
+        startLoc
       );
     } else {
       const def = e.definition();
       if (def && !def.canOmitEndTag()) {
         this.message(
           ParserMessages.omitEndTagDeclare,
-          new StringMessageArg(e.name())
-          // TODO: Add start location as second arg
+          new StringMessageArg(e.name()),
+          startLoc
         );
       }
     }
