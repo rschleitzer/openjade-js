@@ -4906,15 +4906,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
       default:
         if (this.sd().omittag()) {
-          // TODO: Implement tryImplyTag and queueElementEvents
-          // let startImpliedCount = 0;
-          // let attributeListIndex = 0;
-          // const undoList = new IList<Undo>();
-          // const eventList = new IList<Event>();
-          // if (!this.tryImplyTag(this.currentLocation(), startImpliedCount, attributeListIndex, undoList, eventList)) {
-          //   CANNOT_HAPPEN();
-          // }
-          // this.queueElementEvents(eventList);
+          // Imply start tags until we can proceed
+          const startImpliedCountRef = { value: 0 };
+          const attributeListIndexRef = { value: 0 };
+          const undoList = new IList<Undo>();
+          const eventList = new IList<Event>();
+          if (!this.tryImplyTag(this.currentLocation(), startImpliedCountRef, attributeListIndexRef, undoList, eventList)) {
+            // Should not happen if the DTD is valid
+            this.message(ParserMessages.instanceStartOmittag);
+          }
+          this.queueElementEvents(eventList);
         } else {
           this.message(ParserMessages.instanceStartOmittag);
         }
@@ -6550,8 +6551,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const event = this.doParseStartTag(netEnabling);
 
     if (event) {
-      // TODO: Implement acceptStartTag
-      // this.acceptStartTag(event.elementType(), event, netEnabling.value);
+      this.acceptStartTag(event.elementType(), event, netEnabling.value);
     }
   }
 
@@ -6901,8 +6901,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     let e: ElementType | null = null;
 
     if (!this.sd().omittag()) {
-      // TODO: Implement lastEndedElementType
-      // e = this.lastEndedElementType();
+      e = this.lastEndedElementType();
     } else if (this.tagLevel() > 0) {
       e = this.currentElement().type();
     }
@@ -6924,18 +6923,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
       markup.addDelim(Syntax.DelimGeneral.dTAGC);
     }
 
-    // TODO: Create StartElementEvent and acceptStartTag
-    // this.acceptStartTag(
-    //   e,
-    //   new StartElementEvent(
-    //     e,
-    //     this.currentDtdPointer(),
-    //     attributes,
-    //     this.markupLocation(),
-    //     markup
-    //   ),
-    //   false
-    // );
+    this.acceptStartTag(
+      e,
+      new StartElementEvent(
+        e,
+        this.currentDtdPointer(),
+        attributes!,
+        this.markupLocation(),
+        markup
+      ),
+      false
+    );
   }
 
   protected parseEmptyEndTag(): void {
@@ -6959,15 +6957,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
         markup.addDelim(Syntax.DelimGeneral.dTAGC);
       }
 
-      // TODO: Create EndElementEvent and acceptEndTag
-      // this.acceptEndTag(
-      //   new EndElementEvent(
-      //     this.currentElement().type(),
-      //     this.currentDtdPointer(),
-      //     this.currentLocation(),
-      //     markup
-      //   )
-      // );
+      this.acceptEndTag(
+        new EndElementEvent(
+          this.currentElement().type(),
+          this.currentDtdPointer(),
+          this.currentLocation(),
+          markup
+        )
+      );
     }
   }
 
@@ -7005,16 +7002,15 @@ export class ParserState extends ContentState implements ParserStateInterface {
       markup.addDelim(Syntax.DelimGeneral.dNET);
     }
 
-    // TODO: Create EndElementEvent and acceptEndTag
     if (this.tagLevel() > 0) {
-      // this.acceptEndTag(
-      //   new EndElementEvent(
-      //     this.currentElement().type(),
-      //     this.currentDtdPointer(),
-      //     this.currentLocation(),
-      //     markup
-      //   )
-      // );
+      this.acceptEndTag(
+        new EndElementEvent(
+          this.currentElement().type(),
+          this.currentDtdPointer(),
+          this.currentLocation(),
+          markup
+        )
+      );
     }
   }
 
