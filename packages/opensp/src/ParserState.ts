@@ -13293,124 +13293,317 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   /**
-   * sdParseFeatures - Parse FEATURES section (stub)
-   * Port of Parser::sdParseFeatures from parseSd.cxx
+   * sdParseFeatures - Parse FEATURES section
+   * Port of Parser::sdParseFeatures from parseSd.cxx (lines 2247-2467)
    */
   protected sdParseFeatures(sdBuilder: SdBuilder, parm: SdParam): Boolean {
-    // TODO: Full implementation of FEATURES parsing
-    // For now, skip to APPINFO by parsing minimum required tokens
+    // Feature table: name, argument type
+    enum ArgType { none, boolean_, number_, netenabl, implyelt }
+    interface FeatureInfo {
+      name: number;
+      arg: ArgType;
+    }
 
-    // MINIMIZE
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rMINIMIZE),
-      parm
-    )) {
-      return false;
+    const features: FeatureInfo[] = [
+      { name: Sd.ReservedName.rMINIMIZE, arg: ArgType.none },
+      { name: Sd.ReservedName.rDATATAG, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rOMITTAG, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rRANK, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rSHORTTAG, arg: ArgType.none },
+      { name: Sd.ReservedName.rSTARTTAG, arg: ArgType.none },
+      { name: Sd.ReservedName.rEMPTY, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rUNCLOSED, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rNETENABL, arg: ArgType.netenabl },
+      { name: Sd.ReservedName.rENDTAG, arg: ArgType.none },
+      { name: Sd.ReservedName.rEMPTY, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rUNCLOSED, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rATTRIB, arg: ArgType.none },
+      { name: Sd.ReservedName.rDEFAULT, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rOMITNAME, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rVALUE, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rEMPTYNRM, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rIMPLYDEF, arg: ArgType.none },
+      { name: Sd.ReservedName.rATTLIST, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rDOCTYPE, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rELEMENT, arg: ArgType.implyelt },
+      { name: Sd.ReservedName.rENTITY, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rNOTATION, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rLINK, arg: ArgType.none },
+      { name: Sd.ReservedName.rSIMPLE, arg: ArgType.number_ },
+      { name: Sd.ReservedName.rIMPLICIT, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rEXPLICIT, arg: ArgType.number_ },
+      { name: Sd.ReservedName.rOTHER, arg: ArgType.none },
+      { name: Sd.ReservedName.rCONCUR, arg: ArgType.number_ },
+      { name: Sd.ReservedName.rSUBDOC, arg: ArgType.number_ },
+      { name: Sd.ReservedName.rFORMAL, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rURN, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rKEEPRSRE, arg: ArgType.boolean_ },
+      { name: Sd.ReservedName.rVALIDITY, arg: ArgType.none }
+    ];
+
+    let booleanFeature = 0;
+    let numberFeature = 0;
+
+    for (let i = 0; i < features.length; i++) {
+      const feature = features[i];
+
+      // Handle special cases
+      switch (feature.name) {
+        case Sd.ReservedName.rSTARTTAG:
+          // SHORTTAG - can be YES/NO or have sub-features
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + Sd.ReservedName.rSTARTTAG,
+              SdParam.Type.reservedName + Sd.ReservedName.rNO,
+              SdParam.Type.reservedName + Sd.ReservedName.rYES
+            ),
+            parm
+          )) {
+            return false;
+          }
+          if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rSTARTTAG) {
+            break; // Continue with sub-features
+          }
+          // YES/NO - set shorttag and skip sub-features
+          sdBuilder.sd.pointer()!.setShorttag(
+            parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+          );
+          // Skip to EMPTYNRM (index 16)
+          while (features[++i].name !== Sd.ReservedName.rEMPTYNRM) {
+            if (features[i].arg === ArgType.boolean_) {
+              booleanFeature++;
+            }
+          }
+          continue;
+
+        case Sd.ReservedName.rEMPTYNRM:
+          // Check for EMPTYNRM or skip to IMPLYDEF
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + feature.name,
+              SdParam.Type.reservedName + features[i + 7].name
+            ),
+            parm
+          )) {
+            return false;
+          }
+          if (parm.type === SdParam.Type.reservedName + feature.name) {
+            this.requireWWW(sdBuilder);
+          } else {
+            // Skip to IMPLYDEF
+            booleanFeature += 5;
+            i += 7;
+          }
+          break;
+
+        case Sd.ReservedName.rURN:
+          // URN or APPINFO
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + feature.name,
+              SdParam.Type.reservedName + Sd.ReservedName.rAPPINFO
+            ),
+            parm
+          )) {
+            return false;
+          }
+          if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rAPPINFO) {
+            return true;
+          }
+          this.requireWWW(sdBuilder);
+          break;
+
+        default:
+          if (!this.parseSdParam(
+            new AllowedSdParams(SdParam.Type.reservedName + feature.name),
+            parm
+          )) {
+            return false;
+          }
+          break;
+      }
+
+      // Parse argument based on type
+      switch (feature.arg) {
+        case ArgType.number_:
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + Sd.ReservedName.rNO,
+              SdParam.Type.reservedName + Sd.ReservedName.rYES
+            ),
+            parm
+          )) {
+            return false;
+          }
+          if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES) {
+            if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+              return false;
+            }
+            sdBuilder.sd.pointer()!.setNumberFeature(numberFeature++, parm.n);
+          } else {
+            sdBuilder.sd.pointer()!.setNumberFeature(numberFeature++, 0);
+          }
+          break;
+
+        case ArgType.netenabl:
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + Sd.ReservedName.rNO,
+              SdParam.Type.reservedName + Sd.ReservedName.rIMMEDNET,
+              SdParam.Type.reservedName + Sd.ReservedName.rALL
+            ),
+            parm
+          )) {
+            return false;
+          }
+          switch (parm.type) {
+            case SdParam.Type.reservedName + Sd.ReservedName.rNO:
+              sdBuilder.sd.pointer()!.setStartTagNetEnable(Sd.NetEnable.netEnableNo);
+              break;
+            case SdParam.Type.reservedName + Sd.ReservedName.rIMMEDNET:
+              sdBuilder.sd.pointer()!.setStartTagNetEnable(Sd.NetEnable.netEnableImmednet);
+              break;
+            case SdParam.Type.reservedName + Sd.ReservedName.rALL:
+              sdBuilder.sd.pointer()!.setStartTagNetEnable(Sd.NetEnable.netEnableAll);
+              break;
+          }
+          break;
+
+        case ArgType.implyelt:
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + Sd.ReservedName.rNO,
+              SdParam.Type.reservedName + Sd.ReservedName.rYES,
+              SdParam.Type.reservedName + Sd.ReservedName.rANYOTHER
+            ),
+            parm
+          )) {
+            return false;
+          }
+          switch (parm.type) {
+            case SdParam.Type.reservedName + Sd.ReservedName.rNO:
+              sdBuilder.sd.pointer()!.setImplydefElement(Sd.ImplydefElement.implydefElementNo);
+              break;
+            case SdParam.Type.reservedName + Sd.ReservedName.rYES:
+              sdBuilder.sd.pointer()!.setImplydefElement(Sd.ImplydefElement.implydefElementYes);
+              break;
+            case SdParam.Type.reservedName + Sd.ReservedName.rANYOTHER:
+              sdBuilder.sd.pointer()!.setImplydefElement(Sd.ImplydefElement.implydefElementAnyother);
+              break;
+          }
+          break;
+
+        case ArgType.boolean_:
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.reservedName + Sd.ReservedName.rNO,
+              SdParam.Type.reservedName + Sd.ReservedName.rYES
+            ),
+            parm
+          )) {
+            return false;
+          }
+          // Check EMPTYNRM vs IMMEDNET
+          if (feature.name === Sd.ReservedName.rEMPTYNRM) {
+            if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNO &&
+                sdBuilder.sd.pointer()!.startTagNetEnable() === Sd.NetEnable.netEnableImmednet) {
+              this.message(ParserMessages.immednetRequiresEmptynrm);
+              sdBuilder.valid = false;
+            }
+          }
+          sdBuilder.sd.pointer()!.setBooleanFeature(
+            booleanFeature++,
+            parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+          );
+          break;
+      }
     }
-    // DATATAG YES/NO
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rDATATAG),
-      parm
-    )) {
-      return false;
-    }
+
+    // VALIDITY section
     if (!this.parseSdParam(
       new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rNO,
-        SdParam.Type.reservedName + Sd.ReservedName.rYES
+        SdParam.Type.reservedName + Sd.ReservedName.rNOASSERT,
+        SdParam.Type.reservedName + Sd.ReservedName.rTYPE
       ),
       parm
     )) {
       return false;
     }
-    // OMITTAG YES/NO
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rOMITTAG),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(
-      new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rNO,
-        SdParam.Type.reservedName + Sd.ReservedName.rYES
-      ),
-      parm
-    )) {
-      return false;
-    }
-    sdBuilder.sd.pointer()!.setBooleanFeature(
-      Sd.BooleanFeature.fOMITTAG,
-      parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+    sdBuilder.sd.pointer()!.setTypeValid(
+      parm.type === SdParam.Type.reservedName + Sd.ReservedName.rTYPE
     );
 
-    // RANK YES/NO
+    // ENTITIES section
     if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rRANK),
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rENTITIES),
       parm
     )) {
       return false;
     }
+
     if (!this.parseSdParam(
       new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rNO,
-        SdParam.Type.reservedName + Sd.ReservedName.rYES
+        SdParam.Type.reservedName + Sd.ReservedName.rNOASSERT,
+        SdParam.Type.reservedName + Sd.ReservedName.rREF
       ),
       parm
     )) {
       return false;
     }
 
-    // SHORTTAG YES/NO or sub-features
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSHORTTAG),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(
-      new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rNO,
-        SdParam.Type.reservedName + Sd.ReservedName.rYES,
-        SdParam.Type.reservedName + Sd.ReservedName.rSTARTTAG
-      ),
-      parm
-    )) {
-      return false;
-    }
-    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES ||
-        parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNO) {
-      sdBuilder.sd.pointer()!.setShorttag(parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES);
-    }
-
-    // Skip remaining features to get to APPINFO
-    // This is a simplified stub - full implementation would parse all features
-    return this.skipToAppinfo(sdBuilder, parm);
-  }
-
-  /**
-   * skipToAppinfo - Skip tokens until APPINFO
-   */
-  protected skipToAppinfo(sdBuilder: SdBuilder, parm: SdParam): Boolean {
-    // Continue parsing until we reach APPINFO
-    for (;;) {
-      const result = this.parseSdParam(
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNOASSERT) {
+      sdBuilder.sd.pointer()!.setIntegrallyStored(false);
+      sdBuilder.sd.pointer()!.setEntityRef(Sd.EntityRef.entityRefAny);
+    } else {
+      // REF section
+      if (!this.parseSdParam(
         new AllowedSdParams(
-          SdParam.Type.reservedName + Sd.ReservedName.rAPPINFO,
-          SdParam.Type.reservedName + Sd.ReservedName.rNO,
-          SdParam.Type.reservedName + Sd.ReservedName.rYES,
-          SdParam.Type.number,
-          SdParam.Type.name
+          SdParam.Type.reservedName + Sd.ReservedName.rNONE,
+          SdParam.Type.reservedName + Sd.ReservedName.rINTERNAL,
+          SdParam.Type.reservedName + Sd.ReservedName.rANY
         ),
         parm
-      );
-      if (!result) {
+      )) {
         return false;
       }
-      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rAPPINFO) {
-        return true;
+      switch (parm.type) {
+        case SdParam.Type.reservedName + Sd.ReservedName.rNONE:
+          sdBuilder.sd.pointer()!.setEntityRef(Sd.EntityRef.entityRefNone);
+          break;
+        case SdParam.Type.reservedName + Sd.ReservedName.rINTERNAL:
+          sdBuilder.sd.pointer()!.setEntityRef(Sd.EntityRef.entityRefInternal);
+          break;
+        case SdParam.Type.reservedName + Sd.ReservedName.rANY:
+          sdBuilder.sd.pointer()!.setEntityRef(Sd.EntityRef.entityRefAny);
+          break;
       }
+
+      // INTEGRAL
+      if (!this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rINTEGRAL),
+        parm
+      )) {
+        return false;
+      }
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rNO,
+          SdParam.Type.reservedName + Sd.ReservedName.rYES
+        ),
+        parm
+      )) {
+        return false;
+      }
+      sdBuilder.sd.pointer()!.setIntegrallyStored(
+        parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+      );
     }
+
+    // APPINFO
+    return this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rAPPINFO),
+      parm
+    );
   }
 
   /**
