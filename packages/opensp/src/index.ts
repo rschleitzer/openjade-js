@@ -324,3 +324,5 @@ export { Trie, BlankTrie } from './Trie';
 export { Recognizer } from './Recognizer';
 export { Undo, UndoTransition, UndoStartTag, UndoEndTag } from './Undo';
 export { ParserState, Phase } from './ParserState';
+export { Parser } from './Parser';
+export { SgmlParser } from './SgmlParser';
