@@ -132,9 +132,43 @@ export class Dtd extends Resource {
     return this.defaultEntity_.pointer();
   }
 
+  // Port of Dtd::setDefaultEntity from Dtd.cxx
   setDefaultEntity(entity: Ptr<Entity>, parserState: ParserState): void {
     this.defaultEntity_ = new ConstPtr<Entity>(entity.pointer());
-    // TODO: Replace defaulted entities if needed
+
+    // If the new default entity was defined in a DTD, then
+    // any defaulted entities must have come from an LPD
+    // on the first pass, in which case we shouldn't replace them.
+    // Otherwise we need to replace all the defaulted entities.
+    if (entity.pointer()?.declInActiveLpd()) {
+      const tem = new NamedResourceTable<Entity>();
+      {
+        const iter = new NamedResourceTableIter<Entity>(this.generalEntityTable_);
+        for (;;) {
+          const old = iter.next();
+          if (old === null || old.isNull()) {
+            break;
+          }
+          if (old.pointer()!.defaulted()) {
+            const e = new Ptr<Entity>(this.defaultEntity_.pointer()!.copy() as Entity);
+            e.pointer()!.setDefaulted();
+            e.pointer()!.setName(old.pointer()!.name());
+            e.pointer()!.generateSystemId(parserState as any);
+            tem.insert(e);
+          }
+        }
+      }
+      {
+        const iter = new NamedResourceTableIter<Entity>(tem);
+        for (;;) {
+          const e = iter.next();
+          if (e === null || e.isNull()) {
+            break;
+          }
+          this.generalEntityTable_.insert(e, true);
+        }
+      }
+    }
   }
 
   namePointer(): ConstPtr<StringResource<Char>> {

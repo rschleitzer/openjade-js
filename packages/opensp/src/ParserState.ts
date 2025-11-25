@@ -37,7 +37,8 @@ import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
 import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent, SgmlDeclEvent, EndDtdEvent, EndLpdEvent, SgmlDeclEntityEvent } from './Event';
 import { CharsetRegistry } from './CharsetRegistry';
-import { CharsetDecl } from './CharsetDecl';
+import { CharsetDecl, CharsetDeclRange } from './CharsetDecl';
+import { charMax } from './constant';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -66,7 +67,7 @@ import { CopyOwner } from './CopyOwner';
 import { Attributed } from './Attributed';
 import { Lpd, ComplexLpd, SimpleLpd, LinkSet, SourceLinkRuleResource, IdLinkRule, IdLinkRuleGroup } from './Lpd';
 import { LpdEntityRef } from './LpdEntityRef';
-import { Markup } from './Markup';
+import { Markup, MarkupIter } from './Markup';
 import { ContentState } from './ContentState';
 import { ShortReferenceMap } from './ShortReferenceMap';
 import { Xchar, Char, Token, Offset } from './types';
@@ -7390,7 +7391,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   protected translateNumericCharRef(ch: Char): { valid: boolean; char?: Char; isSgmlChar?: boolean } {
-    // Port of translateNumericCharRef from parseCommon.cxx (lines 365-425)
+    // Port of translateNumericCharRef from parseCommon.cxx (lines 364-422)
     // Translates character number from document charset to internal charset
 
     if (this.sd().internalCharsetIsDocCharset()) {
@@ -7400,14 +7401,68 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return { valid: true, char: ch, isSgmlChar: true };
     }
 
-    // TODO: Full charset translation logic requires:
-    // - UnivChar type
-    // - Charset.descToUniv() method
-    // - CharsetDeclRange class
-    // - Charset.univToDesc() method
-    // For now, return simplified result assuming document charset = internal charset
+    // Full charset translation for non-matching doc/internal charsets
+    const univResult = { value: 0 as UnivChar };
+    if (!this.sd().docCharset().descToUniv(ch, univResult)) {
+      // Character not in document charset - get charset decl info
+      const charInfo = {
+        id: null as PublicId | null,
+        type: 0,
+        n: 0,
+        str: new String<Char>() as StringC,
+        count: 0
+      };
 
-    return { valid: true, char: ch, isSgmlChar: true };
+      if (this.sd().docCharsetDecl().getCharInfo(ch, charInfo)) {
+        if (charInfo.type === CharsetDeclRange.Type.unused) {
+          if (this.options().warnNonSgmlCharRef) {
+            this.message(ParserMessages.nonSgmlCharRef);
+          }
+          return { valid: true, char: ch, isSgmlChar: false };
+        }
+        // Report error based on charset declaration type
+        if (charInfo.type === CharsetDeclRange.Type.string) {
+          this.message(ParserMessages.numericCharRefUnknownDesc,
+            new NumberMessageArg(ch),
+            new StringMessageArg(charInfo.str));
+        } else {
+          this.message(ParserMessages.numericCharRefUnknownBase,
+            new NumberMessageArg(ch),
+            new NumberMessageArg(charInfo.n),
+            new StringMessageArg(charInfo.id ? charInfo.id.string() : new String<Char>()));
+        }
+      } else {
+        // CANNOT_HAPPEN() - character must be in charset decl
+        throw new Error('CANNOT_HAPPEN: character not in charset declaration');
+      }
+      return { valid: false };
+    }
+
+    // Successfully converted to universal character - now convert to internal charset
+    const univChar = univResult.value;
+    const resultChar = { value: 0 as WideChar };
+    const resultChars = new ISet<WideChar>();
+    const convResult = this.sd().internalCharset().univToDesc(univChar, resultChar, resultChars);
+
+    switch (convResult) {
+      case 1:
+        // Single character result
+        if (resultChar.value <= charMax) {
+          return { valid: true, char: resultChar.value as Char, isSgmlChar: true };
+        }
+        // Fall through - character too large for internal charset
+        this.message(ParserMessages.numericCharRefBadInternal, new NumberMessageArg(ch));
+        break;
+      case 2:
+        // Multiple characters - can't represent in single char ref
+        this.message(ParserMessages.numericCharRefBadInternal, new NumberMessageArg(ch));
+        break;
+      default:
+        // No mapping in internal charset
+        this.message(ParserMessages.numericCharRefNoInternal, new NumberMessageArg(ch));
+        break;
+    }
+    return { valid: false };
   }
 
   // Literal parsing flags
@@ -8644,8 +8699,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     if (this.currentMarkup()) {
       // Check for whitespace in status keyword specification
+      // Port of parseDecl.cxx whitespace checking logic
       if (this.options().warnInstanceStatusKeywordSpecS && this.inInstance()) {
-        // TODO: Implement MarkupIter for detailed whitespace checking
+        const loc = new Location(this.markupLocation());
+        const iter = new MarkupIter(this.currentMarkup()!);
+        while (iter.valid()) {
+          if (iter.type() === Markup.Type.s) {
+            this.setNextLocation(loc);
+            this.message(ParserMessages.instanceStatusKeywordSpecS);
+          }
+          iter.advance(loc, this.syntaxPointer());
+        }
         if (discardMarkup) {
           this.startMarkup(false, this.markupLocation());
         }

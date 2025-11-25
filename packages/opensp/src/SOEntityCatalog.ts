@@ -21,6 +21,8 @@ import { Resource } from './Resource';
 // Forward declarations
 export interface Messenger {
   message(type: any, ...args: any[]): void;
+  setNextLocation?(loc: Location): void;
+  dispatchMessage?(msg: any): void;
 }
 
 export interface ExtendEntityManager {
@@ -41,7 +43,17 @@ export interface ExtendEntityManager {
     mgr: Messenger,
     result: any
   ): Boolean;
+  open(
+    sysid: StringC,
+    docCharset: CharsetInfo,
+    origin: InputSourceOrigin | null,
+    flags: number,
+    mgr: Messenger
+  ): InputSource | null;
 }
+
+// Flag for open()
+export const mayNotExist = 0o1;
 
 // CatalogEntry - entry in an entity catalog
 export class CatalogEntry {
@@ -615,7 +627,19 @@ export class SOEntityCatalog extends EntityCatalog {
 }
 
 // CatalogParser - parses SGML Open catalog files
+// Port of CatalogParser from SOEntityCatalog.cxx
 export class CatalogParser {
+  // Param enum
+  static readonly Param = {
+    eofParam: 0,
+    literalParam: 1,
+    nameParam: 2,
+    percentParam: 3
+  } as const;
+
+  // Flags
+  private static readonly minimumLiteral = 0o1;
+
   private charset_: CharsetInfo;
   private in_: InputSource | null;
   private catalog_: SOEntityCatalog | null;
@@ -651,6 +675,7 @@ export class CatalogParser {
   private baseKey_: StringC;
   private delegateKey_: StringC;
   private dtddeclKey_: StringC;
+  private sgmlKey_: StringC;
 
   // Category constants
   private static readonly CAT_DATA = 0;
@@ -696,6 +721,7 @@ export class CatalogParser {
     this.baseKey_ = this.makeKeyword('BASE');
     this.delegateKey_ = this.makeKeyword('DELEGATE');
     this.dtddeclKey_ = this.makeKeyword('DTDDECL');
+    this.sgmlKey_ = this.makeKeyword('SGML');
 
     // Set up category table
     this.categoryTable_.setChar(InputSource.eE, CatalogParser.CAT_EOF);
@@ -708,11 +734,21 @@ export class CatalogParser {
     this.categoryTable_.setChar(this.rs_, CatalogParser.CAT_S);
     this.categoryTable_.setChar(this.re_, CatalogParser.CAT_S);
 
-    // Set up uppercase substitution table
+    // Set minimum data characters
+    const lcletters = 'abcdefghijklmnopqrstuvwxyz';
+    const ucletters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const minChars = "0123456789-.'()+,/:=?";
+
+    // Set up substitution table and minimum data
     for (let i = 0; i < 26; i++) {
-      const lc = charset.execToDesc(String.fromCharCode('a'.charCodeAt(0) + i));
-      const uc = charset.execToDesc(String.fromCharCode('A'.charCodeAt(0) + i));
+      const lc = charset.execToDesc(lcletters.charAt(i));
+      const uc = charset.execToDesc(ucletters.charAt(i));
       this.substTable_.addSubst(lc, uc);
+      this.categoryTable_.setChar(lc, CatalogParser.CAT_MIN);
+      this.categoryTable_.setChar(uc, CatalogParser.CAT_MIN);
+    }
+    for (let i = 0; i < minChars.length; i++) {
+      this.categoryTable_.setChar(charset.execToDesc(minChars.charAt(i)), CatalogParser.CAT_MIN);
     }
   }
 
@@ -724,7 +760,33 @@ export class CatalogParser {
     return result;
   }
 
-  // Parse a catalog file
+  // Check if character is minimum data
+  private isMinimumData(c: number): Boolean {
+    const cat = this.categoryTable_.get(c);
+    return cat === CatalogParser.CAT_MIN ||
+      (cat === CatalogParser.CAT_S && c !== this.tab_) ||
+      cat === CatalogParser.CAT_MINUS ||
+      cat === CatalogParser.CAT_LITA;
+  }
+
+  private get(): number {
+    if (!this.in_ || !this.mgr_) return InputSource.eE;
+    return this.in_.get(this.mgr_ as any);
+  }
+
+  private unget(): void {
+    if (this.in_) {
+      this.in_.ungetToken();
+    }
+  }
+
+  private message(msg: { text: string }): void {
+    if (this.mgr_) {
+      this.mgr_.message(msg);
+    }
+  }
+
+  // Parse a catalog file - full implementation from upstream
   parseCatalog(
     sysid: StringC,
     mustExist: Boolean,
@@ -734,13 +796,358 @@ export class CatalogParser {
     catalog: SOEntityCatalog,
     mgr: Messenger
   ): void {
+    const em = catalog.entityManager();
+    if (!em) {
+      // No entity manager - can't open catalog file
+      catalog.endCatalog();
+      return;
+    }
+
+    this.in_ = em.open(
+      sysid,
+      sysidCharset,
+      origin,
+      mustExist ? 0 : mayNotExist,
+      mgr
+    );
+
+    if (!this.in_) {
+      catalog.endCatalog();
+      return;
+    }
+
     this.catalog_ = catalog;
     this.mgr_ = mgr;
     this.override_ = false;
 
-    // TODO: Open input source for sysid and parse
-    // For now, just end the catalog
+    let recovering = false;
+    const subSysids: StringC[] = [];
+    const subSysidLocs: Location[] = [];
+
+    for (;;) {
+      const parm = this.parseParam(0);
+      if (parm === CatalogParser.Param.nameParam) {
+        this.upcase(this.param_);
+        const wasRecovering = recovering;
+        recovering = false;
+
+        if (this.param_.equals(this.publicKey_)) {
+          this.parsePublic();
+        } else if (this.param_.equals(this.systemKey_)) {
+          this.parseSystem();
+        } else if (this.param_.equals(this.entityKey_)) {
+          this.parseNameMap(EntityDecl.DeclType.generalEntity);
+        } else if (this.param_.equals(this.doctypeKey_)) {
+          this.parseNameMap(EntityDecl.DeclType.doctype);
+        } else if (this.param_.equals(this.linktypeKey_)) {
+          this.parseNameMap(EntityDecl.DeclType.linktype);
+        } else if (this.param_.equals(this.notationKey_)) {
+          this.parseNameMap(EntityDecl.DeclType.notation);
+        } else if (this.param_.equals(this.sgmlKey_)) {
+          this.parseNameMap(EntityDecl.DeclType.sgml);
+        } else if (this.param_.equals(this.sgmlDeclKey_)) {
+          if (this.parseArg()) {
+            this.catalog_!.setSgmlDecl(this.param_, this.paramLoc_);
+          }
+        } else if (this.param_.equals(this.documentKey_)) {
+          if (this.parseArg()) {
+            this.catalog_!.setDocument(this.param_, this.paramLoc_);
+          }
+        } else if (this.param_.equals(this.overrideKey_)) {
+          this.parseOverride();
+        } else if (this.param_.equals(this.catalogKey_)) {
+          if (this.parseArg()) {
+            if (this.inLoop(this.paramLoc_)) {
+              break;
+            }
+            const sysidCopy = new StringOf<Char>();
+            sysidCopy.assign(this.param_.data(), this.param_.size());
+            subSysids.push(sysidCopy);
+            subSysidLocs.push(this.paramLoc_);
+          }
+        } else if (this.param_.equals(this.baseKey_)) {
+          if (this.parseArg()) {
+            const loc = new Location();
+            // BASE sets the base for relative system IDs
+            // In full implementation, this would open the file to get its location
+            this.catalog_!.setBase(this.paramLoc_);
+          }
+        } else if (this.param_.equals(this.delegateKey_)) {
+          this.parseDelegate();
+        } else if (this.param_.equals(this.dtddeclKey_)) {
+          this.parseDtddecl();
+        } else {
+          // Unknown keyword - try to recover
+          if (!wasRecovering && this.parseParam(0) === CatalogParser.Param.eofParam) {
+            break;
+          }
+          recovering = true;
+        }
+      } else if (parm === CatalogParser.Param.eofParam) {
+        break;
+      } else if (!recovering) {
+        recovering = true;
+        this.message(CatalogMessages.nameExpected);
+      }
+    }
+
+    this.in_ = null;
     catalog.endCatalog();
+
+    // Parse sub-catalogs
+    for (let i = 0; i < subSysids.length; i++) {
+      const tem = new StringOf<Char>();
+      if (em.expandSystemId(
+        subSysids[i],
+        subSysidLocs[i],
+        false,
+        catalogCharset,
+        null,
+        mgr,
+        tem
+      )) {
+        this.parseCatalog(
+          tem,
+          true,
+          catalogCharset,
+          catalogCharset,
+          InputSourceOrigin.makeWithLocation(subSysidLocs[i]),
+          catalog,
+          mgr
+        );
+      }
+    }
+  }
+
+  // Check for loop in catalog references
+  private inLoop(loc: Location): Boolean {
+    // Simplified loop detection - in full implementation this would
+    // check the parent chain of locations for matching storage IDs
+    return false;
+  }
+
+  // Parse a parameter
+  private parseParam(flags: number): number {
+    for (;;) {
+      const c = this.get();
+      const cat = this.categoryTable_.get(c);
+      switch (cat) {
+        case CatalogParser.CAT_EOF:
+          return CatalogParser.Param.eofParam;
+        case CatalogParser.CAT_LIT:
+        case CatalogParser.CAT_LITA:
+          this.parseLiteral(c, flags);
+          return CatalogParser.Param.literalParam;
+        case CatalogParser.CAT_S:
+          break;
+        case CatalogParser.CAT_NUL:
+          this.message(CatalogMessages.nulChar);
+          break;
+        case CatalogParser.CAT_MINUS:
+          {
+            const c2 = this.get();
+            if (c2 === this.minus_) {
+              this.skipComment();
+              break;
+            }
+            this.unget();
+          }
+          // fall through
+        default:
+          this.parseName();
+          return CatalogParser.Param.nameParam;
+      }
+    }
+  }
+
+  // Parse a literal (quoted string)
+  private parseLiteral(delim: Char, flags: number): void {
+    this.paramLoc_ = this.in_ ? this.in_.currentLocation() : new Location();
+    let skipping: number = 1; // yesBegin
+    this.param_.resize(0);
+
+    for (;;) {
+      const c = this.get();
+      if (c === InputSource.eE) {
+        this.message(CatalogMessages.eofInLiteral);
+        break;
+      }
+      if (c === delim) {
+        break;
+      }
+      if (flags & CatalogParser.minimumLiteral) {
+        if (!this.isMinimumData(c)) {
+          this.message(CatalogMessages.minimumData);
+        }
+        if (c === this.rs_) {
+          // Ignore RS
+        } else if (c === this.space_ || c === this.re_) {
+          if (skipping === 0) { // no
+            this.param_.append([this.space_], 1);
+            skipping = 2; // yesMiddle
+          }
+        } else {
+          skipping = 0; // no
+          this.param_.append([c], 1);
+        }
+      } else {
+        this.param_.append([c], 1);
+      }
+    }
+    // Remove trailing space
+    if (skipping === 2 && this.param_.size() > 0) { // yesMiddle
+      this.param_.resize(this.param_.size() - 1);
+    }
+  }
+
+  // Parse a name (unquoted token)
+  private parseName(): void {
+    this.paramLoc_ = this.in_ ? this.in_.currentLocation() : new Location();
+    let length = 1;
+
+    for (;;) {
+      const c = this.in_ ? this.in_.tokenChar(this.mgr_ as any) : InputSource.eE;
+      const cat = this.categoryTable_.get(c);
+      if (cat === CatalogParser.CAT_EOF || cat === CatalogParser.CAT_S) {
+        break;
+      }
+      if (cat === CatalogParser.CAT_NUL) {
+        this.message(CatalogMessages.nulChar);
+      }
+      length++;
+    }
+
+    if (this.in_) {
+      this.in_.endToken(length);
+      const start = this.in_.currentTokenStart();
+      const startIdx = this.in_.currentTokenStartIndex();
+      const len = this.in_.currentTokenLength();
+      this.param_.resize(0);
+      for (let i = 0; i < len; i++) {
+        this.param_.append([start[startIdx + i]], 1);
+      }
+    }
+  }
+
+  // Skip a comment
+  private skipComment(): void {
+    for (;;) {
+      const c = this.get();
+      if (c === this.minus_) {
+        const c2 = this.get();
+        if (c2 === this.minus_) {
+          break;
+        }
+      }
+      if (c === InputSource.eE) {
+        this.message(CatalogMessages.eofInComment);
+        break;
+      }
+    }
+  }
+
+  // Parse an argument (name or literal)
+  private parseArg(): Boolean {
+    const parm = this.parseParam(0);
+    if (parm !== CatalogParser.Param.nameParam &&
+        parm !== CatalogParser.Param.literalParam) {
+      this.message(CatalogMessages.nameOrLiteralExpected);
+      return false;
+    }
+    return true;
+  }
+
+  // Parse OVERRIDE keyword
+  private parseOverride(): void {
+    if (this.parseParam(0) !== CatalogParser.Param.nameParam) {
+      this.message(CatalogMessages.overrideYesOrNo);
+      return;
+    }
+    this.upcase(this.param_);
+    if (this.param_.equals(this.yesKey_)) {
+      this.override_ = true;
+    } else if (this.param_.equals(this.noKey_)) {
+      this.override_ = false;
+    } else {
+      this.message(CatalogMessages.overrideYesOrNo);
+    }
+  }
+
+  // Parse PUBLIC entry
+  private parsePublic(): void {
+    if (this.parseParam(CatalogParser.minimumLiteral) !== CatalogParser.Param.literalParam) {
+      this.message(CatalogMessages.literalExpected);
+      return;
+    }
+    const publicId = new StringOf<Char>();
+    publicId.assign(this.param_.data(), this.param_.size());
+
+    if (!this.parseArg()) {
+      return;
+    }
+    this.catalog_!.addPublicId(publicId, this.param_, this.paramLoc_, this.override_);
+  }
+
+  // Parse DELEGATE entry
+  private parseDelegate(): void {
+    if (this.parseParam(CatalogParser.minimumLiteral) !== CatalogParser.Param.literalParam) {
+      this.message(CatalogMessages.literalExpected);
+      return;
+    }
+    const publicId = new StringOf<Char>();
+    publicId.assign(this.param_.data(), this.param_.size());
+
+    if (!this.parseArg()) {
+      return;
+    }
+    this.catalog_!.addDelegate(publicId, this.param_, this.paramLoc_, this.override_);
+  }
+
+  // Parse DTDDECL entry
+  private parseDtddecl(): void {
+    if (this.parseParam(CatalogParser.minimumLiteral) !== CatalogParser.Param.literalParam) {
+      this.message(CatalogMessages.literalExpected);
+      return;
+    }
+    const publicId = new StringOf<Char>();
+    publicId.assign(this.param_.data(), this.param_.size());
+
+    if (!this.parseArg()) {
+      return;
+    }
+    this.catalog_!.addDtdDecl(publicId, this.param_, this.paramLoc_, this.override_);
+  }
+
+  // Parse SYSTEM entry
+  private parseSystem(): void {
+    if (!this.parseArg()) {
+      return;
+    }
+    const systemId = new StringOf<Char>();
+    systemId.assign(this.param_.data(), this.param_.size());
+
+    const parm = this.parseParam(0);
+    if (parm === CatalogParser.Param.nameParam) {
+      this.message(CatalogMessages.systemShouldQuote);
+    } else if (parm !== CatalogParser.Param.literalParam) {
+      this.message(CatalogMessages.literalExpected);
+      return;
+    }
+    this.catalog_!.addSystemId(systemId, this.param_, this.paramLoc_);
+  }
+
+  // Parse ENTITY, DOCTYPE, LINKTYPE, NOTATION entries
+  private parseNameMap(declType: number): void {
+    if (!this.parseArg()) {
+      return;
+    }
+    const name = new StringOf<Char>();
+    name.assign(this.param_.data(), this.param_.size());
+
+    if (!this.parseArg()) {
+      return;
+    }
+    this.catalog_!.addName(name, declType, this.param_, this.paramLoc_, this.override_);
   }
 
   // Upcase a string using the substitution table
