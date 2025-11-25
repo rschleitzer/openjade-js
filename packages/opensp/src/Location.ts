@@ -17,8 +17,11 @@ import type { Text } from './Text';
 // StringC is String<Char>
 type StringC = String<Char>;
 
-// Forward declarations for types we'll port later
-export interface Markup { }
+// Import Markup class
+import { Markup as MarkupClass } from './Markup';
+
+// Re-export for backwards compatibility
+export type Markup = MarkupClass;
 
 export class ExternalInfo {
   // RTTI support would go here
@@ -97,7 +100,7 @@ export class Origin extends Resource {
     return false;
   }
 
-  isNumericCharRef(markup: Markup | null): Boolean {
+  isNumericCharRef(markup: { value: MarkupClass | null }): Boolean {
     return false;
   }
 
@@ -175,7 +178,7 @@ export class ProxyOrigin extends Origin {
     return this.origin_.inBracketedTextCloseDelim();
   }
 
-  isNumericCharRef(markup: Markup | null): Boolean {
+  isNumericCharRef(markup: { value: MarkupClass | null }): Boolean {
     return this.origin_.isNumericCharRef(markup);
   }
 
@@ -337,6 +340,35 @@ export class MultiReplacementOrigin extends Origin {
       // In C++, s = origChars_.data()
       // Caller needs to handle this differently
     }
+    return true;
+  }
+}
+
+// NumericCharRefOrigin - Origin for numeric character references
+// Port of NumericCharRefOrigin.h/cxx
+export class NumericCharRefOrigin extends Origin {
+  private start_: Location;
+  private refLength_: Index;
+  private markup_: Owner<MarkupClass>;
+
+  constructor(start: Location, endIndex: Index, markup: Owner<MarkupClass>) {
+    super();
+    this.start_ = new Location(start);
+    this.refLength_ = endIndex;
+    this.markup_ = new Owner<MarkupClass>();
+    this.markup_.swap(markup);
+  }
+
+  parent(): Location {
+    return this.start_;
+  }
+
+  refLength(): Index {
+    return this.refLength_;
+  }
+
+  isNumericCharRef(markup: { value: MarkupClass | null }): Boolean {
+    markup.value = this.markup_.pointer();
     return true;
   }
 }

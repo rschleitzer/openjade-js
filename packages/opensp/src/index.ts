@@ -52,6 +52,7 @@ export {
   BracketOrigin,
   ReplacementOrigin,
   MultiReplacementOrigin,
+  NumericCharRefOrigin,
   InputSourceOrigin,
   EntityOrigin,
   ExternalInfo,
