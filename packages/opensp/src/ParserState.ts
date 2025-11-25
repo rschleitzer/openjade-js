@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -4301,36 +4301,200 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   protected parseMarkedSectionDeclStart(): boolean {
     // Port of parseMarkedSectionDeclStart from parseDecl.cxx (lines 3402-3523)
-    // Marked section declaration: <![ status-keyword [ ... ]]>
-    // This is a complex ~120 line method that:
-    // - Checks marked section nesting level
-    // - Handles special marked sections (inside IGNORE/CDATA/RCDATA)
-    // - Parses status keywords (CDATA, RCDATA, IGNORE, INCLUDE, TEMP)
-    // - Validates and sets appropriate parsing mode
-    // - Fires MarkedSectionStartEvent
-    // TODO: Full implementation requires:
-    // - parseParam method for parsing keywords
-    // - startMarkedSection/endMarkedSection state management
-    // - markedSectionLevel/markedSectionSpecialLevel tracking
-    // - Mode switching based on status (cmsMode, rcmsMode, imsMode)
-    // - MarkedSectionEvent class
 
-    return false;
+    if (this.markedSectionLevel() === this.syntax().taglvl()) {
+      this.message(
+        ParserMessages.markedSectionLevel,
+        new NumberMessageArg(this.syntax().taglvl())
+      );
+    }
+
+    if (!this.inInstance() &&
+        this.options().warnInternalSubsetMarkedSection &&
+        this.inputLevel() === 1) {
+      this.message(ParserMessages.internalSubsetMarkedSection);
+    }
+
+    if (this.markedSectionSpecialLevel() > 0) {
+      this.startMarkedSection(this.markupLocation());
+      const wantMarkup = this.inInstance()
+        ? this.eventsWanted().wantMarkedSections()
+        : this.eventsWanted().wantPrologMarkup();
+      if (wantMarkup) {
+        const input = this.currentInput();
+        if (input) {
+          const tokenStart = input.currentTokenStart();
+          const tokenData = new Uint32Array(tokenStart);
+          this.eventHandler().ignoredChars(
+            new IgnoredCharsEvent(
+              tokenData,
+              input.currentTokenLength(),
+              this.currentLocation(),
+              false
+            )
+          );
+        }
+      }
+      return true;
+    }
+
+    let discardMarkup = false;
+    const wantMarkup = this.inInstance()
+      ? this.eventsWanted().wantMarkedSections()
+      : this.eventsWanted().wantPrologMarkup();
+
+    if (this.startMarkup(wantMarkup, this.currentLocation())) {
+      this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMDO);
+      this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dDSO);
+      discardMarkup = false;
+    } else if (this.options().warnInstanceStatusKeywordSpecS && this.inInstance()) {
+      this.startMarkup(true, this.currentLocation());
+      discardMarkup = true;
+    }
+
+    const declInputLevel = this.inputLevel();
+    const allowStatusDso = new AllowedParams(
+      Param.dso,
+      Param.reservedName + Syntax.ReservedName.rCDATA,
+      Param.reservedName + Syntax.ReservedName.rRCDATA,
+      Param.reservedName + Syntax.ReservedName.rIGNORE,
+      Param.reservedName + Syntax.ReservedName.rINCLUDE,
+      Param.reservedName + Syntax.ReservedName.rTEMP
+    );
+
+    const parm = new Param();
+    let status: number = MarkedSectionEvent.Status.include;
+
+    if (!this.parseParam(allowStatusDso, declInputLevel, parm)) {
+      return false;
+    }
+
+    if (this.options().warnMissingStatusKeyword && parm.type === Param.dso) {
+      this.message(ParserMessages.missingStatusKeyword);
+    }
+
+    while (parm.type !== Param.dso) {
+      switch (parm.type) {
+        case Param.reservedName + Syntax.ReservedName.rCDATA:
+          if (status < MarkedSectionEvent.Status.cdata) {
+            status = MarkedSectionEvent.Status.cdata;
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rRCDATA:
+          if (status < MarkedSectionEvent.Status.rcdata) {
+            status = MarkedSectionEvent.Status.rcdata;
+          }
+          if (this.options().warnRcdataMarkedSection) {
+            this.message(ParserMessages.rcdataMarkedSection);
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rIGNORE:
+          if (status < MarkedSectionEvent.Status.ignore) {
+            status = MarkedSectionEvent.Status.ignore;
+          }
+          if (this.inInstance() && this.options().warnInstanceIgnoreMarkedSection) {
+            this.message(ParserMessages.instanceIgnoreMarkedSection);
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rINCLUDE:
+          if (this.inInstance() && this.options().warnInstanceIncludeMarkedSection) {
+            this.message(ParserMessages.instanceIncludeMarkedSection);
+          }
+          break;
+        case Param.reservedName + Syntax.ReservedName.rTEMP:
+          if (this.options().warnTempMarkedSection) {
+            this.message(ParserMessages.tempMarkedSection);
+          }
+          break;
+      }
+      if (!this.parseParam(allowStatusDso, declInputLevel, parm)) {
+        return false;
+      }
+      if (this.options().warnMultipleStatusKeyword && parm.type !== Param.dso) {
+        this.message(ParserMessages.multipleStatusKeyword);
+      }
+    }
+
+    if (this.inputLevel() > declInputLevel) {
+      this.message(ParserMessages.parameterEntityNotEnded);
+    }
+
+    if (status === MarkedSectionEvent.Status.include) {
+      this.startMarkedSection(this.markupLocation());
+    } else if (status === MarkedSectionEvent.Status.cdata) {
+      this.startSpecialMarkedSection(Mode.cmsMode, this.markupLocation());
+    } else if (status === MarkedSectionEvent.Status.rcdata) {
+      this.startSpecialMarkedSection(Mode.rcmsMode, this.markupLocation());
+    } else if (status === MarkedSectionEvent.Status.ignore) {
+      this.startSpecialMarkedSection(Mode.imsMode, this.markupLocation());
+    }
+
+    if (this.currentMarkup()) {
+      // Check for whitespace in status keyword specification
+      if (this.options().warnInstanceStatusKeywordSpecS && this.inInstance()) {
+        // TODO: Implement MarkupIter for detailed whitespace checking
+        if (discardMarkup) {
+          this.startMarkup(false, this.markupLocation());
+        }
+      }
+      this.eventHandler().markedSectionStart(
+        new MarkedSectionStartEvent(status, this.markupLocation(), this.currentMarkup()!)
+      );
+    }
+    return true;
   }
 
   protected handleMarkedSectionEnd(): void {
     // Port of handleMarkedSectionEnd from parseDecl.cxx (lines 3525-3565)
-    // Handles marked section close: ]]>
-    // - Validates marked section is open
-    // - Determines status (cdata, rcdata, ignore, include)
-    // - Fires MarkedSectionEndEvent
-    // - Calls endMarkedSection() to pop state
-    // TODO: Full implementation requires:
-    // - markedSectionLevel() accessor
-    // - markedSectionSpecialLevel() accessor
-    // - endMarkedSection() state management
-    // - MarkedSectionEndEvent class
-    // - Mode detection for status
+
+    if (this.markedSectionLevel() === 0) {
+      this.message(ParserMessages.markedSectionEnd);
+    } else {
+      const wantMarkup = this.inInstance()
+        ? this.eventsWanted().wantMarkedSections()
+        : this.eventsWanted().wantPrologMarkup();
+
+      if (wantMarkup) {
+        if (this.markedSectionSpecialLevel() > 1) {
+          const input = this.currentInput();
+          if (input) {
+            const tokenStart = input.currentTokenStart();
+            const tokenData = new Uint32Array(tokenStart);
+            this.eventHandler().ignoredChars(
+              new IgnoredCharsEvent(
+                tokenData,
+                input.currentTokenLength(),
+                this.currentLocation(),
+                false
+              )
+            );
+          }
+        } else {
+          let status: number;
+          switch (this.currentMode()) {
+            case Mode.cmsMode:
+              status = MarkedSectionEvent.Status.cdata;
+              break;
+            case Mode.rcmsMode:
+              status = MarkedSectionEvent.Status.rcdata;
+              break;
+            case Mode.imsMode:
+              status = MarkedSectionEvent.Status.ignore;
+              break;
+            default:
+              status = MarkedSectionEvent.Status.include;
+              break;
+          }
+          this.startMarkup(true, this.currentLocation());
+          this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMSC);
+          this.currentMarkup()!.addDelim(Syntax.DelimGeneral.dMDC);
+          this.eventHandler().markedSectionEnd(
+            new MarkedSectionEndEvent(status, this.markupLocation(), this.currentMarkup()!)
+          );
+        }
+      }
+      this.endMarkedSection();
+    }
   }
 
   protected skipDeclaration(startLevel: number): void {

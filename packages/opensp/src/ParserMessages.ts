@@ -178,3 +178,15 @@ export const andGroup = new MessageType0(MessageType.Severity.warning, null, -1,
 export const groupParameterEntityNotEnded = new MessageType0(MessageType.Severity.error, null, -1, 'parameter entity not ended within group');
 export const sorryAllImplicit = new MessageType0(MessageType.Severity.error, null, -1, '#ALL and #IMPLICIT not supported');
 export const groupTokenInvalidReservedName = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not allowed in this context');
+
+// Marked section messages
+export const markedSectionLevel = new MessageType1(MessageType.Severity.error, null, -1, 'number of open marked sections must not exceed TAGLVL (%1)');
+export const markedSectionEnd = new MessageType0(MessageType.Severity.error, null, -1, 'marked section end not in marked section declaration');
+export const tempMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'TEMP marked section');
+export const instanceIncludeMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'included marked section in the instance');
+export const instanceIgnoreMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'ignored marked section in the instance');
+export const rcdataMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'RCDATA marked section');
+export const missingStatusKeyword = new MessageType0(MessageType.Severity.warning, null, -1, 'no status keyword');
+export const multipleStatusKeyword = new MessageType0(MessageType.Severity.warning, null, -1, 'multiple status keywords');
+export const instanceStatusKeywordSpecS = new MessageType0(MessageType.Severity.warning, null, -1, 'S separator in status keyword specification in document instance');
+export const internalSubsetMarkedSection = new MessageType0(MessageType.Severity.warning, null, -1, 'marked section in internal DTD subset');
