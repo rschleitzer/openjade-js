@@ -999,7 +999,10 @@ export class RequiredAttributeDefinition extends AttributeDefinition {
   }
 
   makeMissingValue(context: AttributeContext): ConstPtr<AttributeValue> {
-    // TODO: Add validation and message
+    // Port of RequiredAttributeDefinition::makeMissingValue from Attribute.cxx (lines 666-672)
+    if (context.validate()) {
+      context.message(ParserMessages.requiredAttributeMissing, new StringMessageArg(this.name()));
+    }
     return new ConstPtr<AttributeValue>();
   }
 
@@ -1022,17 +1025,39 @@ export class CurrentAttributeDefinition extends AttributeDefinition {
   }
 
   makeMissingValue(context: AttributeContext): ConstPtr<AttributeValue> {
-    // TODO: Implement current attribute retrieval
+    // Port of CurrentAttributeDefinition::makeMissingValue from Attribute.cxx (lines 690-704)
+    if (context.mayDefaultAttribute()) {
+      const currentValue = context.getCurrentAttribute(this.currentIndex_);
+      if (currentValue.isNull() && context.validate()) {
+        context.message(ParserMessages.currentAttributeMissing, new StringMessageArg(this.name()));
+      }
+      return currentValue;
+    }
+    if (context.validate()) {
+      context.message(ParserMessages.attributeMissing, new StringMessageArg(this.name()));
+    }
     return new ConstPtr<AttributeValue>();
   }
 
   missingValueWouldMatch(text: Text, context: AttributeContext): Boolean {
-    // TODO: Implement current attribute matching
-    return false;
+    // Port of CurrentAttributeDefinition::missingValueWouldMatch from Attribute.cxx (lines 706-716)
+    if (!context.mayDefaultAttribute()) {
+      return false;
+    }
+    const currentValue = context.getCurrentAttribute(this.currentIndex_);
+    if (currentValue.isNull()) {
+      return false;
+    }
+    const valueText = currentValue.pointer()?.text();
+    if (!valueText) {
+      return false;
+    }
+    return text.fixedEqual(valueText);
   }
 
   protected checkValue(value: AttributeValue | null, context: AttributeContext): AttributeValue | null {
-    // TODO: Note current attribute
+    // Port of CurrentAttributeDefinition::checkValue from Attribute.cxx (lines 719-724)
+    context.noteCurrentAttribute(this.currentIndex_, value);
     return value;
   }
 
