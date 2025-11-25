@@ -218,12 +218,7 @@ export class PiEntity extends InternalEntity {
   // Port of PiEntity::copy from Entity.cxx (lines 46-49)
   // In C++: return new PiEntity(*this);
   copy(): Entity {
-    // Create a copy of the text by creating a new Text and copying via string/chars
-    const textCopy = new Text();
-    // Note: Text doesn't have a copy constructor, so we rely on the constructor
-    // swapping behavior. For a proper copy, we'd need to implement Text.copy()
-    // For now, we just pass an empty text - this TODO remains until Text.copy() exists
-    return new PiEntity(this.name(), this.declType(), this.defLocation(), textCopy);
+    return new PiEntity(this.name(), this.declType(), this.defLocation(), this.text_.copy());
   }
 }
 
@@ -288,9 +283,7 @@ export class InternalCdataEntity extends InternalDataEntity {
   // Port of InternalCdataEntity::copy from Entity.cxx (lines 65-68)
   // In C++: return new InternalCdataEntity(*this);
   copy(): Entity {
-    const textCopy = new Text();
-    // TODO: Implement Text.copy() for proper text duplication
-    return new InternalCdataEntity(this.name(), this.defLocation(), textCopy);
+    return new InternalCdataEntity(this.name(), this.defLocation(), this.text_.copy());
   }
 
   isCharacterData(): Boolean {
@@ -352,9 +345,7 @@ export class InternalSdataEntity extends InternalDataEntity {
   // Port of InternalSdataEntity::copy from Entity.cxx (lines 77-80)
   // In C++: return new InternalSdataEntity(*this);
   copy(): Entity {
-    const textCopy = new Text();
-    // TODO: Implement Text.copy() for proper text duplication
-    return new InternalSdataEntity(this.name(), this.defLocation(), textCopy);
+    return new InternalSdataEntity(this.name(), this.defLocation(), this.text_.copy());
   }
 
   isCharacterData(): Boolean {
@@ -382,9 +373,7 @@ export class InternalTextEntity extends InternalEntity {
   // Port of InternalTextEntity::copy from Entity.cxx (lines 90-93)
   // In C++: return new InternalTextEntity(*this);
   copy(): Entity {
-    const textCopy = new Text();
-    // TODO: Implement Text.copy() for proper text duplication
-    return new InternalTextEntity(this.name(), this.declType(), this.defLocation(), textCopy, this.bracketed_);
+    return new InternalTextEntity(this.name(), this.declType(), this.defLocation(), this.text_.copy(), this.bracketed_);
   }
 
   protected normalReference(

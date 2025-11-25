@@ -70,6 +70,22 @@ export class Text {
     this.items_ = new Vector<TextItem>();
   }
 
+  // Create a deep copy of this Text
+  copy(): Text {
+    const result = new Text();
+    // Copy the characters
+    const data = this.chars_.data();
+    if (data) {
+      result.chars_.append(data, this.chars_.size());
+    }
+    // Copy the items using TextItem.copy()
+    result.items_.resize(this.items_.size());
+    for (let i = 0; i < this.items_.size(); i++) {
+      result.items_.set(i, TextItem.copy(this.items_.get(i)));
+    }
+    return result;
+  }
+
   clear(): void {
     this.chars_.resize(0);
     this.items_.clear();
