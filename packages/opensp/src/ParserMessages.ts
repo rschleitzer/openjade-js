@@ -9,6 +9,8 @@ import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, M
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const peroGrpoProlog = new MessageType0(MessageType.Severity.error, null, -1, 'a name group is not allowed in a parameter entity reference in the prolog');
 export const noSuchDeclarationType = new MessageType1(MessageType.Severity.error, null, -1, 'unknown declaration type %1');
+export const instanceDeclaration = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration not allowed in instance');
+export const declarationAfterDocumentElement = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration after document element');
 export const dtdSubsetDeclaration = new MessageType1(MessageType.Severity.error, null, -1, '%1 declaration not allowed in DTD subset');
 export const declSubsetCharacter = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 not allowed in declaration subset');
 export const documentEndDtdSubset = new MessageType0(MessageType.Severity.error, null, -1, 'end of document in DTD subset');

@@ -5066,13 +5066,53 @@ export class ParserState extends ContentState implements ParserStateInterface {
             const startLevel = this.inputLevel();
             const result = this.parseDeclarationName();
 
+            let declResult = false;
             if (result.valid) {
-              // TODO: Handle different declaration types based on result.name
-              // - Syntax.rUSEMAP: parseUsemapDecl()
-              // - Syntax.rUSELINK: parseUselinkDecl()
-              // - Syntax.rDOCTYPE, rELEMENT, rATTLIST, etc.: error in instance
-              // - default: noSuchDeclarationType error
-            } else {
+              // Handle different declaration types in instance content
+              switch (result.name) {
+                case Syntax.ReservedName.rUSEMAP:
+                  if (this.afterDocumentElement()) {
+                    this.message(
+                      ParserMessages.declarationAfterDocumentElement,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  declResult = this.parseUsemapDecl();
+                  break;
+                case Syntax.ReservedName.rUSELINK:
+                  if (this.afterDocumentElement()) {
+                    this.message(
+                      ParserMessages.declarationAfterDocumentElement,
+                      new StringMessageArg(this.syntax().reservedName(result.name))
+                    );
+                  }
+                  declResult = this.parseUselinkDecl();
+                  break;
+                case Syntax.ReservedName.rDOCTYPE:
+                case Syntax.ReservedName.rLINKTYPE:
+                case Syntax.ReservedName.rELEMENT:
+                case Syntax.ReservedName.rATTLIST:
+                case Syntax.ReservedName.rENTITY:
+                case Syntax.ReservedName.rNOTATION:
+                case Syntax.ReservedName.rSHORTREF:
+                case Syntax.ReservedName.rLINK:
+                case Syntax.ReservedName.rIDLINK:
+                  this.message(
+                    ParserMessages.instanceDeclaration,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  declResult = false;
+                  break;
+                default:
+                  this.message(
+                    ParserMessages.noSuchDeclarationType,
+                    new StringMessageArg(this.syntax().reservedName(result.name))
+                  );
+                  declResult = false;
+                  break;
+              }
+            }
+            if (!declResult) {
               this.skipDeclaration(startLevel);
             }
 
