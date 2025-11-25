@@ -220,8 +220,7 @@ export {
   GroupInfo,
   AndInfo,
   AndState,
-  MatchState,
-  ElementType as ElementTypeFromContentToken
+  MatchState
 } from './ContentToken';
 
 // Text with location tracking

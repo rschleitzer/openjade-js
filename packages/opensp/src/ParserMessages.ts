@@ -4,7 +4,7 @@
 // Parser message types
 // This is a stub implementation for now - full message definitions would come from ParserMessages.msg
 
-import { MessageType0, MessageType1, MessageType2, MessageType } from './Message';
+import { MessageType0, MessageType1, MessageType2, MessageType3, MessageType } from './Message';
 
 export const pass2Ee = new MessageType0(MessageType.Severity.error, null, -1, 'pass 2 error');
 export const activeDocLink = new MessageType0(MessageType.Severity.error, null, -1, 'active document link');
@@ -115,3 +115,17 @@ export const duplicateAttributeSpec = new MessageType1(MessageType.Severity.erro
 export const conrefNotation = new MessageType0(MessageType.Severity.error, null, -1, 'value cannot be specified both for notation attribute and content reference attribute');
 export const idrefGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of ID references in start-tag must not exceed GRPCNT (%1)');
 export const entityNameGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of entity names in attribute specification list must not exceed GRPCNT (%1)');
+export const undefinedElement = new MessageType1(MessageType.Severity.error, null, -1, 'element %1 undefined');
+export const elementNotAllowed = new MessageType1(MessageType.Severity.error, null, -1, 'document type does not allow element %1 here');
+export const missingElementMultiple = new MessageType2(MessageType.Severity.error, null, -1, 'document type does not allow element %1 here; missing one of %2 start-tag');
+export const missingElementInferred = new MessageType2(MessageType.Severity.error, null, -1, 'document type does not allow element %1 here; assuming missing %2 start-tag');
+export const startTagEmptyElement = new MessageType1(MessageType.Severity.error, null, -1, 'no start tag specified for implied empty element %1');
+export const omitEndTagDeclare = new MessageType1(MessageType.Severity.error, null, -1, 'end tag for %1 omitted, but its declaration does not permit this');
+export const omitEndTagOmittag = new MessageType1(MessageType.Severity.error, null, -1, 'end tag for %1 omitted, but OMITTAG NO was specified');
+export const omitStartTagDeclaredContent = new MessageType1(MessageType.Severity.error, null, -1, 'start tag omitted for element %1 with declared content');
+export const omitStartTagDeclare = new MessageType1(MessageType.Severity.error, null, -1, 'start tag for %1 omitted, but its declaration does not permit this');
+export const taglvlOpenElements = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of open elements exceeds TAGLVL (%1)');
+export const elementNotOpen = new MessageType1(MessageType.Severity.error, null, -1, 'end tag for element %1 which is not open');
+export const requiredElementExcluded = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded at this point because it is contextually required');
+export const invalidExclusion = new MessageType3(MessageType.Severity.error, null, -1, 'the %1 occurrence of %2 in the content model for %3 cannot be excluded because it is neither inherently optional nor a member of an OR group');
+export const immediateRecursion = new MessageType0(MessageType.Severity.warning, null, -1, 'immediately recursive element');

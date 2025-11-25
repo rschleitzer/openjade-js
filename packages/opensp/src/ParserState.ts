@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -22,7 +22,7 @@ import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
 import { Location, ReplacementOrigin } from './Location';
 import { Message, Messenger } from './Message';
-import { StringMessageArg, NumberMessageArg, TokenMessageArg } from './MessageArg';
+import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
 import { Mode, nModes } from './Mode';
 import { Token as TokenEnum } from './Token';
 import { OpenElement } from './OpenElement';
@@ -48,7 +48,7 @@ import { NamedResourceTable } from './NamedResourceTable';
 import { Notation } from './Notation';
 import { ExternalId } from './ExternalId';
 import { Text } from './Text';
-import { RankStem, ElementType } from './ElementType';
+import { RankStem, ElementType, ElementDefinition } from './ElementType';
 import { ExternalTextEntity } from './Entity';
 import { ASSERT, SIZEOF } from './macros';
 import { InternalInputSource } from './InternalInputSource';
@@ -2989,22 +2989,134 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
-  protected acceptStartTag(elementType: any, event: any, netEnabling: boolean): void {
-    // Stub for acceptStartTag - processes a start tag
-    // TODO: Full implementation:
-    // - Validates element is allowed in current context
-    // - May close open elements (implied end tags)
-    // - Pushes element onto stack
-    // - Fires start element event
+  // Port of parseInstance.cxx lines 639-682
+  protected acceptStartTag(
+    e: ElementType,
+    event: StartElementEvent,
+    netEnabling: Boolean
+  ): void {
+    if (e.definition()?.undefined() && this.implydefElement() === Sd.ImplydefElement.implydefElementNo) {
+      this.message(ParserMessages.undefinedElement, new StringMessageArg(e.name()));
+    }
+    if (this.elementIsExcluded(e)) {
+      this.keepMessages();
+      if (this.validate()) {
+        this.checkExclusion(e);
+      }
+    } else {
+      if (this.currentElement().tryTransition(e)) {
+        this.pushElementCheck(e, event, netEnabling);
+        return;
+      }
+      if (this.elementIsIncluded(e)) {
+        event.setIncluded();
+        this.pushElementCheck(e, event, netEnabling);
+        return;
+      }
+      this.keepMessages();
+    }
+    const undoList = new IList<Undo>();
+    const eventList = new IList<Event>();
+    let startImpliedCount = 0;
+    let attributeListIndex = 1;
+    const startImpliedCountRef = { value: startImpliedCount };
+    const attributeListIndexRef = { value: attributeListIndex };
+    while (
+      this.tryImplyTag(
+        event.location(),
+        startImpliedCountRef,
+        attributeListIndexRef,
+        undoList,
+        eventList
+      )
+    ) {
+      if (this.tryStartTag(e, event, netEnabling, eventList)) {
+        return;
+      }
+    }
+    this.discardKeptMessages();
+    this.undo(undoList);
+    if (this.validate() && !e.definition()?.undefined()) {
+      this.handleBadStartTag(e, event, netEnabling);
+    } else {
+      if (
+        this.validate()
+          ? this.implydefElement() !== Sd.ImplydefElement.implydefElementNo
+          : this.afterDocumentElement()
+      ) {
+        this.message(ParserMessages.elementNotAllowed, new StringMessageArg(e.name()));
+      }
+      // If element couldn't occur because it was excluded, then
+      // do the transition here.
+      this.currentElement().tryTransition(e);
+      this.pushElementCheck(e, event, netEnabling);
+    }
   }
 
-  protected acceptEndTag(event: any): void {
-    // Stub for acceptEndTag - processes an end tag
-    // TODO: Full implementation:
-    // - Finds matching open element
-    // - Closes intervening elements if needed
-    // - Validates end tag is legal
-    // - Fires end element event
+  // Port of parseInstance.cxx lines 1130-1154
+  protected acceptEndTag(event: EndElementEvent): void {
+    const e = event.elementType();
+    if (!this.elementIsOpen(e)) {
+      this.message(ParserMessages.elementNotOpen, new StringMessageArg(e.name()));
+      // delete event - JavaScript GC handles this
+      return;
+    }
+    for (;;) {
+      if (this.currentElement().type() === e) {
+        break;
+      }
+      if (!this.currentElement().isFinished() && this.validate()) {
+        this.message(
+          ParserMessages.elementNotFinished,
+          new StringMessageArg(this.currentElement().type().name())
+        );
+      }
+      this.implyCurrentElementEnd(event.location());
+    }
+    if (!this.currentElement().isFinished() && this.validate()) {
+      this.message(
+        ParserMessages.elementEndTagNotFinished,
+        new StringMessageArg(this.currentElement().type().name())
+      );
+    }
+    if (this.currentElement().included()) {
+      event.setIncluded();
+    }
+    this.noteEndElement(event.included());
+    this.eventHandler().endElement(event);
+    this.popElement();
+  }
+
+  // Port of parseInstance.cxx lines 1156-1179
+  protected implyCurrentElementEnd(loc: Location): void {
+    if (!this.sd().omittag()) {
+      this.message(
+        ParserMessages.omitEndTagOmittag,
+        new StringMessageArg(this.currentElement().type().name())
+        // TODO: Add currentElement().startLocation() as second arg
+      );
+    } else {
+      const def = this.currentElement().type().definition();
+      if (def && !def.canOmitEndTag()) {
+        this.message(
+          ParserMessages.omitEndTagDeclare,
+          new StringMessageArg(this.currentElement().type().name())
+          // TODO: Add currentElement().startLocation() as second arg
+        );
+      }
+    }
+    const event = new EndElementEvent(
+      this.currentElement().type(),
+      this.currentDtdPointer(),
+      loc,
+      null
+    );
+    if (this.currentElement().included()) {
+      event.setIncluded();
+    }
+    this.noteEndElement(event.included());
+    this.eventHandler().endElement(event);
+    this.popElement();
   }
 
   protected parseEmptyStartTag(): void {
@@ -3992,6 +4104,465 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return true;
     }
     return false;
+  }
+
+  // Port of parseInstance.cxx lines 684-691
+  protected undo(undoList: IList<Undo>): void {
+    while (!undoList.empty()) {
+      const p = undoList.get();
+      if (p) {
+        p.undo(this);
+        // JavaScript GC handles deletion
+      }
+    }
+  }
+
+  // Port of parseInstance.cxx lines 693-713
+  protected queueElementEvents(events: IList<Event>): void {
+    this.releaseKeptMessages();
+    // FIXME provide IList<T>.reverse function
+    // reverse it
+    const tem = new IList<Event>();
+    while (!events.empty()) {
+      tem.insert(events.get()!);
+    }
+    while (!tem.empty()) {
+      const e = tem.get();
+      if (e) {
+        if (e.type() === Event.Type.startElement) {
+          this.noteStartElement((e as StartElementEvent).included());
+          this.eventHandler().startElement(e as StartElementEvent);
+        } else {
+          this.noteEndElement((e as EndElementEvent).included());
+          this.eventHandler().endElement(e as EndElementEvent);
+        }
+      }
+    }
+  }
+
+  // Port of parseInstance.cxx lines 715-723
+  protected checkExclusion(e: ElementType): void {
+    const token = this.currentElement().invalidExclusion(e);
+    if (token) {
+      this.message(
+        ParserMessages.invalidExclusion,
+        new OrdinalMessageArg(token.typeIndex() + 1),
+        new StringMessageArg(token.elementType()!.name()),
+        new StringMessageArg(this.currentElement().type().name())
+      );
+    }
+  }
+
+  // Port of parseInstance.cxx lines 725-746
+  protected tryStartTag(
+    e: ElementType,
+    event: StartElementEvent,
+    netEnabling: Boolean,
+    impliedEvents: IList<Event>
+  ): Boolean {
+    if (this.elementIsExcluded(e)) {
+      this.checkExclusion(e);
+      return false;
+    }
+    if (this.currentElement().tryTransition(e)) {
+      this.queueElementEvents(impliedEvents);
+      this.pushElementCheck(e, event, netEnabling);
+      return true;
+    }
+    if (this.elementIsIncluded(e)) {
+      this.queueElementEvents(impliedEvents);
+      event.setIncluded();
+      this.pushElementCheck(e, event, netEnabling);
+      return true;
+    }
+    return false;
+  }
+
+  // Port of parseInstance.cxx lines 748-826
+  protected tryImplyTag(
+    loc: Location,
+    startImpliedCountRef: { value: number },
+    attributeListIndexRef: { value: number },
+    undo: IList<Undo>,
+    eventList: IList<Event>
+  ): Boolean {
+    if (!this.sd().omittag()) {
+      return false;
+    }
+    if (this.currentElement().isFinished()) {
+      if (this.tagLevel() === 0) {
+        return false;
+      }
+      const def = this.currentElement().type().definition();
+      if (def && !def.canOmitEndTag()) {
+        return false;
+      }
+      // imply an end tag
+      if (startImpliedCountRef.value > 0) {
+        this.message(
+          ParserMessages.startTagEmptyElement,
+          new StringMessageArg(this.currentElement().type().name())
+        );
+        startImpliedCountRef.value--;
+      }
+      const event = new EndElementEvent(
+        this.currentElement().type(),
+        this.currentDtdPointer(),
+        loc,
+        null
+      );
+      eventList.insert(event);
+      undo.insert(new UndoEndTag(this.popSaveElement()!));
+      return true;
+    }
+    const token = this.currentElement().impliedStartTag();
+    if (!token) {
+      return false;
+    }
+    const e = token.elementType();
+    if (this.elementIsExcluded(e!)) {
+      this.message(
+        ParserMessages.requiredElementExcluded,
+        new OrdinalMessageArg(token.typeIndex() + 1),
+        new StringMessageArg(e!.name()),
+        new StringMessageArg(this.currentElement().type().name())
+      );
+    }
+    if (this.tagLevel() !== 0) {
+      undo.insert(new UndoTransition(this.currentElement().matchState()));
+    }
+    this.currentElement().doRequiredTransition();
+    const def = e!.definition();
+    if (
+      def &&
+      def.declaredContent() !== ElementDefinition.DeclaredContent.modelGroup &&
+      def.declaredContent() !== ElementDefinition.DeclaredContent.any
+    ) {
+      this.message(ParserMessages.omitStartTagDeclaredContent, new StringMessageArg(e!.name()));
+    }
+    if (def && def.undefined()) {
+      this.message(ParserMessages.undefinedElement, new StringMessageArg(e!.name()));
+    } else if (def && !def.canOmitStartTag()) {
+      this.message(ParserMessages.omitStartTagDeclare, new StringMessageArg(e!.name()));
+    }
+    const attributes = this.allocAttributeList(
+      e!.attributeDef().asConst(),
+      attributeListIndexRef.value++
+    );
+    // this will give an error if the element has a required attribute
+    if (attributes) {
+      attributes.finish(this as any);
+    }
+    startImpliedCountRef.value++;
+    const eventObj = new StartElementEvent(
+      e!,
+      this.currentDtdPointer(),
+      attributes!,
+      loc,
+      null
+    );
+    this.pushElementCheckUndo(e!, eventObj, undo, eventList);
+    const implyCheckLimit = 30; // this is fairly arbitrary
+    if (
+      startImpliedCountRef.value > implyCheckLimit &&
+      !this.checkImplyLoop(startImpliedCountRef.value)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  // Port of parseInstance.cxx lines 828-872
+  protected pushElementCheck(
+    e: ElementType,
+    event: StartElementEvent,
+    netEnabling: Boolean
+  ): void {
+    if (this.tagLevel() === this.syntax().taglvl()) {
+      this.message(
+        ParserMessages.taglvlOpenElements,
+        new NumberMessageArg(this.syntax().taglvl())
+      );
+    }
+    this.noteStartElement(event.included());
+    if (event.mustOmitEnd()) {
+      if (this.sd().emptyElementNormal()) {
+        const included = event.included();
+        const loc = new Location(event.location());
+        this.eventHandler().startElement(event);
+        this.endTagEmptyElement(e, netEnabling, included, loc);
+      } else {
+        const end = new EndElementEvent(
+          e,
+          this.currentDtdPointer(),
+          event.location(),
+          null
+        );
+        if (event.included()) {
+          end.setIncluded();
+          this.noteEndElement(true);
+        } else {
+          this.noteEndElement(false);
+        }
+        this.eventHandler().startElement(event);
+        this.eventHandler().endElement(end);
+      }
+    } else {
+      let map = e.map();
+      if (!map) {
+        map = this.currentElement().map();
+      }
+      if (this.options().warnImmediateRecursion && e === this.currentElement().type()) {
+        this.message(ParserMessages.immediateRecursion);
+      }
+      this.pushElement(
+        new OpenElement(e, netEnabling, event.included(), map!, event.location())
+      );
+      // Can't access event after it's passed to the event handler.
+      this.eventHandler().startElement(event);
+    }
+  }
+
+  // Port of parseInstance.cxx lines 973-1001 (overload for undo/event lists)
+  protected pushElementCheckUndo(
+    e: ElementType,
+    event: StartElementEvent,
+    undoList: IList<Undo>,
+    eventList: IList<Event>
+  ): void {
+    if (this.tagLevel() === this.syntax().taglvl()) {
+      this.message(
+        ParserMessages.taglvlOpenElements,
+        new NumberMessageArg(this.syntax().taglvl())
+      );
+    }
+    eventList.insert(event);
+    if (event.mustOmitEnd()) {
+      const end = new EndElementEvent(
+        e,
+        this.currentDtdPointer(),
+        event.location(),
+        null
+      );
+      if (event.included()) {
+        end.setIncluded();
+      }
+      eventList.insert(end);
+    } else {
+      undoList.insert(new UndoStartTag());
+      let map = e.map();
+      if (!map) {
+        map = this.currentElement().map();
+      }
+      this.pushElement(
+        new OpenElement(e, false, event.included(), map!, event.location())
+      );
+    }
+  }
+
+  // Port of parseInstance.cxx lines 874-945
+  protected endTagEmptyElement(
+    e: ElementType,
+    netEnabling: Boolean,
+    included: Boolean,
+    startLoc: Location
+  ): void {
+    const token = this.getToken(netEnabling ? Mode.econnetMode : Mode.econMode);
+    switch (token) {
+      case TokenEnum.tokenNet:
+        if (netEnabling) {
+          const markup = this.startMarkup(
+            this.eventsWanted().wantInstanceMarkup(),
+            this.currentLocation()
+          );
+          if (markup) {
+            markup.addDelim(Syntax.DelimGeneral.dNET);
+          }
+          const end = new EndElementEvent(e, this.currentDtdPointer(), this.currentLocation(), markup);
+          if (included) {
+            end.setIncluded();
+          }
+          this.eventHandler().endElement(end);
+          this.noteEndElement(included);
+          return;
+        }
+        break;
+      case TokenEnum.tokenEtagoTagc:
+        {
+          if (this.options().warnEmptyTag) {
+            this.message(ParserMessages.emptyEndTag);
+          }
+          const markup = this.startMarkup(
+            this.eventsWanted().wantInstanceMarkup(),
+            this.currentLocation()
+          );
+          if (markup) {
+            markup.addDelim(Syntax.DelimGeneral.dETAGO);
+            markup.addDelim(Syntax.DelimGeneral.dTAGC);
+          }
+          const end = new EndElementEvent(e, this.currentDtdPointer(), this.currentLocation(), markup);
+          if (included) {
+            end.setIncluded();
+          }
+          this.eventHandler().endElement(end);
+          this.noteEndElement(included);
+          return;
+        }
+      case TokenEnum.tokenEtagoNameStart:
+        {
+          const end = this.parseEndTag();
+          if (end && end.elementType() === e) {
+            if (included) {
+              end.setIncluded();
+            }
+            this.eventHandler().endElement(end);
+            this.noteEndElement(included);
+            return;
+          }
+          if (end && !this.elementIsOpen(end.elementType())) {
+            this.message(
+              ParserMessages.elementNotOpen,
+              new StringMessageArg(end.elementType().name())
+            );
+            // delete end - JavaScript GC handles this
+            break;
+          }
+          this.implyEmptyElementEnd(e, included, startLoc);
+          if (end) {
+            this.acceptEndTag(end);
+          }
+          return;
+        }
+      default:
+        break;
+    }
+    this.implyEmptyElementEnd(e, included, startLoc);
+    this.currentInput()!.ungetToken();
+  }
+
+  // Port of parseInstance.cxx lines 947-971
+  protected implyEmptyElementEnd(
+    e: ElementType,
+    included: Boolean,
+    startLoc: Location
+  ): void {
+    if (!this.sd().omittag()) {
+      this.message(
+        ParserMessages.omitEndTagOmittag,
+        new StringMessageArg(e.name())
+        // TODO: Add start location as second arg
+      );
+    } else {
+      const def = e.definition();
+      if (def && !def.canOmitEndTag()) {
+        this.message(
+          ParserMessages.omitEndTagDeclare,
+          new StringMessageArg(e.name())
+          // TODO: Add start location as second arg
+        );
+      }
+    }
+    const end = new EndElementEvent(e, this.currentDtdPointer(), this.currentLocation(), null);
+    if (included) {
+      end.setIncluded();
+    }
+    this.noteEndElement(included);
+    this.eventHandler().endElement(end);
+  }
+
+  // Port of parseInstance.cxx lines 1206-1271
+  protected handleBadStartTag(
+    e: ElementType,
+    event: StartElementEvent,
+    netEnabling: Boolean
+  ): void {
+    const undoList = new IList<Undo>();
+    const eventList = new IList<Event>();
+    this.keepMessages();
+    for (;;) {
+      const missing = new Vector<ElementType | null>();
+      this.findMissingTag(e, missing);
+      if (missing.size() === 1) {
+        this.queueElementEvents(eventList);
+        const m = missing.get(0);
+        if (m) {
+          this.message(
+            ParserMessages.missingElementInferred,
+            new StringMessageArg(e.name()),
+            new StringMessageArg(m.name())
+          );
+          const attributes = this.allocAttributeList(m.attributeDef().asConst(), 1);
+          // this will give an error if the element has a required attribute
+          if (attributes) {
+            attributes.finish(this as any);
+          }
+          const inferEvent = new StartElementEvent(
+            m,
+            this.currentDtdPointer(),
+            attributes!,
+            event.location(),
+            null
+          );
+          if (!this.currentElement().tryTransition(m)) {
+            inferEvent.setIncluded();
+          }
+          this.pushElementCheck(m, inferEvent, false);
+          if (!this.currentElement().tryTransition(e)) {
+            event.setIncluded();
+          }
+          this.pushElementCheck(e, event, netEnabling);
+          return;
+        }
+      }
+      if (missing.size() > 0) {
+        this.queueElementEvents(eventList);
+        const missingNames = new Vector<StringC>();
+        for (let i = 0; i < missing.size(); i++) {
+          const m = missing.get(i);
+          if (m) {
+            missingNames.push_back(m.name());
+          }
+        }
+        this.message(
+          ParserMessages.missingElementMultiple,
+          new StringMessageArg(e.name()),
+          new StringVectorMessageArg(missingNames)
+        );
+        this.pushElementCheck(e, event, netEnabling);
+        return;
+      }
+      if (
+        !this.sd().omittag() ||
+        !this.currentElement().isFinished() ||
+        this.tagLevel() === 0 ||
+        !this.currentElement().type().definition()?.canOmitEndTag()
+      ) {
+        break;
+      }
+      const endEvent = new EndElementEvent(
+        this.currentElement().type(),
+        this.currentDtdPointer(),
+        event.location(),
+        null
+      );
+      eventList.insert(endEvent);
+      undoList.insert(new UndoEndTag(this.popSaveElement()!));
+    }
+    this.discardKeptMessages();
+    this.undo(undoList);
+    this.message(ParserMessages.elementNotAllowed, new StringMessageArg(e.name()));
+    // If element couldn't occur because it was excluded, then
+    // do the transition here.
+    this.currentElement().tryTransition(e);
+    this.pushElementCheck(e, event, netEnabling);
+  }
+
+  // Port of parseInstance.cxx lines 1273-1340 (stub for now)
+  protected findMissingTag(e: ElementType, v: Vector<ElementType | null>): void {
+    // TODO: Full implementation from parseInstance.cxx lines 1273-1340
+    // This determines what element(s) could be inferred to make the current element valid
+    // For now, return empty vector - will prevent element inference
+    v.clear();
   }
 }
 

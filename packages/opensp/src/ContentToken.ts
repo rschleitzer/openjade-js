@@ -6,9 +6,7 @@ import { Vector } from './Vector';
 import { NCVector } from './NCVector';
 import { Owner } from './Owner';
 import { Text } from './Text';
-
-// Forward declarations
-export class ElementType { }
+import { ElementType } from './ElementType';
 
 // Transition - represents state transitions in content model DFA
 export class Transition {
@@ -429,6 +427,11 @@ export abstract class LeafContentToken extends ContentToken {
 
   asLeafContentToken(): LeafContentToken | null {
     return this;
+  }
+
+  // Port of ContentToken.h line 206 - virtual method, overridden in ElementToken
+  elementType(): ElementType | null {
+    return null;
   }
 
   protected analyze1(
