@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -3605,15 +3605,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return { valid: true, entity, origin: origin || undefined };
   }
 
-  protected parseEntityReferenceNameGroup(ignore: { value: boolean }): boolean {
-    // Port of parseEntityReferenceNameGroup from parseCommon.cxx
-    // TODO: Implement name group parsing for entity references
-    // This handles patterns like &(name1|name2|name3)
-    // For now, return true to allow simple entity references to work
-    ignore.value = false;
-    return true;
-  }
-
   protected parsePcdata(): void {
     // Port of parsePcdata from parseInstance.cxx (lines 397-409)
     this.extendData();
@@ -4127,20 +4118,96 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Port of parseGroupStartTag from parseInstance.cxx (lines 542-580)
     // Group start tag with name group: <(name1|name2)
 
-    // TODO: Start markup tracking with STAGO + GRPO delimiters
-    // TODO: parseTagNameGroup(active, 1)
-    // TODO: If active, parse and accept the start tag
-    // TODO: If not active, skip attribute spec and fire ignoredMarkup event
+    const input = this.currentInput();
+    if (!input) return;
+
+    const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dSTAGO);
+      markup.addDelim(Syntax.DelimGeneral.dGRPO);
+    }
+
+    const active: { value: Boolean } = { value: false };
+    if (!this.parseTagNameGroup(active, true)) {
+      return;
+    }
+
+    input.startToken();
+    const c = input.tokenChar(this);
+    if (!this.syntax().isNameStartCharacter(c)) {
+      this.message(ParserMessages.startTagMissingName);
+      return;
+    }
+
+    if (active.value) {
+      const netEnabling: { value: boolean } = { value: false };
+      const event = this.doParseStartTag(netEnabling);
+      if (netEnabling.value) {
+        this.message(ParserMessages.startTagGroupNet);
+      }
+      if (event) {
+        this.acceptStartTag(event.elementType(), event, netEnabling.value);
+      }
+    } else {
+      input.discardInitial();
+      this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+      if (this.currentMarkup()) {
+        this.currentMarkup()!.addName(input);
+      }
+      this.skipAttributeSpec();
+      if (this.currentMarkup()) {
+        this.eventHandler().ignoredMarkup(
+          new IgnoredMarkupEvent(this.markupLocation(), this.currentMarkup()!)
+        );
+      }
+      this.noteMarkup();
+    }
   }
 
   protected parseGroupEndTag(): void {
     // Port of parseGroupEndTag from parseInstance.cxx (lines 581-612)
     // Group end tag with name group: </(name1|name2)
 
-    // TODO: Start markup tracking with ETAGO + GRPO delimiters
-    // TODO: parseTagNameGroup(active, 0)
-    // TODO: If active, parse and accept the end tag
-    // TODO: If not active, skip to close and fire ignoredMarkup event
+    const input = this.currentInput();
+    if (!input) return;
+
+    const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
+    if (markup) {
+      markup.addDelim(Syntax.DelimGeneral.dETAGO);
+      markup.addDelim(Syntax.DelimGeneral.dGRPO);
+    }
+
+    const active: { value: Boolean } = { value: false };
+    if (!this.parseTagNameGroup(active, false)) {
+      return;
+    }
+
+    input.startToken();
+    const c = input.tokenChar(this);
+    if (!this.syntax().isNameStartCharacter(c)) {
+      this.message(ParserMessages.endTagMissingName);
+      return;
+    }
+
+    if (active.value) {
+      const event = this.doParseEndTag();
+      if (event) {
+        this.acceptEndTag(event);
+      }
+    } else {
+      input.discardInitial();
+      this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
+      if (this.currentMarkup()) {
+        this.currentMarkup()!.addName(input);
+      }
+      this.parseEndTagClose();
+      if (this.currentMarkup()) {
+        this.eventHandler().ignoredMarkup(
+          new IgnoredMarkupEvent(this.markupLocation(), this.currentMarkup()!)
+        );
+      }
+      this.noteMarkup();
+    }
   }
 
   protected emptyCommentDecl(): void {
@@ -4975,6 +5042,117 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return true;
     }
     return false;
+  }
+
+  // Port of parseAttribute.cxx lines 433-522
+  // Skip attribute specification for ignored markup
+  protected skipAttributeSpec(): boolean {
+    const curParmObj: { value: AttributeParameterType } = { value: AttributeParameterType.end };
+    const netEnabling: { value: boolean } = { value: false };
+
+    if (!this.parseAttributeParameter(Mode.tagMode, false, curParmObj, netEnabling)) {
+      return false;
+    }
+
+    while (curParmObj.value !== AttributeParameterType.end) {
+      if (curParmObj.value === AttributeParameterType.name) {
+        let nameMarkupIndex = 0;
+        const markup = this.currentMarkup();
+        if (markup) {
+          nameMarkupIndex = markup.size() - 1;
+        }
+        if (!this.parseAttributeParameter(Mode.tagMode, true, curParmObj, netEnabling)) {
+          return false;
+        }
+        // After parseAttributeParameter, curParmObj.value may have changed
+        if ((curParmObj.value as AttributeParameterType) === AttributeParameterType.vi) {
+          let token = this.getToken(Mode.tagMode);
+          while (token === TokenEnum.tokenS) {
+            if (this.currentMarkup()) {
+              this.currentMarkup()!.addS(this.currentChar());
+            }
+            token = this.getToken(Mode.tagMode);
+          }
+          switch (token) {
+            case TokenEnum.tokenUnrecognized:
+              if (!this.reportNonSgmlCharacter()) {
+                this.message(ParserMessages.attributeSpecCharacter, new StringMessageArg(this.currentToken()));
+              }
+              return false;
+            case TokenEnum.tokenEe:
+              this.message(ParserMessages.attributeSpecEntityEnd);
+              return false;
+            case TokenEnum.tokenEtago:
+            case TokenEnum.tokenStago:
+            case TokenEnum.tokenNestc:
+            case TokenEnum.tokenTagc:
+            case TokenEnum.tokenDsc:
+            case TokenEnum.tokenVi:
+              this.message(ParserMessages.attributeValueExpected);
+              return false;
+            case TokenEnum.tokenNameStart:
+            case TokenEnum.tokenDigit:
+            case TokenEnum.tokenLcUcNmchar:
+              if (!this.sd().attributeValueNotLiteral()) {
+                this.message(ParserMessages.attributeValueShorttag);
+              }
+              this.extendNameToken(
+                this.syntax().litlen() >= this.syntax().normsep()
+                  ? this.syntax().litlen() - this.syntax().normsep()
+                  : 0,
+                ParserMessages.attributeValueLength
+              );
+              if (this.currentMarkup()) {
+                const input = this.currentInput();
+                if (input) this.currentMarkup()!.addAttributeValue(input);
+              }
+              break;
+            case TokenEnum.tokenLit:
+            case TokenEnum.tokenLita: {
+              const text = new Text();
+              if (!this.parseLiteral(
+                token === TokenEnum.tokenLita ? Mode.talitaMode : Mode.talitMode,
+                Mode.taliteMode,
+                this.syntax().litlen(),
+                ParserMessages.tokenizedAttributeValueLength,
+                (this.currentMarkup() ? ParserState.literalDelimInfo : 0) | ParserState.literalNoProcess,
+                text
+              )) {
+                return false;
+              }
+              if (this.currentMarkup()) {
+                this.currentMarkup()!.addLiteral(text);
+              }
+              break;
+            }
+            default:
+              throw new Error('CANNOT_HAPPEN in skipAttributeSpec');
+          }
+          if (!this.parseAttributeParameter(Mode.tagMode, false, curParmObj, netEnabling)) {
+            return false;
+          }
+        } else {
+          if (markup) {
+            markup.changeToAttributeValue(nameMarkupIndex);
+          }
+          if (!this.sd().attributeOmitName()) {
+            this.message(ParserMessages.attributeNameShorttag);
+          }
+        }
+      } else {
+        // It's a name token
+        if (!this.parseAttributeParameter(Mode.tagMode, false, curParmObj, netEnabling)) {
+          return false;
+        }
+        if (!this.sd().attributeOmitName()) {
+          this.message(ParserMessages.attributeNameShorttag);
+        }
+      }
+    }
+    if (netEnabling.value) {
+      this.message(ParserMessages.startTagGroupNet);
+    }
+    return true;
   }
 
   // Port of parseInstance.cxx lines 684-691
@@ -6147,6 +6325,55 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected parseNameTokenGroup(declInputLevel: number, parm: Param): Boolean {
     const allowNameToken = new AllowedGroupTokens(GroupToken.Type.nameToken);
     return this.parseGroup(allowNameToken, declInputLevel, parm);
+  }
+
+  // Port of parseParam.cxx lines 611-635
+  protected parseEntityReferenceNameGroup(ignore: { value: Boolean }): Boolean {
+    const parm = new Param();
+    if (!this.parseNameGroup(this.inputLevel(), parm)) {
+      return false;
+    }
+    if (this.inInstance()) {
+      for (let i = 0; i < parm.nameTokenVector.size(); i++) {
+        const lpd = this.lookupLpd(parm.nameTokenVector.get(i).name);
+        if (lpd.pointer() && lpd.pointer()!.active()) {
+          ignore.value = false;
+          return true;
+        }
+        const dtd = this.lookupDtd(parm.nameTokenVector.get(i).name);
+        if (!dtd.isNull()) {
+          this.instantiateDtd(dtd);
+          if (this.currentDtdPointer().pointer() === dtd.pointer()) {
+            ignore.value = false;
+            return true;
+          }
+        }
+      }
+    }
+    ignore.value = true;
+    return true;
+  }
+
+  // Port of parseParam.cxx lines 637-655
+  protected parseTagNameGroup(active: { value: Boolean }, start: Boolean): Boolean {
+    const parm = new Param();
+    this.enterTag(start);
+    const ret = this.parseNameGroup(this.inputLevel(), parm);
+    this.leaveTag();
+    if (!ret) {
+      return false;
+    }
+    active.value = false;
+    for (let i = 0; i < parm.nameTokenVector.size(); i++) {
+      const dtd = this.lookupDtd(parm.nameTokenVector.get(i).name);
+      if (!dtd.isNull()) {
+        this.instantiateDtd(dtd);
+        if (this.currentDtdPointer().pointer() === dtd.pointer()) {
+          active.value = true;
+        }
+      }
+    }
+    return true;
   }
 
   // Helper function - Port of parseParam.cxx lines 668-675
