@@ -5803,9 +5803,109 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
+  // Port of checkDtd from parseDecl.cxx lines 3385-3516
   protected checkDtd(dtd: Dtd): void {
-    // Validate the DTD
-    // Simplified stub - full implementation checks for undefined elements, etc.
+    if (dtd.isBase()) {
+      this.addNeededShortrefs(dtd, this.instanceSyntax());
+    }
+    if (this.sd().www() || !this.options().errorAfdr) {
+      this.addCommonAttributes(dtd);
+    }
+
+    // Check for undefined elements
+    const elementIter = dtd.elementTypeIter();
+    let def: ConstPtr<ElementDefinition> | null = null;
+    let undefinedIndex = 0;
+    let e: ElementType | null;
+    while ((e = elementIter.next()) !== null) {
+      if (!e.definition()) {
+        if (e.name().equals(dtd.name())) {
+          if (this.validate() &&
+              this.implydefElement() === Sd.ImplydefElement.implydefElementNo) {
+            this.message(ParserMessages.documentElementUndefined);
+          }
+        } else if (this.options().warnUndefinedElement) {
+          this.message(ParserMessages.dtdUndefinedElement, new StringMessageArg(e.name()));
+        }
+        // Create a default definition for undefined elements
+        if (def === null) {
+          def = new ConstPtr(new ElementDefinition(
+            this.currentLocation(),
+            ElementDefinition.undefinedIndex,
+            ElementDefinition.OmitFlags.omitEnd,
+            ElementDefinition.DeclaredContent.any,
+            this.implydefElement() !== Sd.ImplydefElement.implydefElementAnyother
+          ));
+        }
+        e.setElementDefinition(def, undefinedIndex++);
+      }
+
+      // Check shortref maps
+      const elemMap = e.map();
+      if (elemMap !== null && elemMap !== ContentState.theEmptyMap && !elemMap.defined()) {
+        if (this.validate()) {
+          this.message(
+            ParserMessages.undefinedShortrefMapDtd,
+            new StringMessageArg(elemMap.name()),
+            new StringMessageArg(e.name())
+          );
+        }
+        e.setMap(null);
+      }
+    }
+
+    // Process shortref maps
+    const mapIter = dtd.shortReferenceMapIter();
+    const nShortref = dtd.nShortref();
+    let srMap: ShortReferenceMap | null;
+    while ((srMap = mapIter.next()) !== null) {
+      const entityMap = new Vector<ConstPtr<Entity>>(nShortref);
+      for (let i = 0; i < nShortref; i++) {
+        entityMap.push_back(new ConstPtr<Entity>(null));
+      }
+      for (let i = 0; i < nShortref; i++) {
+        const entityName = srMap.entityName(i);
+        if (entityName) {
+          const entity = this.lookupEntity(false, entityName, srMap.defLocation(), false);
+          if (entity.isNull()) {
+            this.setNextLocation(srMap.defLocation());
+            this.message(
+              ParserMessages.mapEntityUndefined,
+              new StringMessageArg(entityName),
+              new StringMessageArg(srMap.name())
+            );
+          } else {
+            if (entity.pointer()!.defaulted() && this.options().warnDefaultEntityReference) {
+              this.setNextLocation(srMap.defLocation());
+              this.message(
+                ParserMessages.mapDefaultEntity,
+                new StringMessageArg(entityName),
+                new StringMessageArg(srMap.name())
+              );
+            }
+            entityMap.set(i, entity);
+          }
+        }
+      }
+      srMap.setEntityMap(entityMap);
+      if (this.options().warnUnusedMap && !srMap.used()) {
+        this.setNextLocation(srMap.defLocation());
+        this.message(ParserMessages.unusedMap, new StringMessageArg(srMap.name()));
+      }
+    }
+
+    // Check for unused parameter entities
+    if (this.options().warnUnusedParam) {
+      const entityIter = dtd.parameterEntityIterConst();
+      let entityPtr: ConstPtr<Entity> | null;
+      while ((entityPtr = entityIter.next()) !== null && !entityPtr.isNull()) {
+        const entity = entityPtr.pointer()!;
+        if (!entity.used() && !this.maybeStatusKeyword(entity)) {
+          this.setNextLocation(entity.defLocation());
+          this.message(ParserMessages.unusedParamEntity, new StringMessageArg(entity.name()));
+        }
+      }
+    }
   }
 
   protected doInstanceStart(): void {
@@ -5952,7 +6052,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
               if (entity.isCharacterData()) {
                 this.acceptPcdata(new Location(result.origin.pointer(), 0));
               }
-              entity.contentReference(this, result.origin);
+              // Use rcdataReference for entities in RCDATA/CDATA special parse mode
+              if (this.inputLevel() === this.specialParseInputLevel()) {
+                entity.rcdataReference(this, result.origin);
+              } else {
+                entity.contentReference(this, result.origin);
+              }
             }
           }
           break;
@@ -6697,6 +6802,123 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     this.setNormalMap(map);
+  }
+
+  // Port of addNeededShortrefs from parseMode.cxx lines 458-520
+  protected addNeededShortrefs(dtd: Dtd, syntax: Syntax): void {
+    if (!syntax.hasShortrefs()) {
+      return;
+    }
+
+    const delimRelevant: PackedBoolean[] = new Array(Syntax.nDelimGeneral).fill(false);
+
+    const iter = new ModeInfo(Mode.mconnetMode, this.sd());
+    const ti = new TokenInfo();
+    while (iter.nextToken(ti)) {
+      switch (ti.type) {
+        case TokenInfo.Type.delimType:
+        case TokenInfo.Type.delimDelimType:
+        case TokenInfo.Type.delimSetType:
+          delimRelevant[ti.delim1] = true;
+          break;
+        default:
+          break;
+      }
+    }
+
+    // PIO and NET are the only delimiters that are recognized in con
+    // mode without context. If a short reference delimiter is
+    // identical to one of these delimiters, then we'll have an
+    // ambiguity. We make such a short reference delimiter needed
+    // to ensure that this ambiguity is reported.
+    const pioDelim = syntax.delimGeneral(Syntax.DelimGeneral.dPIO);
+    if (syntax.isValidShortref(pioDelim)) {
+      dtd.addNeededShortref(pioDelim);
+    }
+    const netDelim = syntax.delimGeneral(Syntax.DelimGeneral.dNET);
+    if (syntax.isValidShortref(netDelim)) {
+      dtd.addNeededShortref(netDelim);
+    }
+
+    const nShortrefComplex = syntax.nDelimShortrefComplex();
+
+    // A short reference delimiter is needed if it is used or if it can
+    // contain some other shorter delimiter that is either a relevant general
+    // delimiter or a shortref delimiter that is used.
+    for (let i = 0; i < nShortrefComplex; i++) {
+      const sr = syntax.delimShortrefComplex(i);
+      let needed = false;
+      for (let j = 0; j < Syntax.nDelimGeneral; j++) {
+        if (delimRelevant[j] &&
+            this.shortrefCanPreemptDelim(sr, syntax.delimGeneral(j), false, syntax)) {
+          needed = true;
+          break;
+        }
+      }
+      if (!needed) {
+        for (let j = 0; j < dtd.nShortref(); j++) {
+          if (this.shortrefCanPreemptDelim(sr, dtd.shortref(j), true, syntax)) {
+            needed = true;
+            break;
+          }
+        }
+      }
+      if (needed) {
+        dtd.addNeededShortref(sr);
+      }
+    }
+  }
+
+  // Port of shortrefCanPreemptDelim from parseMode.cxx lines 522-575
+  protected shortrefCanPreemptDelim(sr: StringC, d: StringC, dIsSr: boolean, syntax: Syntax): boolean {
+    const letterB = this.sd().execToInternal('B'.charCodeAt(0));
+    for (let i = 0; i < sr.size(); i++) {
+      let j = 0;
+      let k = i;
+      for (;;) {
+        if (j === d.size()) {
+          return true;
+        }
+        if (k >= sr.size()) {
+          break;
+        }
+        if (sr.get(k) === letterB) {
+          if (dIsSr && d.get(j) === letterB) {
+            j++;
+            k++;
+          } else if (syntax.isB(d.get(j))) {
+            j++;
+            k++;
+            if (k === sr.size() || sr.get(k) !== letterB) {
+              // it was the last B in the sequence
+              while (j < d.size() && syntax.isB(d.get(j))) {
+                j++;
+              }
+            }
+          } else {
+            break;
+          }
+        } else if (dIsSr && d.get(j) === letterB) {
+          if (syntax.isB(sr.get(k))) {
+            j++;
+            k++;
+            if (j < d.size() && d.get(j) !== letterB) {
+              while (k < sr.size() && syntax.isB(sr.get(k))) {
+                k++;
+              }
+            }
+          } else {
+            break;
+          }
+        } else if (d.get(j) === sr.get(k)) {
+          j++;
+          k++;
+        } else {
+          break;
+        }
+      }
+    }
+    return false;
   }
 
   // Core parsing utilities from parseCommon.cxx
@@ -9959,6 +10181,106 @@ export class ParserState extends ContentState implements ParserStateInterface {
       }
       v.set(j, tem);
     }
+  }
+
+  // Port of getAllowedElementTypes from parseInstance.cxx lines 1348-1420
+  protected getAllowedElementTypes(v: Vector<ElementType | null>): void {
+    v.clear();
+    // FIXME: get a list of all inclusions first
+    // x says whether each element of v was excluded
+    const x: PackedBoolean[] = [];
+    let startImpliedCount = 0;
+    const undoList = new IList<Undo>();
+
+    for (;;) {
+      if (this.currentElement().currentPosition()) {
+        // have a model group
+        const startIndex = v.size();
+        this.currentElement().matchState().possibleTransitions(v);
+        // Expand x to match v's new size
+        while (x.length < v.size()) {
+          x.push(false);
+        }
+        for (let j = startIndex; j < v.size(); j++) {
+          const elem = v.get(j);
+          x[j] = elem !== null && this.elementIsExcluded(elem);
+        }
+        if (!this.sd().omittag()) {
+          break;
+        }
+        // Try to imply a tag
+        if (this.currentElement().isFinished()) {
+          if (this.tagLevel() === 0) {
+            break;
+          }
+          if (startImpliedCount) {
+            break;
+          }
+          const def = this.currentElement().type()?.definition();
+          if (def && def.canOmitEndTag()) {
+            undoList.insert(new UndoEndTag(this.popSaveElement()));
+          } else {
+            break;
+          }
+        } else {
+          const token = this.currentElement().impliedStartTag();
+          if (!token) {
+            break;
+          }
+          const e = token.elementType();
+          if (!e || this.elementIsExcluded(e)) {
+            break;
+          }
+          const def = e.definition();
+          if (!def ||
+              def.undefined() ||
+              (def.declaredContent() !== ElementDefinition.DeclaredContent.modelGroup &&
+               def.declaredContent() !== ElementDefinition.DeclaredContent.any) ||
+              !def.canOmitStartTag()) {
+            break;
+          }
+          undoList.insert(new UndoStartTag());
+          startImpliedCount++;
+          this.pushElement(new OpenElement(e, false, false, null, new Location()));
+          if (this.checkImplyLoop(startImpliedCount)) {
+            break;
+          }
+          for (let i = 0; i < def.nInclusions(); i++) {
+            const inc = def.inclusion(i);
+            if (inc && !this.elementIsExcluded(inc)) {
+              v.push_back(inc);
+              x.push(false);
+            }
+          }
+        }
+      } else {
+        // must be allowed #pcdata
+        v.push_back(null);
+        x.push(false);
+        break;
+      }
+    }
+
+    this.undo(undoList);
+
+    // Remove exclusions and duplicates and undefined
+    let newSize = 0;
+    for (let i = 0; i < v.size(); i++) {
+      const elem = v.get(i);
+      if (!x[i] && (!elem || !elem.definition()?.undefined())) {
+        let dup = false;
+        for (let j = 0; j < newSize; j++) {
+          if (v.get(i) === v.get(j)) {
+            dup = true;
+            break;
+          }
+        }
+        if (!dup) {
+          v.set(newSize++, elem);
+        }
+      }
+    }
+    v.resize(newSize);
   }
 
   // ============================================================================

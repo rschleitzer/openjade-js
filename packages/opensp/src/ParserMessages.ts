@@ -478,3 +478,12 @@ export const ambiguousDocCharacter = new MessageType1(MessageType.Severity.warni
 export const switchLetterDigit = new MessageType1(MessageType.Severity.error, null, -1, 'character number %1 in switch is a letter or digit');
 export const switchNotMarkup = new MessageType1(MessageType.Severity.error, null, -1, 'character number %1 was not a markup character');
 export const generalDelimAllFunction = new MessageType1(MessageType.Severity.error, null, -1, 'general delimiter %1 consists entirely of function characters');
+
+// DTD validation messages
+export const documentElementUndefined = new MessageType0(MessageType.Severity.error, null, -1, 'document element type not defined');
+export const dtdUndefinedElement = new MessageType1(MessageType.Severity.warning, null, -1, 'element %1 used in DTD but not defined');
+export const undefinedShortrefMapDtd = new MessageType2(MessageType.Severity.error, null, -1, 'short reference map %1 for element %2 not defined');
+export const mapEntityUndefined = new MessageType2(MessageType.Severity.error, null, -1, 'entity %1 in short reference map %2 not defined');
+export const mapDefaultEntity = new MessageType2(MessageType.Severity.warning, null, -1, 'entity %1 in short reference map %2 was defaulted');
+export const unusedMap = new MessageType1(MessageType.Severity.warning, null, -1, 'short reference map %1 not used');
+export const unusedParamEntity = new MessageType1(MessageType.Severity.warning, null, -1, 'parameter entity %1 not used');
