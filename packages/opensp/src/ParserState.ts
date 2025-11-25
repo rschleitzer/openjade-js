@@ -4907,7 +4907,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       return;
     }
 
-    // TODO: Check that we have a valid DTD
+    // Note: Upstream also has FIXME to check for valid DTD here
     this.compileInstanceModes();
     this.setPhase(Phase.contentPhase);
 

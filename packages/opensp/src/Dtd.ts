@@ -17,8 +17,8 @@ import { AttributeDefinitionList } from './Attribute';
 import { StringResource } from './StringResource';
 import { ElementType, RankStem } from './ElementType';
 import { ShortReferenceMap } from './ShortReferenceMap';
+import { Syntax } from './Syntax';
 
-export class Syntax { }
 export class ParserState { }
 
 // Dtd - Document Type Definition
@@ -209,13 +209,16 @@ export class Dtd extends Resource {
   }
 
   // Short reference management
+  // Port of Dtd.cxx (lines 30-44)
   shortrefIndex(str: StringC, syntax: Syntax, result: { value: number }): Boolean {
     const indexP = this.shortrefTable_.lookup(str);
     if (indexP !== null) {
       result.value = indexP;
       return true;
     }
-    // TODO: Check syntax.isValidShortref(str)
+    if (!syntax.isValidShortref(str)) {
+      return false;
+    }
     this.shortrefTable_.insert(str, this.shortrefs_.size());
     result.value = this.shortrefs_.size();
     this.shortrefs_.push_back(str);

@@ -116,7 +116,7 @@ export {
   IgnoredEntity,
   ParserState as EntityParserState
 } from './Entity';
-export { Dtd, Syntax as DtdSyntax, ParserState as DtdParserStateInterface } from './Dtd';
+export { Dtd, ParserState as DtdParserStateInterface } from './Dtd';
 export {
   ElementType as ElementTypeFromElementType,
   ElementDefinition,
