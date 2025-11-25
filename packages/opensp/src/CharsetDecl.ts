@@ -184,8 +184,9 @@ export class CharsetDecl {
   }
 
   addSection(id: PublicId): void {
-    this.sections_.resize(this.sections_.size() + 1);
-    this.sections_.back().setPublicId(id);
+    const section = new CharsetDeclSection();
+    section.setPublicId(id);
+    this.sections_.push_back(section);
   }
 
   swap(to: CharsetDecl): void {

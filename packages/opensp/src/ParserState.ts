@@ -45,7 +45,7 @@ import { InputSource } from './InputSource';
 import { IList } from './IList';
 import { IListIter } from './IListIter';
 import { IQueue } from './IQueue';
-import { Location, ReplacementOrigin, BracketOrigin, NamedCharRef, NumericCharRefOrigin } from './Location';
+import { Location, ReplacementOrigin, BracketOrigin, NamedCharRef, NumericCharRefOrigin, InputSourceOrigin } from './Location';
 import { Message, Messenger, MessageType0, MessageType1, MessageType2, MessageType3, MessageType5, MessageType6, MessageType0L, MessageType1L } from './Message';
 import { MessageArg } from './MessageArg';
 import { StringMessageArg, NumberMessageArg, TokenMessageArg, OrdinalMessageArg, StringVectorMessageArg } from './MessageArg';
@@ -102,8 +102,7 @@ import { WideChar, SyntaxChar, UnivChar } from './types';
 
 // Local CharsetInfo interface matching what we need for SGML declaration parsing
 interface CharsetInfo {
-  execToDesc(c: number | string): Char;
-  execToDescString(s: string): StringC;
+  execToDesc(c: number | string): Char | StringC;
   univToDesc(univChar: UnivChar, result: { c: WideChar; set: ISet<WideChar> }): number;
   descToUniv(c: WideChar, result: { univ: UnivChar }): Boolean;
   getDescSet(set: ISet<Char>): void;
@@ -883,12 +882,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
       const input = this.currentInput();
       if (!input) return;
       const p = input.currentTokenStart();
+      const startIdx = input.currentTokenStartIndex();
       let count = input.currentTokenLength();
       str.resize(count);
       const strData = str.data();
       if (strData && p) {
         for (let i = 0; i < count; i++) {
-          strData[i] = subst.get(p[i]);
+          strData[i] = subst.get(p[startIdx + i]);
         }
       }
     } else if (arg1 instanceof String) {
@@ -896,7 +896,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
       const str = arg1;
       const input = this.currentInput();
       if (input) {
-        str.assign(input.currentTokenStart(), input.currentTokenLength());
+        const p = input.currentTokenStart();
+        const startIdx = input.currentTokenStartIndex();
+        const count = input.currentTokenLength();
+        // Extract slice from buffer starting at startIdx
+        str.assign(p.slice(startIdx, startIdx + count), count);
       }
     }
   }
@@ -1246,13 +1250,22 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   currentChar(): Char {
     const input = this.currentInput();
-    return input ? input.currentTokenStart()[0] : 0;
+    if (!input) return 0;
+    // In C++, currentTokenStart() returns a pointer to buffer_ + start_
+    // In TypeScript, we need to use the start index
+    const startIdx = input.currentTokenStartIndex();
+    return input.currentTokenStart()[startIdx];
   }
 
   currentToken(): StringC {
     const input = this.currentInput();
     if (!input) return new String<Char>();
-    return new String<Char>(input.currentTokenStart(), input.currentTokenLength());
+    // In C++, currentTokenStart() returns a pointer to buffer_ + start_
+    // In TypeScript, we need to slice the buffer from the start index
+    const startIdx = input.currentTokenStartIndex();
+    const length = input.currentTokenLength();
+    const slice = input.currentTokenStart().slice(startIdx, startIdx + length);
+    return new String<Char>(slice, length);
   }
 
   setRecognizer(mode: Mode, p: ConstPtr<Recognizer>): void {
@@ -1359,7 +1372,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
   getToken(mode: Mode): Token {
     const recognizer = this.recognizers_[mode];
     const head = this.inputStack_.head();
-    return recognizer && head ? recognizer.pointer()?.recognize(head, this.messenger()) || 0 : 0;
+    if (!recognizer) {
+      return 0;
+    }
+    if (!head) {
+      return 0;
+    }
+    const result = recognizer.pointer()?.recognize(head, this.messenger()) || 0;
+    return result;
   }
 
   hadDtd(): Boolean {
@@ -1422,9 +1442,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return this.nameBuffer_;
   }
 
-  setHandler(handler: any, cancelPtr: number | null): void {
+  setHandler(handler: any, cancelPtr?: number | null): void {
     this.handler_ = handler;
-    this.cancelPtr_ = cancelPtr !== null ? cancelPtr : 0;
+    this.cancelPtr_ = (cancelPtr !== null && cancelPtr !== undefined) ? cancelPtr : 0;
   }
 
   unsetHandler(): void {
@@ -1648,9 +1668,53 @@ export class ParserState extends ContentState implements ParserStateInterface {
     let haveSgmlDecl = false;
     if (input) {
       haveSgmlDecl = this.scanForSgmlDecl(initCharset);
+      if (!haveSgmlDecl) {
+        // Put back the characters consumed by scanForSgmlDecl
+        input.ungetToken();
+
+        // Port of parseSd.cxx lines 177-204: Check catalog for SGMLDECL directive
+        // If the entity catalog has an SGMLDECL, open that file and scan for SGML declaration
+        if (this.subdocLevel() === 0) {
+          const systemId = new String<Char>();
+          const emptySysid = new String<Char>(); // Catalog lookup doesn't use the document sysid
+          if (this.entityCatalog().sgmlDecl(initCharset, this as any, emptySysid, systemId)) {
+            const sgmlDeclInput = this.entityManager().open(
+              systemId,
+              this.sd().docCharset(),
+              InputSourceOrigin.make(),
+              0,
+              this as any
+            );
+            if (sgmlDeclInput) {
+              this.pushInput(sgmlDeclInput);
+              if (this.scanForSgmlDecl(initCharset)) {
+                haveSgmlDecl = true;
+              } else {
+                // No SGML declaration in the file from catalog
+                this.currentInput()?.ungetToken();
+                this.popInputStack();
+              }
+            }
+          }
+        }
+      }
     }
 
     if (haveSgmlDecl) {
+      // Set up a reference syntax for parsing the SGML declaration
+      // The SGML declaration defines the syntax, but we need a reference syntax
+      // to parse the declaration itself.
+      const refSyntaxObj = new Syntax(this.sd()! as any);
+      const switcher = new CharSwitcher();
+      if (!this.setStandardSyntax(refSyntaxObj, refSyntax, this.sd()!.internalCharset(), switcher, false)) {
+        this.giveUp();
+        return;
+      }
+      refSyntaxObj.implySgmlChar(this.sd()! as any);
+      this.setSyntax(new ConstPtr<Syntax>(refSyntaxObj));
+
+      // Compile SGML declaration modes before parsing
+      this.compileSdModes();
       // Parse the explicit SGML declaration
       if (!this.parseSgmlDecl()) {
         this.giveUp();
@@ -1686,28 +1750,29 @@ export class ParserState extends ContentState implements ParserStateInterface {
    */
   protected scanForSgmlDecl(initCharset: any): boolean {
     // Check if standard character codes can be represented
-    const rsResult = { c: 0 as Char, set: new ISet<WideChar>() };
-    const reResult = { c: 0 as Char, set: new ISet<WideChar>() };
-    const spaceResult = { c: 0 as Char, set: new ISet<WideChar>() };
-    const tabResult = { c: 0 as Char, set: new ISet<WideChar>() };
+    const rsResult = { value: 0 as Char };
+    const reResult = { value: 0 as Char };
+    const spaceResult = { value: 0 as Char };
+    const tabResult = { value: 0 as Char };
+    const dummySet = new ISet<WideChar>();
 
-    if (initCharset.univToDesc(UnivCharsetDesc.rs, rsResult) <= 0) {
+    if (initCharset.univToDesc(UnivCharsetDesc.rs, rsResult, dummySet) <= 0) {
       return false;
     }
-    if (initCharset.univToDesc(UnivCharsetDesc.re, reResult) <= 0) {
+    if (initCharset.univToDesc(UnivCharsetDesc.re, reResult, dummySet) <= 0) {
       return false;
     }
-    if (initCharset.univToDesc(UnivCharsetDesc.space, spaceResult) <= 0) {
+    if (initCharset.univToDesc(UnivCharsetDesc.space, spaceResult, dummySet) <= 0) {
       return false;
     }
-    if (initCharset.univToDesc(UnivCharsetDesc.tab, tabResult) <= 0) {
+    if (initCharset.univToDesc(UnivCharsetDesc.tab, tabResult, dummySet) <= 0) {
       return false;
     }
 
-    const rs = rsResult.c;
-    const re = reResult.c;
-    const space = spaceResult.c;
-    const tab = tabResult.c;
+    const rs = rsResult.value;
+    const re = reResult.value;
+    const space = spaceResult.value;
+    const tab = tabResult.value;
 
     const input = this.currentInput();
     if (!input) return false;
@@ -1720,30 +1785,30 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     // Check for "<!SGML"
-    if (c !== initCharset.execToDesc('<'.charCodeAt(0))) {
+    if (c !== initCharset.execToDesc('<')) {
       return false;
     }
-    if (input.tokenChar(this) !== initCharset.execToDesc('!'.charCodeAt(0))) {
-      return false;
-    }
-    c = input.tokenChar(this);
-    if (c !== initCharset.execToDesc('S'.charCodeAt(0)) &&
-        c !== initCharset.execToDesc('s'.charCodeAt(0))) {
+    if (input.tokenChar(this) !== initCharset.execToDesc('!')) {
       return false;
     }
     c = input.tokenChar(this);
-    if (c !== initCharset.execToDesc('G'.charCodeAt(0)) &&
-        c !== initCharset.execToDesc('g'.charCodeAt(0))) {
+    if (c !== initCharset.execToDesc('S') &&
+        c !== initCharset.execToDesc('s')) {
       return false;
     }
     c = input.tokenChar(this);
-    if (c !== initCharset.execToDesc('M'.charCodeAt(0)) &&
-        c !== initCharset.execToDesc('m'.charCodeAt(0))) {
+    if (c !== initCharset.execToDesc('G') &&
+        c !== initCharset.execToDesc('g')) {
       return false;
     }
     c = input.tokenChar(this);
-    if (c !== initCharset.execToDesc('L'.charCodeAt(0)) &&
-        c !== initCharset.execToDesc('l'.charCodeAt(0))) {
+    if (c !== initCharset.execToDesc('M') &&
+        c !== initCharset.execToDesc('m')) {
+      return false;
+    }
+    c = input.tokenChar(this);
+    if (c !== initCharset.execToDesc('L') &&
+        c !== initCharset.execToDesc('l')) {
       return false;
     }
 
@@ -1757,10 +1822,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
     input.endToken(input.currentTokenLength() - 1);
 
     // Check for name characters after SGML
-    if (c === initCharset.execToDesc('-'.charCodeAt(0))) {
+    if (c === initCharset.execToDesc('-')) {
       return false;
     }
-    if (c === initCharset.execToDesc('.'.charCodeAt(0))) {
+    if (c === initCharset.execToDesc('.')) {
       return false;
     }
 
@@ -1842,6 +1907,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const wwwVersion = (this.sd() as any).execToInternal("ISO 8879:1986 (WWW)");
 
     const versionStr = parm.literalText.string();
+
     if (versionStr.equals(enrVersion)) {
       sdBuilder.enr = true;
     } else if (versionStr.equals(wwwVersion)) {
@@ -2153,7 +2219,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       const addedFunc = spec.addedFunction[i];
       const result = this.translateSyntax(switcher, syntaxCharset, internalCharset, addedFunc.syntaxChar);
       if (result.valid && this.checkNotFunction(syn, result.docChar)) {
-        const nameStr = internalCharset.execToDescString(addedFunc.name);
+        const nameStr = internalCharset.execToDesc(addedFunc.name) as StringC;
         syn.addFunctionChar(nameStr, addedFunc.functionClass, result.docChar);
       } else {
         valid = false;
@@ -2204,9 +2270,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
   ): { valid: boolean; docChar: Char } {
     // Translate a syntax character to a document character
     const univChar = this.translateUniv(syntaxChar, switcher, syntaxCharset);
-    const result = { c: 0 as Char, set: new ISet<WideChar>() };
-    if (internalCharset.univToDesc(univChar, result) > 0) {
-      return { valid: true, docChar: result.c };
+    // univToDesc takes: (from: UnivChar, to: { value: WideChar }, toSet: ISet<WideChar>)
+    const toRef = { value: 0 as WideChar };
+    const toSet = new ISet<WideChar>();
+    if (internalCharset.univToDesc(univChar, toRef, toSet) > 0) {
+      return { valid: true, docChar: toRef.value as Char };
     }
     return { valid: false, docChar: 0 };
   }
@@ -2290,9 +2358,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
         let j;
         for (j = 0; j < delims[i].length && delims[i][j] !== 0; j++) {
           const univChar = this.translateUniv(delims[i][j], switcher, syntaxCharset);
-          const result = { c: 0 as Char, set: new ISet<WideChar>() };
-          if (internalCharset.univToDesc(univChar, result) > 0) {
-            delim.append([result.c], 1);
+          const toRef = { value: 0 as WideChar };
+          const toSet = new ISet<WideChar>();
+          if (internalCharset.univToDesc(univChar, toRef, toSet) > 0) {
+            delim.append([toRef.value as Char], 1);
           } else {
             missing.add(univChar);
             valid = false;
@@ -2345,7 +2414,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
         continue;
       }
 
-      const docName = internalCharset.execToDescString(referenceNames[i]);
+      const docName = internalCharset.execToDesc(referenceNames[i]) as StringC;
       if (syn.reservedName(i).size() === 0) {
         syn.setName(i, docName);
       }
@@ -6543,8 +6612,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
       delimCodes[i] = new String<EquivCode>();
       if (delims[i]) {
         const str = this.syntax().delimGeneral(i);
+        let debugStr = '';
         for (let j = 0; j < str.size(); j++) {
-          delimCodes[i].appendChar(partition.charCode(str.get(j)));
+          const ch = str.get(j);
+          const code = partition.charCode(ch);
+          delimCodes[i].appendChar(code);
+          debugStr += `${globalThis.String.fromCharCode(ch)}(${ch})=${code} `;
         }
       }
     }
@@ -7056,7 +7129,20 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Get current character - either from current token or read next
     const c = input.currentTokenLength() ? this.currentChar() : this.getChar();
 
-    if (!this.syntax().isSgmlChar(c)) {
+    // During SGML declaration parsing, we don't have a syntax yet
+    // In that case, we can't check if it's an SGML character
+    const syn = this.syntax_.pointer();
+    if (!syn) {
+      // During SD parsing, report non-printable control characters
+      // but allow all printable characters
+      if (c < 32 && c !== 9 && c !== 10 && c !== 13) {
+        this.message(ParserMessages.nonSgmlCharacter, new NumberMessageArg(c));
+        return true;
+      }
+      return false;
+    }
+
+    if (!syn.isSgmlChar(c)) {
       this.message(ParserMessages.nonSgmlCharacter, new NumberMessageArg(c));
       return true;
     }
@@ -8865,11 +8951,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const input = this.currentInput();
     if (!input) return { valid: false };
 
+    // DEBUG: show token before discard
     input.discardInitial();
     this.extendNameToken(this.syntax().namelen(), ParserMessages.nameLength);
 
     const name = this.nameBuffer();
     this.getCurrentToken(this.syntax().generalSubstTable(), name);
+    // DEBUG: show the name
+    let debugName = '';
+    for (let i = 0; i < name.size(); i++) {
+      debugName += globalThis.String.fromCharCode(name.get(i));
+    }
 
     const result = { value: 0 };
     if (!this.syntax().lookupReservedName(name, result)) {
@@ -11616,6 +11708,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const buffer = this.nameBuffer();
     this.getCurrentTokenSubst(this.syntax().generalSubstTable(), buffer);
     const rnResult: { value: number } = { value: 0 };
+    // DEBUG: show the name being looked up
+    let debugName = '';
+    for (let i = 0; i < buffer.size(); i++) {
+      debugName += globalThis.String.fromCharCode(buffer.get(i));
+    }
     if (!this.syntax().lookupReservedName(buffer, rnResult)) {
       this.message(ParserMessages.noSuchReservedName, new StringMessageArg(buffer));
       return false;
@@ -12086,10 +12183,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
             this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
             parm.type = SdParam.Type.number;
             const input = this.currentInput()!;
-            const nResult = this.parseNumberFromToken(
-              input.currentTokenStart(),
-              input.currentTokenLength()
-            );
+            // In C++, currentTokenStart() returns buffer_ + start_
+            // In TypeScript, we need to slice from the start index
+            const startIdx = input.currentTokenStartIndex();
+            const length = input.currentTokenLength();
+            const tokenSlice = input.currentTokenStart().slice(startIdx, startIdx + length);
+            const nResult = this.parseNumberFromToken(tokenSlice, length);
             if (nResult === null || nResult > 0xFFFFFFFF) {
               this.message(
                 ParserMessages.numberTooBig,
@@ -12165,10 +12264,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
           const input = this.currentInput()!;
           input.discardInitial();
           this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
-          const n = this.parseNumberFromToken(
-            input.currentTokenStart(),
-            input.currentTokenLength()
-          );
+          // In C++, currentTokenStart() returns buffer_ + start_
+          // In TypeScript, we need to slice from the start index
+          const startIdx = input.currentTokenStartIndex();
+          const len = input.currentTokenLength();
+          const tokenSlice = input.currentTokenStart().slice(startIdx, startIdx + len);
+          const n = this.parseNumberFromToken(tokenSlice, len);
           if (n === null || n > this.syntaxCharMax_) {
             this.message(
               ParserMessages.syntaxCharacterNumber,

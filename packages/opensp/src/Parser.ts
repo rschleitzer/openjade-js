@@ -269,7 +269,8 @@ export class Parser extends ParserState {
     // FIXME catch exceptions and reset handler.
     this.setHandler(handler, cancelPtr);
     for (;;) {
-      switch (this.phase()) {
+      const currentPhase = this.phase();
+      switch (currentPhase) {
         case Phase.noPhase:
           this.unsetHandler();
           return;

@@ -102,10 +102,11 @@ export class Text {
         || loc.origin().pointer() !== this.items_.back().loc.origin().pointer()
         || loc.index() !== (this.items_.back().loc.index()
                             + (this.chars_.size() - this.items_.back().index))) {
-      this.items_.resize(this.items_.size() + 1);
-      this.items_.back().loc = new Location(loc);
-      this.items_.back().type = TextItem.Type.data;
-      this.items_.back().index = this.chars_.size();
+      const item = new TextItem();
+      item.loc = new Location(loc);
+      item.type = TextItem.Type.data;
+      item.index = this.chars_.size();
+      this.items_.push_back(item);
     }
     this.chars_.appendChar(c);
   }
@@ -127,10 +128,11 @@ export class Text {
           || location.origin().pointer() !== this.items_.back().loc.origin().pointer()
           || location.index() !== (this.items_.back().loc.index()
                                     + (this.chars_.size() - this.items_.back().index))) {
-        this.items_.resize(this.items_.size() + 1);
-        this.items_.back().loc = new Location(location);
-        this.items_.back().type = TextItem.Type.data;
-        this.items_.back().index = this.chars_.size();
+        const item = new TextItem();
+        item.loc = new Location(location);
+        item.type = TextItem.Type.data;
+        item.index = this.chars_.size();
+        this.items_.push_back(item);
       }
       this.chars_.append(arr, len);
     }
@@ -138,22 +140,29 @@ export class Text {
 
   insertChars(s: StringC, loc: Location): void {
     this.chars_.insert(0, s);
-    this.items_.resize(this.items_.size() + 1);
-    for (let i = this.items_.size() - 1; i > 0; i--) {
-      this.items_.set(i, this.items_.get(i - 1));
-      this.items_.get(i).index += s.size();
+    // Create new item at position 0, shift existing items
+    const newItem = new TextItem();
+    newItem.loc = new Location(loc);
+    newItem.type = TextItem.Type.data;
+    newItem.index = 0;
+    // Shift all existing items to the right and update their indices
+    const oldSize = this.items_.size();
+    this.items_.push_back(newItem); // Just to allocate space
+    for (let i = oldSize; i > 0; i--) {
+      const prevItem = this.items_.get(i - 1);
+      prevItem.index += s.size();
+      this.items_.set(i, prevItem);
     }
-    this.items_.get(0).loc = new Location(loc);
-    this.items_.get(0).type = TextItem.Type.data;
-    this.items_.get(0).index = 0;
+    this.items_.set(0, newItem);
   }
 
   ignoreChar(c: Char, loc: Location): void {
-    this.items_.resize(this.items_.size() + 1);
-    this.items_.back().loc = new Location(loc);
-    this.items_.back().type = TextItem.Type.ignore;
-    this.items_.back().c = c;
-    this.items_.back().index = this.chars_.size();
+    const item = new TextItem();
+    item.loc = new Location(loc);
+    item.type = TextItem.Type.ignore;
+    item.c = c;
+    item.index = this.chars_.size();
+    this.items_.push_back(item);
   }
 
   ignoreLastChar(): void {
@@ -163,14 +172,19 @@ export class Text {
       ;
     // lastIndex >= items_[i].index
     if (this.items_.get(i).index !== lastIndex) {
-      this.items_.resize(this.items_.size() + 1);
+      // Need to insert a new item at position i+1
+      const newItem = new TextItem();
+      newItem.index = lastIndex;
+      newItem.loc = new Location(this.items_.get(i).loc);
+      newItem.loc.addOffset(lastIndex - this.items_.get(i).index);
+      // Shift items to make room and insert new item
+      const oldSize = this.items_.size();
+      this.items_.push_back(newItem); // Allocate space
       i++;
-      for (let j = this.items_.size() - 1; j > i; j--) {
+      for (let j = oldSize; j > i; j--) {
         this.items_.set(j, this.items_.get(j - 1));
       }
-      this.items_.get(i).index = lastIndex;
-      this.items_.get(i).loc = new Location(this.items_.get(i - 1).loc);
-      this.items_.get(i).loc.addOffset(lastIndex - this.items_.get(i - 1).index);
+      this.items_.set(i, newItem);
     }
 
     this.items_.get(i).c = this.chars_.get(this.chars_.size() - 1);

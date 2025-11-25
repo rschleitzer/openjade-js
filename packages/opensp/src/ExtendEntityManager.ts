@@ -378,6 +378,7 @@ export class ExtendEntityManager extends EntityManager {
     return this.charset_;
   }
 
+  // Port of EntityManagerImpl::open from ExtendEntityManager.cxx lines 312-329
   open(
     sysid: StringC,
     docCharset: CharsetInfo,
@@ -385,44 +386,36 @@ export class ExtendEntityManager extends EntityManager {
     flags: number,
     mgr: Messenger
   ): InputSource | null {
-    // Parse the system identifier
+    // Parse the system identifier into ParsedSystemId
+    // Port of parseSystemId call from line 319-321
     const parsedSysid = new ParsedSystemId();
 
     // Simple implementation: treat sysid as a file path
     const spec = new StorageObjectSpec();
     spec.id = sysid;
+    spec.baseId = new StringOf<Char>();
     spec.storageManager = this.defaultStorageManager_;
     spec.codingSystem = this.defaultCodingSystem_;
+    spec.records = StorageObjectSpec.RecordType.find;
+    spec.search = false;
     parsedSysid.push_back(spec);
 
-    // Try to open via storage manager
-    if (this.defaultStorageManager_) {
-      const result = { object: null as StorageObject | null };
-      const mayRewind = (flags & EntityManager.mayRewind) !== 0;
-
-      if (this.defaultStorageManager_.makeStorageObject(
-        sysid,
-        new StringOf<Char>(),
-        false,
-        mayRewind,
-        mgr,
-        result
-      )) {
-        if (result.object) {
-          // Create ExternalInputSource
-          return new ExternalInputSource(
-            parsedSysid,
-            this.charset_,
-            docCharset,
-            this.internalCharsetIsDocCharset_,
-            0xFFFD, // replacement character
-            origin
-          );
-        }
-      }
+    // Check we have a storage manager
+    if (!this.defaultStorageManager_) {
+      return null;
     }
 
-    return null;
+    // Create ExternalInputSource - it will lazily open the file in fill()
+    // Port of line 323-328
+    return new ExternalInputSource(
+      parsedSysid,
+      this.charset_,
+      docCharset,
+      this.internalCharsetIsDocCharset_,
+      0xFFFD, // replacement character
+      origin,
+      flags
+    );
   }
 
   makeCatalog(
@@ -430,15 +423,48 @@ export class ExtendEntityManager extends EntityManager {
     charset: CharsetInfo,
     mgr: Messenger
   ): ConstPtr<EntityCatalog> {
+    // Port of EntityManagerImpl::makeCatalog from ExtendEntityManager.cxx
+    // If we have a catalog manager, delegate to it
+    if (this.catalogManager_) {
+      const catalog = this.catalogManager_.makeCatalog(systemId, charset, this, mgr);
+      if (catalog) {
+        return catalog;
+      }
+    }
     // Return a default catalog
-    // Full implementation would parse SGML Open catalogs
     return new ConstPtr<EntityCatalog>(new DefaultEntityCatalog());
+  }
+
+  // Port of EntityManagerImpl::expandSystemId from ExtendEntityManager.cxx
+  // Expands a system ID relative to a base location
+  expandSystemId(
+    str: StringC,
+    loc: Location,
+    isNdata: Boolean,
+    charset: CharsetInfo,
+    lookupPublicId: StringC | null,
+    mgr: Messenger,
+    result: StringC
+  ): Boolean {
+    // Simple implementation: if str is an absolute path or no location, use as-is
+    // Otherwise resolve relative to the location's storage object
+    if (str.size() === 0) {
+      return false;
+    }
+
+    // For now, just copy the system ID to result (simple file path handling)
+    // Full implementation would handle relative path resolution, storage manager lookup, etc.
+    result.assign(str.data(), str.size());
+    return true;
   }
 }
 
+// Flag for open() - entity may not exist
+export const mayNotExist = 0o1;
+
 // CatalogManager - manages entity catalogs
 export interface CatalogManager {
-  makeCatalog(systemId: StringC, charset: CharsetInfo, mgr: Messenger): EntityCatalog | null;
+  makeCatalog(systemId: StringC, charset: CharsetInfo, em: ExtendEntityManager | null, mgr: Messenger): ConstPtr<EntityCatalog> | null;
 }
 
 // DefaultEntityCatalog - simple default catalog implementation
@@ -482,12 +508,35 @@ export class DefaultEntityCatalog extends EntityCatalog {
 }
 
 // ExternalInputSource - input source for external entities
+// Port of ExternalInputSource from ExtendEntityManager.cxx (lines 144-203, 576-1015)
 export class ExternalInputSource extends InputSource {
   private parsedSysid_: ParsedSystemId;
   private internalCharset_: CharsetInfo;
   private docCharset_: CharsetInfo;
   private internalCharsetIsDocCharset_: Boolean;
   private replacementChar_: Char;
+  private mayRewind_: Boolean;
+  private mayNotExist_: Boolean;
+
+  // Storage object vector and current storage object
+  // Port of NCVector<Owner<StorageObject>> sov_ and StorageObject *so_
+  private sov_: (StorageObject | null)[];
+  private so_: StorageObject | null;
+  private soIndex_: number;
+
+  // RS (Record Start) insertion tracking
+  private insertRS_: Boolean;
+
+  // Record type handling
+  private static readonly RecordType = {
+    unknown: 0,
+    crUnknown: 1,
+    crlf: 2,
+    lf: 3,
+    cr: 4,
+    asis: 5
+  } as const;
+  private recordType_: number;
 
   constructor(
     parsedSysid: ParsedSystemId,
@@ -495,7 +544,8 @@ export class ExternalInputSource extends InputSource {
     docCharset: CharsetInfo,
     internalCharsetIsDocCharset: Boolean,
     replacementChar: Char,
-    origin: InputSourceOrigin | null
+    origin: InputSourceOrigin | null,
+    flags: number = 0
   ) {
     super(origin, null, 0, 0);
     this.parsedSysid_ = parsedSysid;
@@ -503,19 +553,208 @@ export class ExternalInputSource extends InputSource {
     this.docCharset_ = docCharset;
     this.internalCharsetIsDocCharset_ = internalCharsetIsDocCharset;
     this.replacementChar_ = replacementChar;
+    this.mayRewind_ = (flags & EntityManager.mayRewind) !== 0;
+    this.mayNotExist_ = false;
+
+    // Initialize storage object vector with nulls (lazy loading)
+    // Port of sov_(parsedSysid.size()) and for loop setting sov_[i] = 0
+    this.sov_ = new Array(parsedSysid.size());
+    for (let i = 0; i < this.sov_.length; i++) {
+      this.sov_[i] = null;
+    }
+
+    // Initialize state
+    this.init();
+  }
+
+  // Port of ExternalInputSource::init() from ExtendEntityManager.cxx lines 673-684
+  private init(): void {
+    this.so_ = null;
+    this.insertRS_ = true;
+    this.soIndex_ = 0;
+    this.recordType_ = ExternalInputSource.RecordType.unknown;
+    // Reset base class buffer state
+    this.buffer_ = [];
+    this.start_ = 0;
+    this.cur_ = 0;
+    this.end_ = 0;
   }
 
   pushCharRef(ch: Char, ref: any): void {
-    // Character reference handling
+    // Character reference handling - insert character into stream
   }
 
   rewind(mgr: Messenger): Boolean {
-    return false;
+    if (!this.mayRewind_) return false;
+    this.init();
+    for (let i = 0; i < this.soIndex_; i++) {
+      if (this.sov_[i] && !this.sov_[i]!.rewind(mgr)) {
+        return false;
+      }
+    }
+    return true;
   }
 
+  // Port of ExternalInputSource::fill() from ExtendEntityManager.cxx lines 744-1015
+  // This version properly uses the base class buffer_ for compatibility with ungetToken()
   protected fill(mgr: Messenger): number {
-    // End of input
-    return InputSource.eE;
+    // fill() is called when cur_ >= end_, meaning we've consumed all buffered data
+    // We need to read more data into buffer_ and return the next character
+
+    // Need more data - loop until we get data or reach end
+    while (true) {
+      // Lazy create storage object if needed
+      while (this.so_ === null) {
+        if (this.soIndex_ >= this.sov_.length) {
+          return InputSource.eE; // End of all storage objects
+        }
+
+        const spec = this.parsedSysid_.get(this.soIndex_);
+        if (!spec || !spec.storageManager) {
+          this.soIndex_++;
+          continue;
+        }
+
+        // Create storage object if not already created
+        // Port of spec.storageManager->makeStorageObject(...) from line 760-768
+        if (!this.sov_[this.soIndex_]) {
+          const result = { object: null as StorageObject | null };
+          const id = new StringOf<Char>();
+          if (spec.storageManager.makeStorageObject(
+            spec.id,
+            spec.baseId,
+            spec.search,
+            this.mayRewind_,
+            mgr,
+            result
+          )) {
+            this.sov_[this.soIndex_] = result.object;
+          }
+        }
+
+        this.so_ = this.sov_[this.soIndex_];
+        if (this.so_) {
+          this.soIndex_++;
+          break;
+        } else {
+          this.setAccessError();
+          this.soIndex_++;
+        }
+      }
+
+      if (!this.so_) {
+        return InputSource.eE;
+      }
+
+      // Read bytes from storage object
+      const readBuf = new Uint8Array(4096);
+      const result = { bytesRead: 0 };
+      if (!this.so_.read(readBuf, readBuf.length, result) || result.bytesRead === 0) {
+        this.so_ = null;
+        continue; // Try next storage object
+      }
+
+      // Keep data from start_ to cur_ (current token being built)
+      // In the original C++, this is: size_t keepSize = end() - start()
+      // After a read completes, start_ and cur_ might point to data we need to keep
+      const keepSize = this.end_ - this.start_;
+
+      // Create new buffer with kept data + new decoded data
+      const newChars: Char[] = [];
+
+      // Copy kept data first (data from start_ to end_ that's part of current token)
+      for (let j = this.start_; j < this.end_; j++) {
+        newChars.push(this.buffer_[j]);
+      }
+
+      // Track where new data starts (for adjusting cur_ if needed)
+      const newDataStartIdx = newChars.length;
+
+      // Insert RS at start of storage object if needed
+      if (this.insertRS_) {
+        newChars.push(10); // RS = newline (record start)
+        this.insertRS_ = false;
+      }
+
+      // Simple UTF-8 decoding
+      let i = 0;
+      while (i < result.bytesRead) {
+        const byte = readBuf[i];
+        let codePoint: number;
+
+        if (byte < 0x80) {
+          // ASCII
+          codePoint = byte;
+          i++;
+        } else if ((byte & 0xE0) === 0xC0) {
+          // 2-byte sequence
+          if (i + 1 < result.bytesRead) {
+            codePoint = ((byte & 0x1F) << 6) | (readBuf[i + 1] & 0x3F);
+            i += 2;
+          } else {
+            codePoint = this.replacementChar_;
+            i++;
+          }
+        } else if ((byte & 0xF0) === 0xE0) {
+          // 3-byte sequence
+          if (i + 2 < result.bytesRead) {
+            codePoint = ((byte & 0x0F) << 12) | ((readBuf[i + 1] & 0x3F) << 6) | (readBuf[i + 2] & 0x3F);
+            i += 3;
+          } else {
+            codePoint = this.replacementChar_;
+            i++;
+          }
+        } else if ((byte & 0xF8) === 0xF0) {
+          // 4-byte sequence
+          if (i + 3 < result.bytesRead) {
+            codePoint = ((byte & 0x07) << 18) | ((readBuf[i + 1] & 0x3F) << 12) |
+                        ((readBuf[i + 2] & 0x3F) << 6) | (readBuf[i + 3] & 0x3F);
+            i += 4;
+          } else {
+            codePoint = this.replacementChar_;
+            i++;
+          }
+        } else {
+          codePoint = this.replacementChar_;
+          i++;
+        }
+
+        // Handle record separators (simplified: treat LF as RE, insert RS after)
+        if (codePoint === 10) { // LF
+          newChars.push(13); // RE (carriage return in SGML terminology)
+          this.insertRS_ = true;
+        } else if (codePoint === 13) { // CR
+          // Skip CR, will be handled with following LF if CRLF
+          if (i < result.bytesRead && readBuf[i] === 10) {
+            // CRLF - skip the CR, LF will be converted
+            continue;
+          }
+          newChars.push(13); // RE
+          this.insertRS_ = true;
+        } else {
+          if (this.insertRS_) {
+            newChars.push(10); // RS (record start)
+            this.insertRS_ = false;
+          }
+          newChars.push(codePoint);
+        }
+      }
+
+      // Update buffer if we got new characters
+      if (newChars.length > keepSize) {
+        // Replace buffer with new data
+        this.buffer_ = newChars;
+        // Adjust indices: start_ and cur_ relative to old buffer become 0-based
+        // cur_ was at end_ (all consumed), so cur_ - start_ gives offset into kept data
+        const curOffset = this.cur_ - this.start_;
+        this.start_ = 0;
+        this.cur_ = curOffset; // Should equal keepSize (pointing to first new char)
+        this.end_ = newChars.length;
+
+        // Return next character via nextChar() which reads buffer_[cur_++]
+        return this.nextChar();
+      }
+    }
   }
 }
 

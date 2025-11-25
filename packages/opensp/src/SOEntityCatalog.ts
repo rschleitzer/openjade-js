@@ -17,6 +17,7 @@ import { XcharMap } from './XcharMap';
 import { InputSource } from './InputSource';
 import { ConstPtr, Ptr } from './Ptr';
 import { Resource } from './Resource';
+import { ExtendEntityManager, mayNotExist } from './ExtendEntityManager';
 
 // Forward declarations
 export interface Messenger {
@@ -24,36 +25,6 @@ export interface Messenger {
   setNextLocation?(loc: Location): void;
   dispatchMessage?(msg: any): void;
 }
-
-export interface ExtendEntityManager {
-  expandSystemId(
-    str: StringC,
-    loc: Location,
-    isNdata: Boolean,
-    charset: CharsetInfo,
-    lookupPublicId: StringC | null,
-    mgr: Messenger,
-    result: StringC
-  ): Boolean;
-  parseSystemId(
-    str: StringC,
-    charset: CharsetInfo,
-    isNdata: Boolean,
-    def: any,
-    mgr: Messenger,
-    result: any
-  ): Boolean;
-  open(
-    sysid: StringC,
-    docCharset: CharsetInfo,
-    origin: InputSourceOrigin | null,
-    flags: number,
-    mgr: Messenger
-  ): InputSource | null;
-}
-
-// Flag for open()
-export const mayNotExist = 0o1;
 
 // CatalogEntry - entry in an entity catalog
 export class CatalogEntry {
@@ -403,6 +374,17 @@ export class SOEntityCatalog extends EntityCatalog {
     return false;
   }
 
+  // Override base class sgmlDecl method
+  // Port of SOEntityCatalog::sgmlDecl from SOEntityCatalog.cxx
+  override sgmlDecl(
+    charset: CharsetInfo,
+    mgr: Messenger,
+    _sysid: StringC,
+    result: StringC
+  ): Boolean {
+    return this.lookupSgmlDecl(charset, mgr, result);
+  }
+
   // Lookup SGML declaration
   lookupSgmlDecl(
     charset: CharsetInfo,
@@ -521,8 +503,10 @@ export class SOEntityCatalog extends EntityCatalog {
   // Set SGMLDECL entry
   setSgmlDecl(str: StringC, loc: Location): void {
     if (!this.haveSgmlDecl_) {
-      this.sgmlDecl_ = str;
-      this.sgmlDeclLoc_ = loc;
+      // Make a copy of the string since str may be reused by the caller
+      this.sgmlDecl_ = new StringOf<Char>();
+      this.sgmlDecl_.assign(str.data(), str.size());
+      this.sgmlDeclLoc_ = new Location(loc);
       this.sgmlDeclBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
       this.haveSgmlDecl_ = true;
     }
@@ -531,8 +515,10 @@ export class SOEntityCatalog extends EntityCatalog {
   // Set DOCUMENT entry
   setDocument(str: StringC, loc: Location): void {
     if (!this.haveDocument_) {
-      this.document_ = str;
-      this.documentLoc_ = loc;
+      // Make a copy of the string since str may be reused by the caller
+      this.document_ = new StringOf<Char>();
+      this.document_.assign(str.data(), str.size());
+      this.documentLoc_ = new Location(loc);
       this.documentBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
       this.haveDocument_ = true;
     }

@@ -47,7 +47,12 @@ export abstract class Entity extends EntityDecl {
 
   // Reference in a declaration
   declReference(parserState: ParserState, origin: Ptr<EntityOriginImport>): void {
-    // Default implementation - can be overridden
+    // Port of Entity::declReference from Entity.cxx (lines 264-271)
+    this.normalReference(parserState, origin, false);
+    const ps = parserState as any;
+    if (ps.currentMarkup && ps.currentMarkup()) {
+      ps.currentMarkup().addEntityStart(origin);
+    }
   }
 
   // Reference in a declaration subset

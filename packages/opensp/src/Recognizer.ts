@@ -48,9 +48,12 @@ export class Recognizer extends Resource {
       return 0;
     }
 
+    let depth = 0;
     do {
       const tokenChar = inputSource.tokenChar(mgr);
-      pos = pos.next(this.map_.get(tokenChar));
+      const code = this.map_.get(tokenChar);
+      pos = pos.next(code);
+      depth++;
     } while (pos.hasNext());
 
     const blankTrie = pos.blank();

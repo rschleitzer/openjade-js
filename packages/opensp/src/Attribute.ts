@@ -1932,4 +1932,22 @@ export class AttributeList {
   conref(): Boolean {
     return this.conref_;
   }
+
+  // Port of AttributeList::id from Attribute.h (lines 947-950)
+  id(i: number): Boolean {
+    return this.def(i).isId();
+  }
+
+  // Port of AttributeList::idref from Attribute.h (lines 953-956)
+  idref(i: number): Boolean {
+    return this.def(i).isIdref();
+  }
+
+  // Port of AttributeList::idIndex from Attribute.h (lines 936-943)
+  idIndex(): { valid: Boolean; index: number } {
+    if (this.def_.isNull() || this.def_.pointer()!.idIndex() === -1) {
+      return { valid: false, index: 0 };
+    }
+    return { valid: true, index: this.def_.pointer()!.idIndex() };
+  }
 }

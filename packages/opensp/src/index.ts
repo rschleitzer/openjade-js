@@ -326,3 +326,6 @@ export { Undo, UndoTransition, UndoStartTag, UndoEndTag } from './Undo';
 export { ParserState, Phase } from './ParserState';
 export { Parser } from './Parser';
 export { SgmlParser } from './SgmlParser';
+
+// nsgmls tool exports
+export { StringSet, SgmlsEventHandler } from './nsgmls';
