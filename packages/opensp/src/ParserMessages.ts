@@ -433,3 +433,40 @@ export const duplicateCapacity = new MessageType1(MessageType.Severity.warning, 
 export const capacityExceedsTotalcap = new MessageType1(MessageType.Severity.error, null, -1, '%1 exceeds TOTALCAP');
 export const syntaxTextClass = new MessageType1(MessageType.Severity.warning, null, -1, 'text class of public identifier %1 should be SYNTAX');
 export const unknownPublicSyntax = new MessageType1(MessageType.Severity.error, null, -1, 'unknown public syntax %1');
+
+// FUNCTION section messages
+export const duplicateFunctionName = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate function name %1');
+export const msocharRequiresMsichar = new MessageType0(MessageType.Severity.error, null, -1, 'MSOCHAR functions are not allowed without MSICHAR functions');
+export const namingBeforeLcnmstrt = new MessageType1(MessageType.Severity.error, null, -1, '%1 must be NAMING before LCNMSTRT');
+
+// NAMING section messages
+export const nmstrtLength = new MessageType0(MessageType.Severity.error, null, -1, 'lengths of LCNMSTRT and UCNMSTRT must be the same');
+export const nmcharLength = new MessageType0(MessageType.Severity.error, null, -1, 'lengths of LCNMCHAR and UCNMCHAR must be the same');
+export const nmcharNmstrt = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and a name start character');
+export const nmcharLetter = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and a letter');
+export const nmcharDigit = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and a digit');
+export const nmcharRe = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and an RE character');
+export const nmcharRs = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and an RS character');
+export const nmcharSpace = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and a SPACE character');
+export const nmcharSepchar = new MessageType1(MessageType.Severity.error, null, -1, 'character %1 is both a name character and a SEPCHAR');
+export const sdInvalidRange = new MessageType0(MessageType.Severity.error, null, -1, 'first number in range must be less than second');
+export const enrRequired = new MessageType0(MessageType.Severity.warning, null, -1, 'NAMING numbers require ENR support');
+
+// DELIM section messages
+export const duplicateDelimGeneral = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate delimiter %1');
+export const duplicateDelimShortref = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate shortref delimiter %1');
+export const duplicateDelimShortrefSet = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate shortref delimiters %1');
+export const sdEmptyDelimiter = new MessageType0(MessageType.Severity.error, null, -1, 'empty delimiter string');
+export const sdRangeNotSingleChar = new MessageType0(MessageType.Severity.error, null, -1, 'shortref delimiter range must use single characters');
+
+// NAMES section messages
+export const ambiguousReservedName = new MessageType1(MessageType.Severity.error, null, -1, '%1 is ambiguous as a reserved name');
+export const reservedNameSyntax = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a valid name in the declared syntax');
+export const duplicateReservedName = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate reserved name %1');
+
+// QUANTITY section messages
+export const scopeInstanceQuantity = new MessageType1(MessageType.Severity.warning, null, -1, '%1 quantity is less than reference concrete syntax');
+export const entityNameSyntax = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a valid entity name in the declared syntax');
+
+// FEATURES section messages
+export const immednetRequiresEmptynrm = new MessageType0(MessageType.Severity.error, null, -1, 'NETENABL IMMEDNET requires EMPTYNRM YES');
