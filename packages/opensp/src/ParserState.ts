@@ -35,7 +35,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent, SgmlDeclEvent, EndDtdEvent, EndLpdEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -1608,7 +1608,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
       input.willNotSetDocCharset();
     }
 
-    // TODO: Queue an SGML declaration event
+    // Queue an SGML declaration event
+    this.eventHandler().sgmlDecl(
+      new SgmlDeclEvent(this.sdPointer(), this.prologSyntaxPointer())
+    );
 
     // Proceed to prolog phase
     this.compilePrologModes();
@@ -4732,6 +4735,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // End of DOCTYPE declaration parsing
     // Port from parseDecl.cxx
     this.checkDtd(this.defDtd());
+
+    // Fire EndDtdEvent before ending DTD
+    this.eventHandler().endDtd(
+      new EndDtdEvent(this.currentDtdPointer(), this.currentLocation(), this.currentMarkup())
+    );
+
     this.endDtd();
     return true;
   }
@@ -4739,6 +4748,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
   protected parseLinktypeDeclEnd(): boolean {
     // End of LINKTYPE declaration parsing
     // Port from parseDecl.cxx
+
+    // Fire EndLpdEvent before ending LPD
+    if (this.haveDefLpd()) {
+      this.eventHandler().endLpd(
+        new EndLpdEvent(new ConstPtr<Lpd>(this.defLpdPointer().pointer()), this.currentLocation(), this.currentMarkup())
+      );
+    }
+
     this.endLpd();
     return true;
   }
