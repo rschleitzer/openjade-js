@@ -470,3 +470,8 @@ export const entityNameSyntax = new MessageType1(MessageType.Severity.error, nul
 
 // FEATURES section messages
 export const immednetRequiresEmptynrm = new MessageType0(MessageType.Severity.error, null, -1, 'NETENABL IMMEDNET requires EMPTYNRM YES');
+
+// Syntax validation messages
+export const delimiterLength = new MessageType2(MessageType.Severity.error, null, -1, 'delimiter %1 longer than NAMELEN (%2)');
+export const reservedNameLength = new MessageType2(MessageType.Severity.warning, null, -1, 'reserved name %1 longer than NAMELEN (%2)');
+export const ambiguousDocCharacter = new MessageType1(MessageType.Severity.warning, null, -1, 'document character %1 has multiple representations in internal charset');

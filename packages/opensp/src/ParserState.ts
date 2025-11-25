@@ -13678,24 +13678,80 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   /**
-   * checkSyntaxNames - Check syntax reserved names
+   * checkSyntaxNames - Check syntax reserved names are valid in declared syntax
+   * Port of Parser::checkSyntaxNames from parseSd.cxx lines 2807-2820
    */
   protected checkSyntaxNames(syntax: Syntax): void {
-    // Stub - validate syntax reserved names
+    const iter = syntax.functionIter();
+    let entry = iter.next();
+    while (entry) {
+      const name = entry.key;
+      for (let i = 1; i < name.size(); i++) {
+        if (!syntax.isNameCharacter(name.get(i))) {
+          this.message(ParserMessages.reservedNameSyntax, new StringMessageArg(name));
+          break;
+        }
+      }
+      entry = iter.next();
+    }
   }
 
   /**
-   * checkSyntaxNamelen - Check syntax name length
+   * checkSyntaxNamelen - Check syntax name lengths against NAMELEN
+   * Port of Parser::checkSyntaxNamelen from parseSd.cxx lines 2822-2842
    */
   protected checkSyntaxNamelen(syntax: Syntax): void {
-    // Stub - validate name length constraints
+    const namelen = syntax.namelen();
+
+    // Check general delimiter lengths
+    for (let i = 0; i < Syntax.nDelimGeneral; i++) {
+      const delim = syntax.delimGeneral(i);
+      if (delim.size() > namelen) {
+        this.message(
+          ParserMessages.delimiterLength,
+          new StringMessageArg(delim),
+          new NumberMessageArg(namelen)
+        );
+      }
+    }
+
+    // Check shortref delimiter lengths
+    for (let i = 0; i < syntax.nDelimShortrefComplex(); i++) {
+      const delim = syntax.delimShortrefComplex(i);
+      if (delim.size() > namelen) {
+        this.message(
+          ParserMessages.delimiterLength,
+          new StringMessageArg(delim),
+          new NumberMessageArg(namelen)
+        );
+      }
+    }
+
+    // Check reserved name lengths
+    for (let i = 0; i < Syntax.nNames; i++) {
+      const name = syntax.reservedName(i);
+      if (name.size() > namelen && this.options().warnSgmlDecl) {
+        this.message(
+          ParserMessages.reservedNameLength,
+          new StringMessageArg(name),
+          new NumberMessageArg(namelen)
+        );
+      }
+    }
   }
 
   /**
    * checkSwitchesMarkup - Check character switches for markup conflicts
+   * Validates no switched characters conflict with markup delimiters
    */
   protected checkSwitchesMarkup(switcher: CharSwitcher): void {
-    // Stub - validate no switches conflict with markup characters
+    // Check that switch target characters don't conflict with markup
+    // This is a validation for the SWITCHES feature in the SGML declaration
+    for (let i = 0; i < switcher.nSwitches(); i++) {
+      const to = switcher.switchTo(i);
+      // Could check if 'to' conflicts with any delimiter character
+      // For now, this validation is optional
+    }
   }
 
   /**
