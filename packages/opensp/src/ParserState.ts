@@ -3648,7 +3648,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
-  protected doParseStartTag(netEnabling: { value: boolean }): any {
+  protected doParseStartTag(netEnabling: { value: boolean }): StartElementEvent | null {
     // Port of doParseStartTag from parseInstance.cxx lines 422-473
     const markup = this.currentMarkup();
     const input = this.currentInput();
@@ -3732,18 +3732,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     // Create StartElementEvent
-    // TODO: Implement eventAllocator and StartElementEvent
-    // return new StartElementEvent(
-    //   elementType,
-    //   this.currentDtdPointer(),
-    //   attributes,
-    //   this.markupLocation(),
-    //   markup
-    // );
-    return null; // Stub for now
+    return new StartElementEvent(
+      elementType,
+      this.currentDtdPointer(),
+      attributes,
+      this.markupLocation(),
+      markup
+    );
   }
 
-  protected parseEndTag(): any {
+  protected parseEndTag(): EndElementEvent | null {
     // Port of parseEndTag from parseInstance.cxx (lines 1003-1010)
     const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
     if (markup) {
@@ -3753,7 +3751,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     return this.doParseEndTag();
   }
 
-  protected doParseEndTag(): any {
+  protected doParseEndTag(): EndElementEvent | null {
     // Port of doParseEndTag from parseInstance.cxx (lines 1012-1034)
     const markup = this.currentMarkup();
     const input = this.currentInput();
@@ -3792,14 +3790,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     this.parseEndTagClose();
 
-    // TODO: Create EndElementEvent - needs event allocator
-    // return new EndElementEvent(
-    //   elementType,
-    //   this.currentDtdPointer(),
-    //   this.markupLocation(),
-    //   markup
-    // );
-    return null; // Stub for now
+    // Create EndElementEvent
+    return new EndElementEvent(
+      elementType,
+      this.currentDtdPointer(),
+      this.markupLocation(),
+      markup
+    );
   }
 
   protected parseEndTagClose(): void {
