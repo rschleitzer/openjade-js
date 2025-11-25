@@ -215,6 +215,7 @@ export class CdataDeclaredValue extends DeclaredValue {
 }
 
 // TokenizedDeclaredValue
+// Port of TokenizedDeclaredValue class from Attribute.cxx (lines 147-325)
 export class TokenizedDeclaredValue extends DeclaredValue {
   static readonly TokenType = {
     name: 0,
@@ -233,9 +234,29 @@ export class TokenizedDeclaredValue extends DeclaredValue {
     super();
     this.type_ = type;
     this.isList_ = isList;
-    this.initialCategories_ = 0;
-    this.subsequentCategories_ = 0;
-    // TODO: Initialize categories based on type
+    // Port of Attribute.cxx (lines 151-172) - initialize categories based on type
+    switch (type) {
+      case TokenizedDeclaredValue.TokenType.name:
+      case TokenizedDeclaredValue.TokenType.entityName:
+        this.initialCategories_ = Syntax.Category.nameStartCategory;
+        this.subsequentCategories_ = Syntax.Category.nameStartCategory | Syntax.Category.digitCategory | Syntax.Category.otherNameCategory;
+        break;
+      case TokenizedDeclaredValue.TokenType.number:
+        this.initialCategories_ = Syntax.Category.digitCategory;
+        this.subsequentCategories_ = Syntax.Category.digitCategory;
+        break;
+      case TokenizedDeclaredValue.TokenType.nameToken:
+        this.initialCategories_ = Syntax.Category.nameStartCategory | Syntax.Category.digitCategory | Syntax.Category.otherNameCategory;
+        this.subsequentCategories_ = this.initialCategories_;
+        break;
+      case TokenizedDeclaredValue.TokenType.numberToken:
+        this.initialCategories_ = Syntax.Category.digitCategory;
+        this.subsequentCategories_ = Syntax.Category.nameStartCategory | Syntax.Category.digitCategory | Syntax.Category.otherNameCategory;
+        break;
+      default:
+        this.initialCategories_ = 0;
+        this.subsequentCategories_ = 0;
+    }
   }
 
   makeValue(
@@ -253,8 +274,121 @@ export class TokenizedDeclaredValue extends DeclaredValue {
     name: StringC,
     specLength: { value: number }
   ): TokenizedAttributeValue | null {
-    // TODO: Implement tokenization
-    return null;
+    // Port of TokenizedDeclaredValue::makeTokenizedValue from Attribute.cxx (lines 189-287)
+    const spaceIndex = new Vector<number>();
+    const syntax = context.attributeSyntax();
+    const space = syntax.space();
+
+    // Substitute characters according to entity or general substitution table
+    const substTable = this.type_ === TokenizedDeclaredValue.TokenType.entityName
+      ? syntax.entitySubstTable()
+      : syntax.generalSubstTable();
+    if (substTable) {
+      text.subst(substTable, space);
+    }
+
+    const value = text.string();
+    let i = 0;
+    const length = value.size();
+
+    for (;;) {
+      if (i >= length) {
+        // ends with a space (which would have to have been entered
+        // via a numeric character reference)
+        if (context.validate()) {
+          context.message(ParserMessages.attributeValueSyntax);
+        }
+        break;
+      }
+
+      const startIndex = i;
+      if (context.validate()) {
+        const charCat = syntax.charCategory(value.get(i));
+        if (!(charCat & this.initialCategories_)) {
+          context.setNextLocation(text.charLocation(i));
+          const c = value.get(i);
+          const charStr = new StringOf<Char>();
+          charStr.appendChar(c);
+          if (!(charCat & this.subsequentCategories_)) {
+            context.message(ParserMessages.attributeValueChar,
+              new StringMessageArg(charStr),
+              new StringMessageArg(name));
+          } else if (this.initialCategories_ === Syntax.Category.digitCategory) {
+            context.message(ParserMessages.attributeValueNumberToken,
+              new StringMessageArg(charStr),
+              new StringMessageArg(name));
+          } else {
+            context.message(ParserMessages.attributeValueName,
+              new StringMessageArg(charStr),
+              new StringMessageArg(name));
+          }
+        } else {
+          for (++i;
+               i < length && (syntax.charCategory(value.get(i)) & this.subsequentCategories_);
+               i++);
+          if (i < length && value.get(i) !== space) {
+            const c = value.get(i);
+            const charStr = new StringOf<Char>();
+            charStr.appendChar(c);
+            // character value[i] is not allowed anywhere in the value
+            context.setNextLocation(text.charLocation(i));
+            context.message(ParserMessages.attributeValueChar,
+              new StringMessageArg(charStr),
+              new StringMessageArg(name));
+          }
+        }
+      }
+
+      while (i < length && value.get(i) !== space) {
+        i++;
+      }
+
+      if (i - startIndex > syntax.namelen()) {
+        context.setNextLocation(text.charLocation(i));
+        context.message(ParserMessages.nameTokenLength, new NumberMessageArg(syntax.namelen()));
+      }
+
+      if (i === length) {
+        break;
+      }
+
+      if (!this.isList_ && context.validate() && spaceIndex.size() === 0) {
+        context.setNextLocation(text.charLocation(i));
+        context.message(ParserMessages.attributeValueMultiple, new StringMessageArg(name));
+      }
+
+      spaceIndex.push_back(i);
+      i++;
+    }
+
+    const normsep = syntax.normsep();
+    const litlen = syntax.litlen();
+    let normalizedLength = normsep + length;
+
+    // should we count CDATA and SDATA entities here?
+    if (this.isList_) {
+      normalizedLength += 1;
+      // length is now the number of characters in each token in the list
+      // + 1 for each token in the list; so add normsep - 1 for each
+      // token in the list.
+      if (normsep > 0) {
+        normalizedLength += (normsep - 1) * (spaceIndex.size() + 1);
+      } else {
+        normalizedLength -= spaceIndex.size() + 1;
+      }
+    }
+
+    specLength.value += normalizedLength;
+
+    // A length error will already have been given if
+    // length > litlen - normsep.
+    if (litlen >= normsep && length <= litlen - normsep && normalizedLength > litlen) {
+      context.message(ParserMessages.normalizedAttributeValueLength,
+        new NumberMessageArg(litlen),
+        new NumberMessageArg(normalizedLength));
+    }
+
+    return new TokenizedAttributeValue(text, spaceIndex);
   }
 
   tokenized(): Boolean {
