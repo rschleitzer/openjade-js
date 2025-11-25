@@ -61,6 +61,7 @@ export {
 } from './Location';
 export { EntityDecl } from './EntityDecl';
 export { EntityCatalog } from './EntityCatalog';
+export { SOEntityCatalog, SOCatalogManager, CatalogParser, CatalogEntry, CatalogMessages } from './SOEntityCatalog';
 export { EntityManager } from './EntityManager';
 export { Attributed } from './Attributed';
 export { Notation } from './Notation';
@@ -227,6 +228,7 @@ export {
 // Text with location tracking
 export { Text, TextItem, TextIter } from './Text';
 export { SdText, SdTextItem, SdTextIter } from './SdText';
+export { SdFormalError } from './SdFormalError';
 
 // Character mapping utilities
 export { CharMap, CharMapResource } from './CharMap';
