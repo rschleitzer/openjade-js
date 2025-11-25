@@ -2,7 +2,8 @@
 // See the file COPYING for copying permission.
 
 import { Boolean } from './Boolean';
-import { EventHandler, MessageEvent } from './Event';
+import { EventHandler } from './EventHandler';
+import { MessageEvent } from './Event';
 import { Message } from './Message';
 
 export class ErrorCountEventHandler extends EventHandler {

@@ -194,7 +194,7 @@ export {
   SgmlDeclEntityEvent
 } from './Event';
 export { ErrorCountEventHandler } from './ErrorCountEventHandler';
-export { MessageEventHandler, SgmlParser as SgmlParserInterface } from './MessageEventHandler';
+export { MessageEventHandler } from './MessageEventHandler';
 export {
   OutputCharStream,
   EncodeOutputCharStream,
