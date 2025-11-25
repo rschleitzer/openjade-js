@@ -132,6 +132,7 @@ export const conrefNotation = new MessageType0(MessageType.Severity.error, null,
 export const attributeMissing = new MessageType1(MessageType.Severity.error, null, -1, 'non-impliable attribute %1 not specified but OMITTAG NO and SHORTTAG NO');
 export const requiredAttributeMissing = new MessageType1(MessageType.Severity.error, null, -1, 'required attribute %1 not specified');
 export const currentAttributeMissing = new MessageType1(MessageType.Severity.error, null, -1, 'first occurrence of CURRENT attribute %1 not specified');
+export const notFixedValue = new MessageType1(MessageType.Severity.error, null, -1, 'value of fixed attribute %1 not equal to default');
 export const idrefGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of ID references in start-tag must not exceed GRPCNT (%1)');
 export const entityNameGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of entity names in attribute specification list must not exceed GRPCNT (%1)');
 export const invalidEntityAttribute = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a general entity name');

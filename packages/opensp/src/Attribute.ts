@@ -1131,12 +1131,15 @@ export class DefaultAttributeDefinition extends AttributeDefinition {
   }
 
   missingValueWouldMatch(text: Text, context: AttributeContext): Boolean {
-    const valueText = this.value_.pointer()!.text();
+    // Port of DefaultAttributeDefinition::missingValueWouldMatch from Attribute.cxx (lines 811-815)
+    if (!context.mayDefaultAttribute()) {
+      return false;
+    }
+    const valueText = this.value_.pointer()?.text();
     if (!valueText) {
       return false;
     }
-    // TODO: Implement text.fixedEqual()
-    return false;
+    return text.fixedEqual(valueText);
   }
 
   protected buildDesc(desc: AttributeDefinitionDesc): void {
@@ -1160,7 +1163,36 @@ export class FixedAttributeDefinition extends DefaultAttributeDefinition {
   }
 
   protected checkValue(value: AttributeValue | null, context: AttributeContext): AttributeValue | null {
-    // TODO: Check that value equals default
+    // Port of FixedAttributeDefinition::checkValue from Attribute.cxx (lines 840-869)
+    const fixedValue = this.defaultValue(null);
+    if (value && fixedValue && context.validate()) {
+      const textResult = { value: null as Text | null };
+      const strResult = { value: null as StringC | null };
+      const fixedTextResult = { value: null as Text | null };
+      const fixedStrResult = { value: null as StringC | null };
+      const valueType = value.info(textResult, strResult);
+      const fixedType = fixedValue.info(fixedTextResult, fixedStrResult);
+
+      switch (valueType) {
+        case AttributeValue.Type.implied:
+          // CANNOT_HAPPEN()
+          break;
+        case AttributeValue.Type.cdata:
+          if (fixedType === AttributeValue.Type.cdata) {
+            if (textResult.value && fixedTextResult.value && !textResult.value.fixedEqual(fixedTextResult.value)) {
+              context.message(ParserMessages.notFixedValue, new StringMessageArg(this.name()));
+            }
+          }
+          break;
+        case AttributeValue.Type.tokenized:
+          if (fixedType === AttributeValue.Type.tokenized) {
+            if (strResult.value && fixedStrResult.value && !strResult.value.equals(fixedStrResult.value)) {
+              context.message(ParserMessages.notFixedValue, new StringMessageArg(this.name()));
+            }
+          }
+          break;
+      }
+    }
     return value;
   }
 
