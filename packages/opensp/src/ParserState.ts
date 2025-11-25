@@ -12357,65 +12357,85 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   /**
-   * sdParseNaming - Parse NAMING section (stub)
+   * sdParseNaming - Parse NAMING section
+   * Port of Parser::sdParseNaming from parseSd.cxx (lines 1531-1855)
    */
   protected sdParseNaming(sdBuilder: SdBuilder, parm: SdParam): Boolean {
-    // NAMING section parsing - simplified for now
-    // Parse LCNMSTRT, UCNMSTRT, LCNMCHAR, UCNMCHAR, NAMECASE, GENERAL, ENTITY, DELIM
+    // Keys for the two passes (namestart, namechar)
+    const keys = [
+      [Sd.ReservedName.rUCNMSTRT, Sd.ReservedName.rNAMESTRT, Sd.ReservedName.rLCNMCHAR],
+      [Sd.ReservedName.rUCNMCHAR, Sd.ReservedName.rNAMECHAR, Sd.ReservedName.rNAMECASE]
+    ];
 
-    // LCNMSTRT
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rLCNMSTRT),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
-      return false;
+    const nameStartChar = new ISet<Char>();
+    const nameChar = new ISet<Char>();
+
+    // Two passes: first for name start chars, then for name chars
+    for (let isNamechar = 0; isNamechar <= 1; isNamechar++) {
+      const set = isNamechar ? nameChar : nameStartChar;
+
+      // Parse LCNMSTRT/LCNMCHAR literal(s)
+      const lcChars = new String<SyntaxChar>();
+      if (!this.parseNamingLiteral(sdBuilder, parm, lcChars, keys[isNamechar][0])) {
+        return false;
+      }
+
+      // Parse UCNMSTRT/UCNMCHAR literal(s)
+      const ucChars = new String<SyntaxChar>();
+      if (!this.parseNamingLiteral(sdBuilder, parm, ucChars, keys[isNamechar][1])) {
+        return false;
+      }
+
+      // Build substitution map from lowercase to uppercase
+      const minLen = Math.min(lcChars.size(), ucChars.size());
+      for (let i = 0; i < minLen; i++) {
+        const lcChar = this.translateSyntaxNumber(sdBuilder, lcChars.get(i));
+        const ucChar = this.translateSyntaxNumber(sdBuilder, ucChars.get(i));
+        if (lcChar !== null && ucChar !== null) {
+          set.add(lcChar);
+          if (lcChar !== ucChar) {
+            set.add(ucChar);
+            sdBuilder.syntax.pointer()!.addSubst(lcChar, ucChar);
+          }
+        }
+      }
+
+      // Check for length mismatch
+      if (lcChars.size() !== ucChars.size() && !sdBuilder.externalSyntax) {
+        this.message(isNamechar ? ParserMessages.nmcharLength : ParserMessages.nmstrtLength);
+      }
+
+      // Handle optional NAMESTRT/NAMECHAR section if present
+      if (parm.type === SdParam.Type.reservedName + keys[isNamechar][1]) {
+        if (!sdBuilder.externalSyntax && !sdBuilder.enr) {
+          this.message(ParserMessages.enrRequired);
+          sdBuilder.enr = true;
+        }
+        // Parse additional characters
+        if (!this.parseAdditionalNamingChars(sdBuilder, parm, set, keys[isNamechar][2])) {
+          return false;
+        }
+      }
+
+      // Validate name characters don't conflict
+      if (!this.checkNmchars(set, sdBuilder.syntax.pointer()!)) {
+        sdBuilder.valid = false;
+      }
     }
 
-    // UCNMSTRT
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rUCNMSTRT),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
-      return false;
+    // Check for overlap between nameStartChar and nameChar
+    const bad = new ISet<WideChar>();
+    this.intersectCharSets(nameStartChar, nameChar, bad);
+    if (!bad.isEmpty()) {
+      sdBuilder.valid = false;
+      this.message(ParserMessages.nmcharNmstrt, new CharsetMessageArg(bad));
     }
 
-    // LCNMCHAR
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rLCNMCHAR),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
-      return false;
-    }
+    // Add characters to syntax
+    sdBuilder.syntax.pointer()!.addNameStartCharacters(nameStartChar);
+    sdBuilder.syntax.pointer()!.addNameCharacters(nameChar);
 
-    // UCNMCHAR
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rUCNMCHAR),
-      parm
-    )) {
-      return false;
-    }
-    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
-      return false;
-    }
-
-    // NAMECASE
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rNAMECASE),
-      parm
-    )) {
-      return false;
-    }
-
-    // GENERAL YES/NO
+    // NAMECASE GENERAL
     if (!this.parseSdParam(
       new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rGENERAL),
       parm
@@ -12424,8 +12444,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
     if (!this.parseSdParam(
       new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rYES,
-        SdParam.Type.reservedName + Sd.ReservedName.rNO
+        SdParam.Type.reservedName + Sd.ReservedName.rNO,
+        SdParam.Type.reservedName + Sd.ReservedName.rYES
       ),
       parm
     )) {
@@ -12435,7 +12455,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
     );
 
-    // ENTITY YES/NO
+    // NAMECASE ENTITY
     if (!this.parseSdParam(
       new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rENTITY),
       parm
@@ -12444,8 +12464,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
     if (!this.parseSdParam(
       new AllowedSdParams(
-        SdParam.Type.reservedName + Sd.ReservedName.rYES,
-        SdParam.Type.reservedName + Sd.ReservedName.rNO
+        SdParam.Type.reservedName + Sd.ReservedName.rNO,
+        SdParam.Type.reservedName + Sd.ReservedName.rYES
       ),
       parm
     )) {
@@ -12455,14 +12475,193 @@ export class ParserState extends ContentState implements ParserStateInterface {
       parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
     );
 
-    // DELIM
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rDELIM),
-      parm
-    )) {
-      return false;
-    }
     return true;
+  }
+
+  /**
+   * parseNamingLiteral - Parse naming literal(s) until next keyword
+   */
+  protected parseNamingLiteral(
+    sdBuilder: SdBuilder,
+    parm: SdParam,
+    chars: String<SyntaxChar>,
+    nextKeyword: number
+  ): Boolean {
+    enum PrevParam { paramNone, paramNumber, paramOther }
+    let prevParam = PrevParam.paramNone;
+
+    for (;;) {
+      let allowedParams: AllowedSdParams;
+      switch (prevParam) {
+        case PrevParam.paramNone:
+          allowedParams = new AllowedSdParams(SdParam.Type.paramLiteral, SdParam.Type.number);
+          break;
+        case PrevParam.paramNumber:
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number,
+            SdParam.Type.minus
+          );
+          break;
+        case PrevParam.paramOther:
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number
+          );
+          break;
+      }
+
+      if (!this.parseSdParam(allowedParams, parm)) {
+        return false;
+      }
+
+      // Check for ENR requirement
+      if ((parm.type === SdParam.Type.paramLiteral && prevParam !== PrevParam.paramNone) ||
+          parm.type === SdParam.Type.number) {
+        if (!sdBuilder.externalSyntax && !sdBuilder.enr) {
+          this.message(ParserMessages.enrRequired);
+          sdBuilder.enr = true;
+        }
+      }
+
+      prevParam = parm.type === SdParam.Type.number ? PrevParam.paramNumber : PrevParam.paramOther;
+
+      if (parm.type === SdParam.Type.minus) {
+        // Handle range
+        if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+          return false;
+        }
+        if (chars.size() > 0 && parm.n < chars.get(chars.size() - 1)) {
+          this.message(ParserMessages.sdInvalidRange);
+        } else if (chars.size() > 0) {
+          // Add range
+          const start = chars.get(chars.size() - 1) + 1;
+          for (let c = start; c <= parm.n; c++) {
+            chars.append([c as SyntaxChar], 1);
+          }
+        }
+      } else {
+        this.sdParamConvertToLiteral(parm);
+        if (parm.type !== SdParam.Type.paramLiteral) {
+          break;
+        }
+        // Append characters
+        for (let i = 0; i < parm.paramLiteralText.size(); i++) {
+          chars.append([parm.paramLiteralText.get(i)], 1);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * parseAdditionalNamingChars - Parse additional NAMESTRT/NAMECHAR characters
+   */
+  protected parseAdditionalNamingChars(
+    sdBuilder: SdBuilder,
+    parm: SdParam,
+    set: ISet<Char>,
+    nextKeyword: number
+  ): Boolean {
+    enum PrevParam { paramNone, paramNumber, paramOther }
+    let prevParam = PrevParam.paramNone;
+
+    for (;;) {
+      let allowedParams: AllowedSdParams;
+      switch (prevParam) {
+        case PrevParam.paramNone:
+          allowedParams = new AllowedSdParams(SdParam.Type.paramLiteral, SdParam.Type.number);
+          break;
+        case PrevParam.paramNumber:
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number,
+            SdParam.Type.minus
+          );
+          break;
+        case PrevParam.paramOther:
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number
+          );
+          break;
+      }
+
+      if (!this.parseSdParam(allowedParams, parm)) {
+        return false;
+      }
+
+      prevParam = parm.type === SdParam.Type.number ? PrevParam.paramNumber : PrevParam.paramOther;
+
+      if (parm.type === SdParam.Type.minus) {
+        // Handle range
+        const prevNumber = parm.n;
+        if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+          return false;
+        }
+        if (parm.n < prevNumber) {
+          this.message(ParserMessages.sdInvalidRange);
+        } else {
+          // Translate and add range
+          for (let c = prevNumber + 1; c <= parm.n; c++) {
+            const trans = this.translateSyntaxNumber(sdBuilder, c);
+            if (trans !== null) {
+              set.add(trans);
+            }
+          }
+        }
+      } else {
+        this.sdParamConvertToLiteral(parm);
+        if (parm.type !== SdParam.Type.paramLiteral) {
+          break;
+        }
+        // Translate and add characters
+        for (let i = 0; i < parm.paramLiteralText.size(); i++) {
+          const trans = this.translateSyntaxNumber(sdBuilder, parm.paramLiteralText.get(i));
+          if (trans !== null) {
+            set.add(trans);
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * intersectCharSets - Find intersection of two character sets
+   */
+  protected intersectCharSets(s1: ISet<Char>, s2: ISet<Char>, inter: ISet<WideChar>): void {
+    const iter1 = new ISetIter<Char>(s1);
+    const iter2 = new ISetIter<Char>(s2);
+    const r1 = { fromMin: 0 as Char, fromMax: 0 as Char };
+    const r2 = { fromMin: 0 as Char, fromMax: 0 as Char };
+
+    if (!iter1.next(r1)) return;
+    if (!iter2.next(r2)) return;
+
+    for (;;) {
+      if (r1.fromMax < r2.fromMin) {
+        if (!iter1.next(r1)) break;
+      } else if (r2.fromMax < r1.fromMin) {
+        if (!iter2.next(r2)) break;
+      } else {
+        // Ranges overlap
+        const min = r1.fromMin > r2.fromMin ? r1.fromMin : r2.fromMin;
+        const max = r1.fromMax < r2.fromMax ? r1.fromMax : r2.fromMax;
+        inter.addRange(min, max);
+        if (r2.fromMax > max) {
+          if (!iter1.next(r1)) break;
+        } else {
+          if (!iter2.next(r2)) break;
+        }
+      }
+    }
   }
 
   /**
