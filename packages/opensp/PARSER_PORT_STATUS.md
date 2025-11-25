@@ -7,11 +7,11 @@ This document summarizes the complete OpenSP SGML parser port from C++ to TypeSc
 - **Compilation**: ✅ **CLEAN** - 0 errors
 - **Tests**: ✅ **PASSING** - All infrastructure tests pass
 - **Total Lines**: ~10,000+ lines of TypeScript
-- **TODOs Remaining**: 113 (down from initial ~200+)
+- **TODOs Remaining**: 107 (down from initial ~200+)
 - **Complete Files**: Event.ts (0 TODOs), Text.ts, Markup.ts, Location.ts, Syntax.ts, and 50+ utility files
 
 ## Latest Session Statistics
-- **ParserState.ts**: 3,981 lines (72 TODOs - down from 81)
+- **ParserState.ts**: 3,981 lines (66 TODOs - down from 81)
 - **Event.ts**: 1,352 lines - **100% COMPLETE** (0 TODOs)
 - **Attribute.ts**: 1,365 lines (15 TODOs - down from 16)
 - **Entity.ts**: 674 lines (10 TODOs - down from 14)

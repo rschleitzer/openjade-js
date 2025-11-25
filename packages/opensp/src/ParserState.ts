@@ -13,7 +13,7 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent } from './Event';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -1665,7 +1665,9 @@ export class ParserState extends ContentState implements ParserStateInterface {
             return;
           }
           // TODO: Check specialParseInputLevel()
-          // TODO: Fire entityEnd event if eventsWanted().wantInstanceMarkup()
+          if (this.eventsWanted().wantInstanceMarkup()) {
+            this.eventHandler().entityEnd(new EntityEndEvent(this.currentLocation()));
+          }
           if (this.afterDocumentElement()) {
             this.message(ParserMessages.afterDocumentElementEntityEnd);
           }
@@ -1824,27 +1826,47 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenRe:
           // Record end
-          // TODO: acceptPcdata(currentLocation())
+          this.acceptPcdata(this.currentLocation());
           this.queueRe(this.currentLocation());
           break;
 
         case TokenEnum.tokenRs:
           // Record start
-          // TODO: acceptPcdata(currentLocation())
+          this.acceptPcdata(this.currentLocation());
           this.noteRs();
-          // TODO: Fire ignoredRs event if eventsWanted().wantInstanceMarkup()
+          if (this.eventsWanted().wantInstanceMarkup()) {
+            this.eventHandler().ignoredRs(
+              new IgnoredRsEvent(this.currentChar(), this.currentLocation())
+            );
+          }
           break;
 
         case TokenEnum.tokenS:
           // Separator (whitespace)
           this.extendContentS();
-          // TODO: Fire sSep event if eventsWanted().wantInstanceMarkup()
+          if (this.eventsWanted().wantInstanceMarkup()) {
+            const input = this.currentInput();
+            if (input) {
+              const data = new Uint32Array(input.currentTokenStart());
+              this.eventHandler().sSep(
+                new SSepEvent(data, input.currentTokenLength(), this.currentLocation(), false)
+              );
+            }
+          }
           break;
 
         case TokenEnum.tokenIgnoredChar:
           // Character in ignored marked section
           this.extendData();
-          // TODO: Fire ignoredChars event if eventsWanted().wantMarkedSections()
+          if (this.eventsWanted().wantMarkedSections()) {
+            const input = this.currentInput();
+            if (input) {
+              const data = new Uint32Array(input.currentTokenStart());
+              this.eventHandler().ignoredChars(
+                new IgnoredCharsEvent(data, input.currentTokenLength(), this.currentLocation(), false)
+              );
+            }
+          }
           break;
 
         case TokenEnum.tokenUnrecognized:
