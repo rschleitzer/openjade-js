@@ -35,7 +35,9 @@ import { EntityDecl } from './EntityDecl';
 import { EntityOrigin } from './Location';
 import { EntityCatalog } from './EntityCatalog';
 import { EntityManager } from './EntityManager';
-import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent, SgmlDeclEvent, EndDtdEvent, EndLpdEvent } from './Event';
+import { Event, MessageEvent, EntityDefaultedEvent, CommentDeclEvent, SSepEvent, ImmediateDataEvent, IgnoredRsEvent, ImmediatePiEvent, IgnoredCharsEvent, EntityEndEvent, StartElementEvent, EndElementEvent, IgnoredMarkupEvent, MarkedSectionEvent, MarkedSectionStartEvent, MarkedSectionEndEvent, ElementDeclEvent, NotationDeclEvent, EntityDeclEvent, AttlistDeclEvent, AttlistNotationDeclEvent, LinkAttlistDeclEvent, ShortrefDeclEvent, UsemapEvent, LinkDeclEvent, IdLinkDeclEvent, UselinkEvent, StartDtdEvent, StartLpdEvent, NonSgmlCharEvent, EndPrologEvent, SgmlDeclEvent, EndDtdEvent, EndLpdEvent, SgmlDeclEntityEvent } from './Event';
+import { CharsetRegistry } from './CharsetRegistry';
+import { CharsetDecl } from './CharsetDecl';
 import { EventQueue, Pass1EventHandler } from './EventQueue';
 import { Id } from './Id';
 import { InputSource } from './InputSource';
@@ -56,6 +58,7 @@ import { Ptr, ConstPtr } from './Ptr';
 import { Recognizer } from './Recognizer';
 import { Sd } from './Sd';
 import { SdParam, AllowedSdParams, AllowedSdParamsMessageArg } from './SdParam';
+import { SdBuilder, CharsetMessageArg, CharSwitcher } from './SdBuilder';
 import { Syntax } from './Syntax';
 import { NCVector } from './NCVector';
 import { Owner } from './Owner';
@@ -93,7 +96,7 @@ import { Param, AllowedParams, AllowedParamsMessageArg } from './Param';
 import { ModelGroup, PcdataToken, ElementToken, DataTagElementToken, DataTagGroup, ContentToken, OrModelGroup, SeqModelGroup, AndModelGroup, CompiledModelGroup, ContentModelAmbiguity, LeafContentToken, MatchState } from './ContentToken';
 import { NameToken } from './NameToken';
 import { CharsetInfo as CharsetInfoClass } from './CharsetInfo';
-import { UnivCharsetDesc } from './UnivCharsetDesc';
+import { UnivCharsetDesc, UnivCharsetDescIter } from './UnivCharsetDesc';
 import { WideChar, SyntaxChar, UnivChar } from './types';
 
 // Local CharsetInfo interface matching what we need for SGML declaration parsing
@@ -103,50 +106,6 @@ interface CharsetInfo {
   univToDesc(univChar: UnivChar, result: { c: WideChar; set: ISet<WideChar> }): number;
   descToUniv(c: WideChar, result: { univ: UnivChar }): Boolean;
   getDescSet(set: ISet<Char>): void;
-}
-
-// CharSwitcher - handles character switching in syntax
-class CharSwitcher {
-  private switchUsed_: PackedBoolean[];
-  private switches_: WideChar[];
-
-  constructor() {
-    this.switchUsed_ = [];
-    this.switches_ = [];
-  }
-
-  addSwitch(from: WideChar, to: WideChar): void {
-    this.switches_.push(from);
-    this.switches_.push(to);
-    this.switchUsed_.push(false);
-  }
-
-  subst(c: WideChar): SyntaxChar {
-    // Apply character switches
-    for (let i = 0; i < this.switches_.length; i += 2) {
-      if (this.switches_[i] === c) {
-        this.switchUsed_[i / 2] = true;
-        return this.switches_[i + 1];
-      }
-    }
-    return c;
-  }
-
-  nSwitches(): number {
-    return this.switchUsed_.length;
-  }
-
-  switchUsed(i: number): boolean {
-    return this.switchUsed_[i];
-  }
-
-  switchFrom(i: number): WideChar {
-    return this.switches_[i * 2];
-  }
-
-  switchTo(i: number): WideChar {
-    return this.switches_[i * 2 + 1];
-  }
 }
 
 // StandardSyntaxSpec - specification for standard syntaxes
@@ -11492,6 +11451,1091 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   // Maximum syntax character number (used in parseSdParamLiteral)
   protected syntaxCharMax_: number = 0x7FFFFFFF;
+
+  /**
+   * charNameToUniv - Convert a character name to its universal code
+   * Port of Parser::charNameToUniv from parseSd.cxx
+   */
+  protected charNameToUniv(sd: Sd, name: StringC): UnivChar {
+    const univRef: { value: UnivChar } = { value: 0 };
+    if (this.entityCatalog().lookupChar(name, sd.internalCharset(), this.messenger(), univRef)) {
+      return univRef.value;
+    }
+    return sd.nameToUniv(name);
+  }
+
+  /**
+   * referencePublic - Look up and push an entity by public identifier
+   * Port of Parser::referencePublic from parseSd.cxx
+   */
+  protected referencePublic(id: PublicId, entityType: number, givenError: { value: Boolean }): Boolean {
+    givenError.value = false;
+    const sysid = new String<Char>();
+    if (this.entityCatalog().lookupPublic(
+      id.string(),
+      this.sd().internalCharset(),
+      this.messenger(),
+      sysid
+    )) {
+      const loc = this.currentLocation();
+      this.eventHandler().sgmlDeclEntity(new SgmlDeclEntityEvent(
+        id,
+        entityType,
+        sysid,
+        loc
+      ));
+      const origin = EntityOrigin.makeEntity(
+        this.internalAllocator(),
+        new ConstPtr<Entity>(null),
+        loc
+      );
+      const originPtr = new Ptr<EntityOrigin>(origin);
+      if (this.currentMarkup()) {
+        this.currentMarkup()!.addEntityStart(originPtr);
+      }
+      const inputSource = this.entityManager().open(
+        sysid,
+        this.sd().docCharset(),
+        origin,
+        0,
+        this.messenger()
+      );
+      if (!inputSource) {
+        givenError.value = true;
+        return false;
+      }
+      this.pushInput(inputSource);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * sdParseCharset - Parse CHARSET section of SGML declaration
+   * Port of Parser::sdParseCharset from parseSd.cxx
+   */
+  protected sdParseCharset(
+    sdBuilder: SdBuilder,
+    parm: SdParam,
+    isDocument: Boolean,
+    decl: CharsetDecl,
+    desc: UnivCharsetDesc
+  ): Boolean {
+    decl.clear();
+    const multiplyDeclared = new ISet<WideChar>();
+    // This is for checking whether the syntax reference character set
+    // is ISO 646 when SCOPE is INSTANCE.
+    let maybeISO646 = true;
+
+    do {
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
+        return false;
+      }
+      const baseDesc = new UnivCharsetDesc();
+      const id = new PublicId();
+      let found = false;
+      const textClassRef: { value: number } = { value: 0 };
+      const err: { value: MessageType1 | null } = { value: null };
+      const err1: { value: MessageType1 | null } = { value: null };
+
+      if (id.init(parm.literalText, this.sd().internalCharset(), this.syntax().space(), err, err1) !== PublicId.Type.fpi) {
+        sdBuilder.addFormalError(
+          this.currentLocation(),
+          err.value!,
+          id.string()
+        );
+      } else if (id.getTextClass(textClassRef) && textClassRef.value !== PublicId.TextClass.CHARSET) {
+        sdBuilder.addFormalError(
+          this.currentLocation(),
+          ParserMessages.basesetTextClass,
+          id.string()
+        );
+      }
+
+      const givenError: { value: Boolean } = { value: false };
+      if (this.referencePublic(id, PublicId.TextClass.CHARSET, givenError)) {
+        found = this.sdParseExternalCharset(sdBuilder.sd.pointer()!, baseDesc);
+      } else if (!givenError.value) {
+        found = false;
+        const ownerTypeRef: { value: number } = { value: 0 };
+        if (id.getOwnerType(ownerTypeRef) && ownerTypeRef.value === PublicId.OwnerType.ISO) {
+          const sequence = new String<Char>();
+          if (id.getDesignatingSequence(sequence)) {
+            const number = CharsetRegistry.getRegistrationNumber(sequence, this.sd().internalCharset());
+            if (number !== CharsetRegistry.ISORegistrationNumber.UNREGISTERED) {
+              const iter = CharsetRegistry.makeIter(number);
+              if (iter) {
+                found = true;
+                const min: { value: WideChar } = { value: 0 };
+                const max: { value: WideChar } = { value: 0 };
+                const univ: { value: UnivChar } = { value: 0 };
+                while (iter.next(min, max, univ)) {
+                  baseDesc.addRange(min.value, max.value, univ.value);
+                }
+              }
+            }
+          }
+        }
+        if (!found) {
+          this.message(ParserMessages.unknownBaseset, new StringMessageArg(id.string()));
+        }
+      } else {
+        found = false;
+      }
+
+      if (!found) {
+        maybeISO646 = false;
+      }
+      decl.addSection(id);
+
+      if (!this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rDESCSET),
+        parm
+      )) {
+        return false;
+      }
+
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        return false;
+      }
+
+      do {
+        const min: WideChar = parm.n;
+        if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+          return false;
+        }
+        const count = parm.n;
+        let adjCount: number;
+
+        if (this.options().warnSgmlDecl && count === 0) {
+          this.message(ParserMessages.zeroNumberOfCharacters);
+        }
+        decl.rangeDeclared(min, count, multiplyDeclared);
+
+        if (isDocument && count > 0 && (min > this.charMax_ || count - 1 > this.charMax_ - min)) {
+          this.message(ParserMessages.documentCharMax, new NumberMessageArg(this.charMax_));
+          adjCount = min > this.charMax_ ? 0 : 1 + (this.charMax_ - min);
+          maybeISO646 = false;
+        } else {
+          adjCount = count;
+        }
+
+        if (!this.parseSdParam(
+          new AllowedSdParams(
+            SdParam.Type.number,
+            SdParam.Type.minimumLiteral,
+            SdParam.Type.reservedName + Sd.ReservedName.rUNUSED
+          ),
+          parm
+        )) {
+          return false;
+        }
+
+        switch (parm.type) {
+          case SdParam.Type.number:
+            decl.addRange(min, count, parm.n);
+            if (found && adjCount > 0) {
+              const baseMissing = new ISet<WideChar>();
+              desc.addBaseRange(baseDesc, min, min + (adjCount - 1), parm.n, baseMissing);
+              if (!baseMissing.isEmpty() && this.options().warnSgmlDecl) {
+                this.message(ParserMessages.basesetCharsMissing, new CharsetMessageArg(baseMissing));
+              }
+            }
+            break;
+
+          case SdParam.Type.reservedName + Sd.ReservedName.rUNUSED:
+            decl.addRange(min, count);
+            break;
+
+          case SdParam.Type.minimumLiteral: {
+            const c = this.charNameToUniv(sdBuilder.sd.pointer()!, parm.literalText.string());
+            let localAdjCount = adjCount;
+            if (localAdjCount > 256) {
+              this.message(ParserMessages.tooManyCharsMinimumLiteral);
+              localAdjCount = 256;
+            }
+            for (let i = 0; i < localAdjCount; i++) {
+              desc.addRange(min + i, min + i, c);
+            }
+            maybeISO646 = false;
+            decl.addRange(min, count, parm.literalText.string());
+            break;
+          }
+
+          default:
+            CANNOT_HAPPEN();
+        }
+
+        const follow = isDocument
+          ? SdParam.Type.reservedName + Sd.ReservedName.rCAPACITY
+          : SdParam.Type.reservedName + Sd.ReservedName.rFUNCTION;
+
+        if (!this.parseSdParam(
+          new AllowedSdParams(
+            SdParam.Type.number,
+            SdParam.Type.reservedName + Sd.ReservedName.rBASESET,
+            follow
+          ),
+          parm
+        )) {
+          return false;
+        }
+      } while (parm.type === SdParam.Type.number);
+    } while (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rBASESET);
+
+    if (!multiplyDeclared.isEmpty()) {
+      this.message(ParserMessages.duplicateCharNumbers, new CharsetMessageArg(multiplyDeclared));
+    }
+
+    const declaredSet = decl.declaredSet();
+    const iter = new ISetIter<WideChar>(declaredSet);
+    const iterResult: { fromMin: WideChar; fromMax: WideChar } = { fromMin: 0, fromMax: 0 };
+
+    if (iter.next(iterResult)) {
+      const holes = new ISet<WideChar>();
+      let lastMax = iterResult.fromMax;
+      while (iter.next(iterResult)) {
+        if (iterResult.fromMin - lastMax > 1) {
+          holes.addRange(lastMax + 1, iterResult.fromMin - 1);
+        }
+        lastMax = iterResult.fromMax;
+      }
+      if (!holes.isEmpty()) {
+        this.message(ParserMessages.codeSetHoles, new CharsetMessageArg(holes));
+      }
+    }
+
+    if (!isDocument && sdBuilder.sd.pointer()!.scopeInstance()) {
+      // If scope is INSTANCE, syntax reference character set
+      // must be same as reference.
+      const descIter = new UnivCharsetDescIter(desc);
+      const descMin: { value: WideChar } = { value: 0 };
+      const descMax: { value: WideChar } = { value: 0 };
+      const univMin: { value: UnivChar } = { value: 0 };
+      let nextDescMin = 0;
+
+      while (maybeISO646) {
+        if (!descIter.next(descMin, descMax, univMin)) {
+          if (nextDescMin !== 128) {
+            maybeISO646 = false;
+          }
+          break;
+        }
+        if (descMin.value !== nextDescMin || univMin.value !== descMin.value) {
+          maybeISO646 = false;
+        }
+        nextDescMin = descMax.value + 1;
+      }
+      if (!maybeISO646) {
+        this.message(ParserMessages.scopeInstanceSyntaxCharset);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * sdParseExternalCharset - Parse external charset file
+   * Port of Parser::sdParseExternalCharset from parseSd.cxx
+   */
+  protected sdParseExternalCharset(sd: Sd, desc: UnivCharsetDesc): Boolean {
+    const parm = new SdParam();
+    for (;;) {
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number, SdParam.Type.eE), parm)) {
+        break;
+      }
+      if (parm.type === SdParam.Type.eE) {
+        return true;
+      }
+      const min: WideChar = parm.n;
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        break;
+      }
+      const count = parm.n;
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.number,
+          SdParam.Type.minimumLiteral,
+          SdParam.Type.reservedName + Sd.ReservedName.rUNUSED
+        ),
+        parm
+      )) {
+        break;
+      }
+      if (parm.type === SdParam.Type.number) {
+        if (count > 0) {
+          desc.addRange(min, min + (count - 1), parm.n);
+        }
+      } else if (parm.type === SdParam.Type.minimumLiteral) {
+        const c = this.charNameToUniv(sd, parm.literalText.string());
+        let adjCount = count;
+        if (adjCount > 256) {
+          this.message(ParserMessages.tooManyCharsMinimumLiteral);
+          adjCount = 256;
+        }
+        for (let i = 0; i < adjCount; i++) {
+          desc.addRange(min + i, min + i, c);
+        }
+      }
+    }
+    this.popInputStack();
+    return false;
+  }
+
+  /**
+   * sdParseCapacity - Parse CAPACITY section of SGML declaration
+   * Port of Parser::sdParseCapacity from parseSd.cxx
+   */
+  protected sdParseCapacity(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    const allowedParams = sdBuilder.www
+      ? new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rNONE,
+          SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC,
+          SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF
+        )
+      : new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC,
+          SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF
+        );
+
+    if (!this.parseSdParam(allowedParams, parm)) {
+      return false;
+    }
+
+    let pushed = false;
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNONE) {
+      return this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSCOPE),
+        parm
+      );
+    }
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC) {
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
+        return false;
+      }
+      const id = new PublicId();
+      const textClassRef: { value: number } = { value: 0 };
+      const err: { value: MessageType1 | null } = { value: null };
+      const err1: { value: MessageType1 | null } = { value: null };
+
+      if (id.init(parm.literalText, this.sd().internalCharset(), this.syntax().space(), err, err1) !== PublicId.Type.fpi) {
+        sdBuilder.addFormalError(this.currentLocation(), err.value!, id.string());
+      } else if (id.getTextClass(textClassRef) && textClassRef.value !== PublicId.TextClass.CAPACITY) {
+        sdBuilder.addFormalError(this.currentLocation(), ParserMessages.capacityTextClass, id.string());
+      }
+
+      const str = id.string();
+      const refCapacity1 = this.sd().execToInternal('ISO 8879-1986//CAPACITY Reference//EN');
+      const refCapacity2 = this.sd().execToInternal('ISO 8879:1986//CAPACITY Reference//EN');
+
+      if (!str.equals(refCapacity1) && !str.equals(refCapacity2)) {
+        const givenError: { value: Boolean } = { value: false };
+        if (this.referencePublic(id, PublicId.TextClass.CAPACITY, givenError)) {
+          pushed = true;
+        } else if (!givenError.value) {
+          this.message(ParserMessages.unknownCapacitySet, new StringMessageArg(str));
+        }
+      }
+
+      if (!pushed) {
+        return this.parseSdParam(
+          new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSCOPE),
+          parm
+        );
+      }
+    }
+
+    const capacitySpecified: PackedBoolean[] = [];
+    for (let i = 0; i < Sd.nCapacity; i++) {
+      capacitySpecified.push(false);
+    }
+
+    const finalParam = pushed
+      ? SdParam.Type.eE
+      : SdParam.Type.reservedName + Sd.ReservedName.rSCOPE;
+
+    const capacityAllow = sdBuilder.www
+      ? new AllowedSdParams(SdParam.Type.capacityName, finalParam)
+      : new AllowedSdParams(SdParam.Type.capacityName);
+
+    if (!this.parseSdParam(capacityAllow, parm)) {
+      return false;
+    }
+
+    while (parm.type === SdParam.Type.capacityName) {
+      const capacityIndex = parm.capacityIndex;
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        return false;
+      }
+
+      if (!capacitySpecified[capacityIndex]) {
+        sdBuilder.sd.pointer()!.setCapacity(capacityIndex, parm.n);
+        capacitySpecified[capacityIndex] = true;
+      } else if (this.options().warnSgmlDecl) {
+        this.message(
+          ParserMessages.duplicateCapacity,
+          new StringMessageArg(this.sd().capacityName(capacityIndex))
+        );
+      }
+
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.capacityName, finalParam), parm)) {
+        return false;
+      }
+    }
+
+    const totalcap = sdBuilder.sd.pointer()!.capacity(0);
+    for (let i = 1; i < Sd.nCapacity; i++) {
+      if (sdBuilder.sd.pointer()!.capacity(i) > totalcap) {
+        this.message(
+          ParserMessages.capacityExceedsTotalcap,
+          new StringMessageArg(this.sd().capacityName(i))
+        );
+      }
+    }
+
+    if (pushed) {
+      return this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSCOPE),
+        parm
+      );
+    }
+    return true;
+  }
+
+  /**
+   * sdParseScope - Parse SCOPE section of SGML declaration
+   * Port of Parser::sdParseScope from parseSd.cxx
+   */
+  protected sdParseScope(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rINSTANCE,
+        SdParam.Type.reservedName + Sd.ReservedName.rDOCUMENT
+      ),
+      parm
+    )) {
+      return false;
+    }
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rINSTANCE) {
+      sdBuilder.sd.pointer()!.setScopeInstance();
+    }
+    return true;
+  }
+
+  // Maximum character value for document charset
+  protected charMax_: Char = 0x7FFFFFFF;
+
+  /**
+   * sdParseSyntax - Parse SYNTAX section of SGML declaration
+   * Port of Parser::sdParseSyntax from parseSd.cxx
+   */
+  protected sdParseSyntax(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSYNTAX),
+      parm
+    )) {
+      return false;
+    }
+
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rSHUNCHAR,
+        SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC
+      ),
+      parm
+    )) {
+      return false;
+    }
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC) {
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
+        return false;
+      }
+      const id = new PublicId();
+      const err: { value: MessageType1 | null } = { value: null };
+      const err1: { value: MessageType1 | null } = { value: null };
+      const textClassRef: { value: number } = { value: 0 };
+
+      if (id.init(parm.literalText, this.sd().internalCharset(), this.syntax().space(), err, err1) !== PublicId.Type.fpi) {
+        sdBuilder.addFormalError(this.currentLocation(), err.value!, id.string());
+      } else if (id.getTextClass(textClassRef) && textClassRef.value !== PublicId.TextClass.SYNTAX) {
+        sdBuilder.addFormalError(this.currentLocation(), ParserMessages.syntaxTextClass, id.string());
+      }
+
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rFEATURES,
+          SdParam.Type.reservedName + Sd.ReservedName.rSWITCHES
+        ),
+        parm
+      )) {
+        return false;
+      }
+
+      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rSWITCHES) {
+        if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+          return false;
+        }
+        for (;;) {
+          const c: SyntaxChar = parm.n;
+          if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+            return false;
+          }
+          sdBuilder.switcher.addSwitch(c, parm.n);
+          if (!this.parseSdParam(
+            new AllowedSdParams(
+              SdParam.Type.number,
+              SdParam.Type.reservedName + Sd.ReservedName.rFEATURES
+            ),
+            parm
+          )) {
+            return false;
+          }
+          if (parm.type !== SdParam.Type.number) {
+            break;
+          }
+        }
+      }
+
+      const spec = this.lookupSyntax(id);
+      if (spec) {
+        if (!this.setStandardSyntax(
+          sdBuilder.syntax.pointer()!,
+          spec,
+          sdBuilder.sd.pointer()!.internalCharset(),
+          sdBuilder.switcher,
+          sdBuilder.www
+        )) {
+          sdBuilder.valid = false;
+        }
+      } else {
+        const givenError: { value: Boolean } = { value: false };
+        if (this.referencePublic(id, PublicId.TextClass.SYNTAX, givenError)) {
+          sdBuilder.externalSyntax = true;
+          const parm2 = new SdParam();
+          if (!this.parseSdParam(
+            new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSHUNCHAR),
+            parm2
+          )) {
+            return false;
+          }
+          if (!this.sdParseExplicitSyntax(sdBuilder, parm2)) {
+            return false;
+          }
+        } else {
+          if (!givenError.value) {
+            this.message(ParserMessages.unknownPublicSyntax, new StringMessageArg(id.string()));
+          }
+          sdBuilder.valid = false;
+        }
+      }
+    } else {
+      if (!this.sdParseExplicitSyntax(sdBuilder, parm)) {
+        return false;
+      }
+    }
+
+    if (!sdBuilder.sd.pointer()!.scopeInstance()) {
+      // we know the significant chars now
+      const invalidSgmlChar = new ISet<WideChar>();
+      sdBuilder.syntax.pointer()!.checkSgmlChar(sdBuilder.sd.pointer()! as any, null, true, invalidSgmlChar);
+      if (!invalidSgmlChar.isEmpty()) {
+        this.message(ParserMessages.invalidSgmlChar, new CharsetMessageArg(invalidSgmlChar));
+      }
+    }
+    this.checkSyntaxNames(sdBuilder.syntax.pointer()!);
+    this.checkSyntaxNamelen(sdBuilder.syntax.pointer()!);
+    this.checkSwitchesMarkup(sdBuilder.switcher);
+    return true;
+  }
+
+  /**
+   * lookupSyntax - Look up a standard syntax by public identifier
+   * Port of Parser::lookupSyntax from parseSd.cxx
+   */
+  protected lookupSyntax(id: PublicId): StandardSyntaxSpec | null {
+    const ownerTypeRef: { value: number } = { value: 0 };
+    if (!id.getOwnerType(ownerTypeRef) || ownerTypeRef.value !== PublicId.OwnerType.ISO) {
+      return null;
+    }
+    const str = new String<Char>();
+    if (!id.getOwner(str)) {
+      return null;
+    }
+    const iso1 = this.sd().execToInternal('ISO 8879:1986');
+    const iso2 = this.sd().execToInternal('ISO 8879-1986');
+    if (!str.equals(iso1) && !str.equals(iso2)) {
+      return null;
+    }
+    const textClassRef: { value: number } = { value: 0 };
+    if (!id.getTextClass(textClassRef) || textClassRef.value !== PublicId.TextClass.SYNTAX) {
+      return null;
+    }
+    const desc = new String<Char>();
+    if (!id.getDescription(desc)) {
+      return null;
+    }
+    const refStr = this.sd().execToInternal('Reference');
+    if (desc.equals(refStr)) {
+      return refSyntax;
+    }
+    const coreStr = this.sd().execToInternal('Core');
+    if (desc.equals(coreStr)) {
+      return coreSyntax;
+    }
+    return null;
+  }
+
+  /**
+   * sdParseExplicitSyntax - Parse explicit syntax sections
+   * Port of Parser::sdParseExplicitSyntax from parseSd.cxx
+   */
+  protected sdParseExplicitSyntax(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // Call the sub-parsers in sequence
+    if (!this.sdParseShunchar(sdBuilder, parm)) return false;
+    if (!this.sdParseSyntaxCharset(sdBuilder, parm)) return false;
+    if (!this.sdParseFunction(sdBuilder, parm)) return false;
+    if (!this.sdParseNaming(sdBuilder, parm)) return false;
+    if (!this.sdParseDelim(sdBuilder, parm)) return false;
+    if (!this.sdParseNames(sdBuilder, parm)) return false;
+    if (!this.sdParseQuantity(sdBuilder, parm)) return false;
+    return true;
+  }
+
+  /**
+   * sdParseShunchar - Parse SHUNCHAR section
+   * Port of Parser::sdParseShunchar from parseSd.cxx
+   */
+  protected sdParseShunchar(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rNONE,
+        SdParam.Type.reservedName + Sd.ReservedName.rCONTROLS,
+        SdParam.Type.number
+      ),
+      parm
+    )) {
+      return false;
+    }
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNONE) {
+      return this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rBASESET),
+        parm
+      );
+    }
+
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rCONTROLS) {
+      sdBuilder.syntax.pointer()!.setShuncharControls();
+    } else {
+      if (parm.n <= this.charMax_) {
+        sdBuilder.syntax.pointer()!.addShunchar(parm.n);
+      }
+    }
+
+    for (;;) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rBASESET,
+          SdParam.Type.number
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type !== SdParam.Type.number) {
+        break;
+      }
+      if (parm.n <= this.charMax_) {
+        sdBuilder.syntax.pointer()!.addShunchar(parm.n);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * sdParseSyntaxCharset - Parse syntax CHARSET section
+   * Port of Parser::sdParseSyntaxCharset from parseSd.cxx
+   */
+  protected sdParseSyntaxCharset(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    const desc = new UnivCharsetDesc();
+    if (!this.sdParseCharset(sdBuilder, parm, false, sdBuilder.syntaxCharsetDecl, desc)) {
+      return false;
+    }
+    sdBuilder.syntaxCharset.set(desc);
+    this.checkSwitches(sdBuilder.switcher, sdBuilder.syntaxCharset);
+    for (let i = 0; i < sdBuilder.switcher.nSwitches(); i++) {
+      if (!sdBuilder.syntaxCharsetDecl.charDeclared(sdBuilder.switcher.switchTo(i))) {
+        this.message(
+          ParserMessages.switchNotInCharset,
+          new NumberMessageArg(sdBuilder.switcher.switchTo(i))
+        );
+      }
+    }
+    const missing = new ISet<WideChar>();
+    this.findMissingMinimum(sdBuilder.syntaxCharset, missing);
+    if (!missing.isEmpty()) {
+      this.message(ParserMessages.missingMinimumChars, new CharsetMessageArg(missing));
+    }
+    return true;
+  }
+
+  /**
+   * sdParseFunction - Parse FUNCTION section (stub)
+   * Port of Parser::sdParseFunction from parseSd.cxx
+   */
+  protected sdParseFunction(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // TODO: Implement FUNCTION parsing
+    // For now, skip to NAMING by parsing expected tokens
+    const standardNames = [
+      Sd.ReservedName.rRE,
+      Sd.ReservedName.rRS,
+      Sd.ReservedName.rSPACE
+    ];
+
+    for (const name of standardNames) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.reservedName + name),
+        parm
+      )) {
+        return false;
+      }
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        return false;
+      }
+      // translateSyntax and set function
+      const c = this.translateSyntaxNumber(sdBuilder, parm.n);
+      if (c !== null && this.checkNotFunction(sdBuilder.syntax.pointer()!, c)) {
+        sdBuilder.syntax.pointer()!.setStandardFunction(
+          name === Sd.ReservedName.rRE ? Syntax.StandardFunction.fRE :
+          name === Sd.ReservedName.rRS ? Syntax.StandardFunction.fRS :
+          Syntax.StandardFunction.fSPACE,
+          c
+        );
+      } else {
+        sdBuilder.valid = false;
+      }
+    }
+
+    // Parse additional functions until NAMING
+    for (;;) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.name,
+          SdParam.Type.reservedName + Sd.ReservedName.rNAMING
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNAMING) {
+        break;
+      }
+      // Parse function class and value
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.reservedName + Sd.ReservedName.rFUNCHAR,
+          SdParam.Type.reservedName + Sd.ReservedName.rMSICHAR,
+          SdParam.Type.reservedName + Sd.ReservedName.rMSOCHAR,
+          SdParam.Type.reservedName + Sd.ReservedName.rMSSCHAR,
+          SdParam.Type.reservedName + Sd.ReservedName.rSEPCHAR
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * sdParseNaming - Parse NAMING section (stub)
+   */
+  protected sdParseNaming(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // NAMING section parsing - simplified for now
+    // Parse LCNMSTRT, UCNMSTRT, LCNMCHAR, UCNMCHAR, NAMECASE, GENERAL, ENTITY, DELIM
+
+    // LCNMSTRT
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rLCNMSTRT),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
+      return false;
+    }
+
+    // UCNMSTRT
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rUCNMSTRT),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
+      return false;
+    }
+
+    // LCNMCHAR
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rLCNMCHAR),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
+      return false;
+    }
+
+    // UCNMCHAR
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rUCNMCHAR),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
+      return false;
+    }
+
+    // NAMECASE
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rNAMECASE),
+      parm
+    )) {
+      return false;
+    }
+
+    // GENERAL YES/NO
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rGENERAL),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rYES,
+        SdParam.Type.reservedName + Sd.ReservedName.rNO
+      ),
+      parm
+    )) {
+      return false;
+    }
+    sdBuilder.syntax.pointer()!.setNamecaseGeneral(
+      parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+    );
+
+    // ENTITY YES/NO
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rENTITY),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rYES,
+        SdParam.Type.reservedName + Sd.ReservedName.rNO
+      ),
+      parm
+    )) {
+      return false;
+    }
+    sdBuilder.syntax.pointer()!.setNamecaseEntity(
+      parm.type === SdParam.Type.reservedName + Sd.ReservedName.rYES
+    );
+
+    // DELIM
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rDELIM),
+      parm
+    )) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * sdParseDelim - Parse DELIM section (stub)
+   */
+  protected sdParseDelim(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // DELIM GENERAL SGMLREF
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rGENERAL),
+      parm
+    )) {
+      return false;
+    }
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF),
+      parm
+    )) {
+      return false;
+    }
+
+    // Parse optional delimiter changes until SHORTREF
+    for (;;) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.generalDelimiterName,
+          SdParam.Type.reservedName + Sd.ReservedName.rSHORTREF
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rSHORTREF) {
+        break;
+      }
+      // Skip delimiter value
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.paramLiteral), parm)) {
+        return false;
+      }
+    }
+
+    // SHORTREF SGMLREF or NONE
+    if (!this.parseSdParam(
+      new AllowedSdParams(
+        SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF,
+        SdParam.Type.reservedName + Sd.ReservedName.rNONE
+      ),
+      parm
+    )) {
+      return false;
+    }
+
+    // NAMES
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rNAMES),
+      parm
+    )) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * sdParseNames - Parse NAMES section (stub)
+   */
+  protected sdParseNames(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // NAMES SGMLREF
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF),
+      parm
+    )) {
+      return false;
+    }
+
+    // Parse optional name changes until QUANTITY
+    for (;;) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.referenceReservedName,
+          SdParam.Type.reservedName + Sd.ReservedName.rQUANTITY
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rQUANTITY) {
+        break;
+      }
+      // Skip name value
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.name), parm)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * sdParseQuantity - Parse QUANTITY section (stub)
+   */
+  protected sdParseQuantity(sdBuilder: SdBuilder, parm: SdParam): Boolean {
+    // QUANTITY SGMLREF
+    if (!this.parseSdParam(
+      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rSGMLREF),
+      parm
+    )) {
+      return false;
+    }
+
+    // Parse optional quantity changes until FEATURES or end
+    for (;;) {
+      if (!this.parseSdParam(
+        new AllowedSdParams(
+          SdParam.Type.quantityName,
+          SdParam.Type.reservedName + Sd.ReservedName.rFEATURES
+        ),
+        parm
+      )) {
+        return false;
+      }
+      if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rFEATURES) {
+        break;
+      }
+      // Skip quantity value
+      if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * translateSyntaxNumber - Translate a syntax character number
+   */
+  protected translateSyntaxNumber(sdBuilder: SdBuilder, n: number): Char | null {
+    // Simple translation - in full implementation would use sdBuilder.syntaxCharset
+    const result = this.translateSyntax(
+      sdBuilder.switcher,
+      sdBuilder.syntaxCharset,
+      sdBuilder.sd.pointer()!.internalCharset(),
+      n
+    );
+    return result.valid ? result.docChar : null;
+  }
+
+  /**
+   * checkSwitches - Check character switches against charset
+   */
+  protected checkSwitches(switcher: CharSwitcher, charset: CharsetInfoClass): void {
+    // Stub - validate switch targets are in charset
+  }
+
+  /**
+   * findMissingMinimum - Find minimum characters missing from charset
+   */
+  protected findMissingMinimum(charset: CharsetInfoClass, missing: ISet<WideChar>): void {
+    // Stub - check for required minimum data characters
+  }
+
+  /**
+   * checkSyntaxNames - Check syntax reserved names
+   */
+  protected checkSyntaxNames(syntax: Syntax): void {
+    // Stub - validate syntax reserved names
+  }
+
+  /**
+   * checkSyntaxNamelen - Check syntax name length
+   */
+  protected checkSyntaxNamelen(syntax: Syntax): void {
+    // Stub - validate name length constraints
+  }
+
+  /**
+   * checkSwitchesMarkup - Check character switches for markup conflicts
+   */
+  protected checkSwitchesMarkup(switcher: CharSwitcher): void {
+    // Stub - validate no switches conflict with markup characters
+  }
 
 }
 
