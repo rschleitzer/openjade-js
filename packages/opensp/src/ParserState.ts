@@ -2817,20 +2817,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     // Create undefined element if not found
     if (!elementType) {
-      // TODO: Implement lookupCreateUndefinedElement
-      // elementType = this.lookupCreateUndefinedElement(
-      //   name,
-      //   this.currentLocation(),
-      //   this.currentDtdNonConst(),
-      //   this.implydefElement() !== Sd.implydefElementAnyother
-      // );
-      return null; // Stub for now
+      elementType = this.lookupCreateUndefinedElement(
+        name,
+        this.currentLocation(),
+        this.currentDtdNonConst(),
+        this.implydefElement() !== Sd.ImplydefElement.implydefElementAnyother
+      );
     }
 
     // Allocate attribute list
-    // TODO: Implement allocAttributeList
-    // const attributes = this.allocAttributeList(elementType.attributeDef(), 0);
-    const attributes = new AttributeList(); // Stub
+    const attributes = this.allocAttributeList(elementType.attributeDef().asConst(), 0);
+    if (!attributes) return null; // Safety check
 
     // Parse closing token or attributes
     const closeToken = this.getToken(Mode.tagMode);
@@ -2840,8 +2837,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       if (name.size() > this.syntax().taglen()) {
         this.checkTaglen(this.markupLocation().index());
       }
-      // TODO: Implement attributes.finish()
-      // attributes.finish(this);
+      attributes.finish(this as any);
       netEnabling.value = false;
       if (markup) {
         markup.addDelim(Syntax.DelimGeneral.dTAGC);
@@ -2924,14 +2920,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
 
     if (!elementType) {
-      // TODO: Implement lookupCreateUndefinedElement
-      // elementType = this.lookupCreateUndefinedElement(
-      //   name,
-      //   this.currentLocation(),
-      //   this.currentDtdNonConst(),
-      //   this.implydefElement() !== Sd.ImplydefElement.implydefElementAnyother
-      // );
-      return null; // Stub for now
+      elementType = this.lookupCreateUndefinedElement(
+        name,
+        this.currentLocation(),
+        this.currentDtdNonConst(),
+        this.implydefElement() !== Sd.ImplydefElement.implydefElementAnyother
+      );
     }
 
     this.parseEndTagClose();
@@ -3041,9 +3035,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     if (!e) return; // Safety check
 
-    // TODO: Implement allocAttributeList
-    // const attributes = this.allocAttributeList(e.attributeDef(), 0);
-    // attributes.finish(this);
+    const attributes = this.allocAttributeList(e.attributeDef().asConst(), 0);
+    if (attributes) {
+      attributes.finish(this as any);
+    }
 
     const markup = this.startMarkup(this.eventsWanted().wantInstanceMarkup(), this.currentLocation());
     if (markup) {

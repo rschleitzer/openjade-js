@@ -12,7 +12,7 @@ import { Vector } from './Vector';
 import { Text } from './Text';
 import { Ptr, ConstPtr } from './Ptr';
 import { Message, Messenger } from './Message';
-import { StringMessageArg } from './MessageArg';
+import { StringMessageArg, NumberMessageArg } from './MessageArg';
 import * as ParserMessages from './ParserMessages';
 import { Location } from './Location';
 import { Syntax } from './Syntax';
@@ -1195,6 +1195,28 @@ export class AttributeList {
     }
   }
 
+  // Port of AttributeList.cxx (lines 1190-1208)
+  init(def: ConstPtr<AttributeDefinitionList>): void {
+    this.def_ = def;
+    this.nSpec_ = 0;
+    this.conref_ = false;
+    this.nIdrefs_ = 0;
+    this.nEntityNames_ = 0;
+    if (this.def_.isNull()) {
+      this.vec_.resize(0);
+    } else {
+      const newLength = def.pointer()!.size();
+      let clearLim = this.vec_.size();
+      if (clearLim > newLength) {
+        clearLim = newLength;
+      }
+      this.vec_.resize(newLength);
+      for (let i = 0; i < clearLim; i++) {
+        this.vec_.get(i).clear();
+      }
+    }
+  }
+
   // Port of AttributeList.cxx (lines 1216-1241)
   swap(other: AttributeList): void {
     this.vec_.swap(other.vec_);
@@ -1254,6 +1276,43 @@ export class AttributeList {
   // Port of Attribute.h (lines 849-852)
   tokenIndexUnique(name: StringC, index: number): boolean {
     return this.def_.pointer()!.tokenIndexUnique(name, index);
+  }
+
+  // Port of AttributeList.cxx (lines 1242-1269)
+  finish(context: AttributeContext): void {
+    for (let i = 0; i < this.vec_.size(); i++) {
+      if (!this.vec_.get(i).specified()) {
+        const value = this.def(i).makeMissingValue(context);
+        if (!this.conref_ || this.def_.pointer()!.notationIndex() !== i) {
+          this.vec_.get(i).setValue(value);
+          if (!value.isNull()) {
+            const nIdrefsRef = { value: this.nIdrefs_ };
+            const nEntityNamesRef = { value: this.nEntityNames_ };
+            const semantics = this.def(i).makeSemantics(value.pointer(), context, nIdrefsRef, nEntityNamesRef);
+            this.nIdrefs_ = nIdrefsRef.value;
+            this.nEntityNames_ = nEntityNamesRef.value;
+            this.vec_.get(i).setSemantics(semantics);
+          }
+        }
+      }
+    }
+    const syntax = context.attributeSyntax();
+    if (this.nIdrefs_ > syntax.grpcnt()) {
+      context.message(ParserMessages.idrefGrpcnt, new NumberMessageArg(syntax.grpcnt()));
+    }
+    if (this.nEntityNames_ > syntax.grpcnt()) {
+      context.message(ParserMessages.entityNameGrpcnt, new NumberMessageArg(syntax.grpcnt()));
+    }
+    // TypeScript doesn't have a validate() method on AttributeContext base class
+    // It's provided by concrete implementations like ParserState
+    const contextWithValidate = context as any;
+    if (contextWithValidate.validate &&
+        contextWithValidate.validate() &&
+        this.conref_ &&
+        this.def_.pointer()!.notationIndex() !== -1 &&
+        this.specified(this.def_.pointer()!.notationIndex())) {
+      context.message(ParserMessages.conrefNotation);
+    }
   }
 
   // Port of AttributeList.cxx (lines 1271-1278)

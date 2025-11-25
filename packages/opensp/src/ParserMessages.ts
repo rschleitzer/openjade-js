@@ -112,3 +112,6 @@ export const entityRefInternal = new MessageType0(MessageType.Severity.error, nu
 export const internalDataEntityReference = new MessageType0(MessageType.Severity.error, null, -1, 'a reference to a CDATA or SDATA entity is allowed only in a context where a data character could occur');
 export const instanceStartOmittag = new MessageType0(MessageType.Severity.error, null, -1, 'document instance must start with document element');
 export const duplicateAttributeSpec = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate specification of attribute %1');
+export const conrefNotation = new MessageType0(MessageType.Severity.error, null, -1, 'value cannot be specified both for notation attribute and content reference attribute');
+export const idrefGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of ID references in start-tag must not exceed GRPCNT (%1)');
+export const entityNameGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of entity names in attribute specification list must not exceed GRPCNT (%1)');
