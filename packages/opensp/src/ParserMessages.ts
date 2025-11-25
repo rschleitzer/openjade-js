@@ -125,6 +125,9 @@ export const duplicateAttributeSpec = new MessageType1(MessageType.Severity.erro
 export const conrefNotation = new MessageType0(MessageType.Severity.error, null, -1, 'value cannot be specified both for notation attribute and content reference attribute');
 export const idrefGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of ID references in start-tag must not exceed GRPCNT (%1)');
 export const entityNameGrpcnt = new MessageType1(MessageType.Severity.quantityError, null, -1, 'number of entity names in attribute specification list must not exceed GRPCNT (%1)');
+export const invalidEntityAttribute = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a general entity name');
+export const notDataOrSubdocEntity = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a data or subdocument entity');
+export const invalidNotationAttribute = new MessageType1(MessageType.Severity.error, null, -1, '%1 is not a notation name');
 export const undefinedElement = new MessageType1(MessageType.Severity.error, null, -1, 'element %1 undefined');
 export const elementNotAllowed = new MessageType1(MessageType.Severity.error, null, -1, 'document type does not allow element %1 here');
 export const missingElementMultiple = new MessageType2(MessageType.Severity.error, null, -1, 'document type does not allow element %1 here; missing one of %2 start-tag');
@@ -251,6 +254,7 @@ export const implydefEntityDefault = new MessageType0(MessageType.Severity.error
 // Attribute list declaration messages
 export const duplicateAttributeDef = new MessageType1(MessageType.Severity.error, null, -1, 'duplicate definition of attribute %1');
 export const multipleIdAttributes = new MessageType1(MessageType.Severity.error, null, -1, 'more than one ID attribute for element %1');
+export const duplicateId = new MessageType1L(MessageType.Severity.error, null, -1, 'ID %1 already defined', null, 'ID %1 first defined here');
 export const multipleNotationAttributes = new MessageType1(MessageType.Severity.error, null, -1, 'more than one NOTATION attribute for element %1');
 export const duplicateAttributeToken = new MessageType1(MessageType.Severity.error, null, -1, 'token %1 occurs more than once in attribute definition list');
 export const dataAttributeDeclaredValue = new MessageType0(MessageType.Severity.error, null, -1, 'declared value for data attribute must be CDATA or NAME or NAMES or NMTOKEN or NMTOKENS or NUTOKEN or NUTOKENS or NUMBER or NUMBERS or notation group');

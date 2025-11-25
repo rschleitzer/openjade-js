@@ -367,6 +367,7 @@ export class NameTokenGroupDeclaredValue extends GroupDeclaredValue {
 }
 
 // NotationDeclaredValue
+// Port of NotationDeclaredValue class from Attribute.cxx (lines 420-460)
 export class NotationDeclaredValue extends GroupDeclaredValue {
   constructor(allowedValues: Vector<StringC>) {
     super(TokenizedDeclaredValue.TokenType.name, allowedValues);
@@ -379,8 +380,16 @@ export class NotationDeclaredValue extends GroupDeclaredValue {
     nIdrefs: { value: number },
     nEntityNames: { value: number }
   ): AttributeSemantics | null {
-    // TODO: Implement NotationAttributeSemantics
-    return null;
+    // Port of NotationDeclaredValue::makeSemantics from Attribute.cxx (lines 431-449)
+    const notation = context.getAttributeNotation(value.string(), value.tokenLocation(0));
+    if (notation.isNull()) {
+      if (context.validate()) {
+        context.setNextLocation(value.tokenLocation(0));
+        context.message(ParserMessages.invalidNotationAttribute, new StringMessageArg(value.string()));
+      }
+      return null;
+    }
+    return new NotationAttributeSemantics(notation);
   }
 
   isNotation(): Boolean {
@@ -404,6 +413,7 @@ export class NotationDeclaredValue extends GroupDeclaredValue {
 }
 
 // EntityDeclaredValue
+// Port of EntityDeclaredValue class from Attribute.cxx (lines 462-512)
 export class EntityDeclaredValue extends TokenizedDeclaredValue {
   constructor(isList: Boolean) {
     super(TokenizedDeclaredValue.TokenType.entityName, isList);
@@ -416,7 +426,31 @@ export class EntityDeclaredValue extends TokenizedDeclaredValue {
     nIdrefs: { value: number },
     nEntityNames: { value: number }
   ): AttributeSemantics | null {
-    // TODO: Implement EntityAttributeSemantics
+    // Port of EntityDeclaredValue::makeSemantics from Attribute.cxx (lines 473-507)
+    let valid = true;
+    const nTokens = value.nTokens();
+    nEntityNames.value += nTokens;
+    const entities = new Vector<ConstPtr<Entity>>(nTokens);
+    for (let i = 0; i < nTokens; i++) {
+      const entity = context.getAttributeEntity(value.token(i), value.tokenLocation(i));
+      entities.set(i, entity);
+      if (entity.isNull()) {
+        if (context.validate()) {
+          context.setNextLocation(value.tokenLocation(i));
+          context.message(ParserMessages.invalidEntityAttribute, new StringMessageArg(value.token(i)));
+        }
+        valid = false;
+      } else if (!entity.pointer()!.isDataOrSubdoc()) {
+        if (context.validate()) {
+          context.setNextLocation(value.tokenLocation(i));
+          context.message(ParserMessages.notDataOrSubdocEntity, new StringMessageArg(value.token(i)));
+        }
+        valid = false;
+      }
+    }
+    if (valid) {
+      return new EntityAttributeSemantics(entities);
+    }
     return null;
   }
 
@@ -430,6 +464,7 @@ export class EntityDeclaredValue extends TokenizedDeclaredValue {
 }
 
 // IdDeclaredValue
+// Port of IdDeclaredValue class from Attribute.cxx (lines 514-549)
 export class IdDeclaredValue extends TokenizedDeclaredValue {
   constructor() {
     super(TokenizedDeclaredValue.TokenType.name, false);
@@ -442,7 +477,12 @@ export class IdDeclaredValue extends TokenizedDeclaredValue {
     nIdrefs: { value: number },
     nEntityNames: { value: number }
   ): AttributeSemantics | null {
-    // TODO: Implement ID checking
+    // Port of IdDeclaredValue::makeSemantics from Attribute.cxx (lines 525-539)
+    const prevLoc = { value: new Location() };
+    if (!context.defineId(value.string(), value.tokenLocation(0), prevLoc)) {
+      context.setNextLocation(value.tokenLocation(0));
+      context.message(ParserMessages.duplicateId, new StringMessageArg(value.string()), prevLoc.value);
+    }
     return null;
   }
 
@@ -460,6 +500,7 @@ export class IdDeclaredValue extends TokenizedDeclaredValue {
 }
 
 // IdrefDeclaredValue
+// Port of IdrefDeclaredValue class from Attribute.cxx (lines 551-587)
 export class IdrefDeclaredValue extends TokenizedDeclaredValue {
   constructor(isList: Boolean) {
     super(TokenizedDeclaredValue.TokenType.name, isList);
@@ -472,7 +513,12 @@ export class IdrefDeclaredValue extends TokenizedDeclaredValue {
     nIdrefs: { value: number },
     nEntityNames: { value: number }
   ): AttributeSemantics | null {
-    // TODO: Implement IDREF checking
+    // Port of IdrefDeclaredValue::makeSemantics from Attribute.cxx (lines 557-568)
+    const nTokens = value.nTokens();
+    nIdrefs.value += nTokens;
+    for (let i = 0; i < nTokens; i++) {
+      context.noteIdref(value.token(i), value.tokenLocation(i));
+    }
     return null;
   }
 
@@ -528,22 +574,26 @@ export class CdataAttributeValue extends AttributeValue {
 }
 
 // TokenizedAttributeValue
+// Port of TokenizedAttributeValue class from Attribute.h (lines 434-459) and Attribute.cxx (lines 1052-1081)
 export class TokenizedAttributeValue extends AttributeValue {
   private text_: Text;
-  private tokens_: Vector<StringC>;
+  // index into value of each space
+  // length is number of tokens - 1
+  private spaceIndex_: Vector<number>;
 
-  constructor(text: Text, tokens: Vector<StringC>) {
+  constructor(text: Text, spaceIndex: Vector<number>) {
     super();
     this.text_ = new Text();
     this.text_.swap(text);
-    this.tokens_ = new Vector<StringC>();
-    this.tokens_.swap(tokens);
+    this.spaceIndex_ = new Vector<number>();
+    for (let i = 0; i < spaceIndex.size(); i++) {
+      this.spaceIndex_.push_back(spaceIndex.get(i));
+    }
   }
 
-  info(textResult: { value: Text | null }, tokensResult: { value: StringC | null }): number {
-    textResult.value = this.text_;
-    // TODO: Properly return tokens (needs different signature)
-    tokensResult.value = null;
+  info(textResult: { value: Text | null }, strResult: { value: StringC | null }): number {
+    textResult.value = null;
+    strResult.value = this.text_.string();
     return AttributeValue.Type.tokenized;
   }
 
@@ -551,16 +601,63 @@ export class TokenizedAttributeValue extends AttributeValue {
     return this.text_;
   }
 
-  tokens(): Vector<StringC> {
-    return this.tokens_;
+  // Port of Attribute.h (lines 726-729)
+  nTokens(): number {
+    return this.spaceIndex_.size() + 1;
+  }
+
+  // Port of Attribute.h (lines 732-735)
+  string(): StringC {
+    return this.text_.string();
+  }
+
+  // Port of Attribute.h (lines 747-753)
+  token(i: number): StringC {
+    const startIndex = i === 0 ? 0 : this.spaceIndex_.get(i - 1) + 1;
+    const endIndex = i === this.spaceIndex_.size() ? this.text_.size() : this.spaceIndex_.get(i);
+    const len = endIndex - startIndex;
+    const str = this.text_.string();
+    const result = new StringOf<Char>();
+    for (let j = 0; j < len; j++) {
+      result.appendChar(str.get(startIndex + j));
+    }
+    return result;
+  }
+
+  // Port of Attribute.h (lines 757-760)
+  tokenLocation(i: number): Location {
+    const charIndex = i === 0 ? 0 : this.spaceIndex_.get(i - 1) + 1;
+    return this.text_.charLocation(charIndex);
+  }
+
+  makeSemantics(
+    declaredValue: DeclaredValue | null,
+    context: AttributeContext,
+    name: StringC,
+    nIdrefs: { value: number },
+    nEntityNames: { value: number }
+  ): AttributeSemantics | null {
+    if (this.text_.size() === 0) {
+      return null;
+    }
+    if (!declaredValue) {
+      return null;
+    }
+    return declaredValue.makeSemantics(this, context, name, nIdrefs, nEntityNames);
   }
 }
 
 
 // AttributeContext - placeholder (abstract messenger)
+// Port of AttributeContext class from Attribute.h (lines 555-577)
 export abstract class AttributeContext extends Messenger {
+  protected mayDefaultAttribute_: Boolean;
+  protected validate_: Boolean;
+
   constructor() {
     super();
+    this.mayDefaultAttribute_ = true;
+    this.validate_ = true;
   }
 
   abstract attributeSyntax(): Syntax;
@@ -568,6 +665,49 @@ export abstract class AttributeContext extends Messenger {
   // Messenger abstract methods
   abstract dispatchMessage(message: Message): void;
   abstract dispatchMessage(type: any, ...args: any[]): void;
+
+  // Port of Attribute.h (lines 559-560) - virtual methods for ID/IDREF handling
+  // Returns true if the ID was successfully defined (not duplicate)
+  // If duplicate, prevLoc is set to the location of the previous definition
+  defineId(id: StringC, loc: Location, prevLoc: { value: Location }): Boolean {
+    // Default implementation always succeeds (no ID tracking)
+    return true;
+  }
+
+  // Note an IDREF for later validation
+  noteIdref(idref: StringC, loc: Location): void {
+    // Default implementation does nothing
+  }
+
+  // Note current attribute value (for attributes with CURRENT default)
+  noteCurrentAttribute(index: number, value: AttributeValue | null): void {
+    // Default implementation does nothing
+  }
+
+  // Get current attribute value (for attributes with CURRENT default)
+  getCurrentAttribute(index: number): ConstPtr<AttributeValue> {
+    return new ConstPtr<AttributeValue>();
+  }
+
+  // Get entity for ENTITY/ENTITIES attribute
+  getAttributeEntity(name: StringC, loc: Location): ConstPtr<Entity> {
+    // Default implementation returns null
+    return new ConstPtr<Entity>();
+  }
+
+  // Get notation for NOTATION attribute
+  getAttributeNotation(name: StringC, loc: Location): ConstPtr<Notation> {
+    // Default implementation returns null
+    return new ConstPtr<Notation>();
+  }
+
+  mayDefaultAttribute(): Boolean {
+    return this.mayDefaultAttribute_;
+  }
+
+  validate(): Boolean {
+    return this.validate_;
+  }
 }
 
 // AttributeDefinition - base class for attribute definitions
