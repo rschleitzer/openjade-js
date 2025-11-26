@@ -494,13 +494,35 @@ export class Syntax extends Resource {
   }
 
   lookupReservedName(str: StringC, result: { value: number }): Boolean {
+    // First try direct lookup
     const tem = this.nameTable_.lookup(str);
     if (tem !== null) {
       result.value = tem;
       return true;
-    } else {
-      return false;
     }
+    // If direct lookup failed and NAMECASE GENERAL is NO (identity subst),
+    // try uppercase lookup for case-insensitive reserved name matching.
+    // This handles DTDs that use lowercase reserved names (like <!element>)
+    // with SGML declarations that define NAMECASE GENERAL NO.
+    if (this.generalSubst_ === this.identitySubst_) {
+      // Apply uppercase substitution to create uppercase version
+      const upperStr = new StringOf<Char>();
+      for (let i = 0; i < str.size(); i++) {
+        const c = str.get(i);
+        // Convert lowercase a-z to uppercase A-Z
+        if (c >= 97 && c <= 122) {  // 'a' to 'z'
+          upperStr.appendChar(c - 32);  // Convert to 'A' to 'Z'
+        } else {
+          upperStr.appendChar(c);
+        }
+      }
+      const temUpper = this.nameTable_.lookup(upperStr);
+      if (temUpper !== null) {
+        result.value = temUpper;
+        return true;
+      }
+    }
+    return false;
   }
 
   lookupFunctionChar(name: StringC, result: { value: Char }): Boolean {

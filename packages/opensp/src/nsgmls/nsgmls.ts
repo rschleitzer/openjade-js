@@ -6,6 +6,7 @@
 // Port of nsgmls from OpenSP
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { Char } from '../types';
 import { StringC } from '../StringC';
 import { String as StringOf } from '../StringOf';
@@ -299,10 +300,40 @@ function main(): number {
     catalogSysids.push_back(stringToStringC(cat));
   }
 
-  // Look for default catalog file in current directory (like upstream nsgmls)
-  // The catalog file is expected to contain SGMLDECL directive pointing to xml.dcl
-  if (fs.existsSync('catalog')) {
-    catalogSysids.push_back(stringToStringC('catalog'));
+  // Look for default catalog file in document's directory (like upstream nsgmls)
+  // Native onsgmls looks for catalog relative to the document file, not CWD
+  // The catalog file is expected to contain SGMLDECL directive pointing to the SGML declaration
+  if (files.length > 0) {
+    const docDir = path.dirname(path.resolve(files[0]));
+    const docCatalog = path.join(docDir, 'catalog');
+    if (fs.existsSync(docCatalog)) {
+      catalogSysids.push_back(stringToStringC(docCatalog));
+    }
+  }
+
+  // Add built-in catalog with bundled DTDs (like native onsgmls has compiled-in paths)
+  // The DTDs are in share/sgml relative to the dist directory
+  const distDir = path.dirname(__filename);
+  const shareDir = path.resolve(distDir, '..', 'share', 'sgml');
+  const builtinCatalogPath = path.join(shareDir, 'catalog');
+
+  // Create a temporary built-in catalog file with PUBLIC mappings if share/sgml exists
+  if (fs.existsSync(shareDir)) {
+    const builtinMappings = [
+      `PUBLIC "-//James Clark//DTD DSSSL Flow Object Tree//EN" "${path.join(shareDir, 'fot.dtd')}"`,
+      `PUBLIC "ISO/IEC 10179:1996//DTD DSSSL Architecture//EN" "${path.join(shareDir, 'dsssl.dtd')}"`,
+      `PUBLIC "-//James Clark//DTD DSSSL Style Sheet//EN" "${path.join(shareDir, 'style-sheet.dtd')}"`,
+      `PUBLIC "-//OpenJade//DTD DSSSL Style Sheet//EN" "${path.join(shareDir, 'style-sheet.dtd')}"`,
+    ].join('\n');
+
+    // Write temporary catalog file
+    const tempCatalog = path.join(shareDir, '.builtin-catalog');
+    try {
+      fs.writeFileSync(tempCatalog, builtinMappings);
+      catalogSysids.push_back(stringToStringC(tempCatalog));
+    } catch {
+      // Ignore if we can't write (read-only filesystem, etc.)
+    }
   }
 
   // Create catalog manager if we have any catalogs

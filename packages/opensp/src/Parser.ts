@@ -120,12 +120,7 @@ export class Parser extends ParserState {
       origin = params.origin;
     }
 
-    // Set the base ID for resolving relative paths (e.g., DTD references)
-    const em = this.entityManager() as any;
-    if (em.setCurrentBaseId) {
-      em.setCurrentBaseId(sysid);
-    }
-
+    // Open the document entity first (before setting base ID)
     this.pushInput(
       this.entityManager().open(
         sysid,
@@ -139,6 +134,14 @@ export class Parser extends ParserState {
     if (this.inputLevel() === 0) {
       this.allDone();
       return;
+    }
+
+    // Set the base ID for resolving relative paths (e.g., DTD references)
+    // This must be done AFTER opening the document so the document itself isn't
+    // resolved relative to its own path
+    const em = this.entityManager() as any;
+    if (em.setCurrentBaseId) {
+      em.setCurrentBaseId(sysid);
     }
 
     switch (params.entityType) {

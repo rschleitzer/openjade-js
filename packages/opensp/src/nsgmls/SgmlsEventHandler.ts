@@ -378,9 +378,9 @@ export class SgmlsEventHandler extends ErrorCountEventHandler {
   }
 
   endProlog(event: EndPrologEvent): void {
+    const dtd = event.dtd();
     if (this.outputEntity_) {
       this.flushData();
-      const dtd = event.dtd();
       if (dtd) {
         const iter = dtd.generalEntityIterConst();
         let entityPtr = iter.next();

@@ -1701,6 +1701,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
           const systemId = new String<Char>();
           const emptySysid = new String<Char>(); // Catalog lookup doesn't use the document sysid
           if (this.entityCatalog().sgmlDecl(initCharset, this as any, emptySysid, systemId)) {
+            // Temporarily clear the base ID so SGMLDECL is resolved relative to catalog dir
+            // (not relative to the document)
+            const em = this.entityManager() as any;
+            const savedBaseId = em.currentBaseId_ || '';
+            if (em.setCurrentBaseId) {
+              em.setCurrentBaseId(new (String as any)()); // Clear base ID
+            }
             const sgmlDeclInput = this.entityManager().open(
               systemId,
               this.sd().docCharset(),
@@ -1708,6 +1715,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
               0,
               this as any
             );
+            // Restore the base ID
+            if (em.setCurrentBaseId && savedBaseId) {
+              em.setCurrentBaseId(savedBaseId);
+            }
             if (sgmlDeclInput) {
               this.pushInput(sgmlDeclInput);
               if (this.scanForSgmlDecl(initCharset)) {
@@ -1722,7 +1733,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
         }
       }
     }
-
     if (haveSgmlDecl) {
       // Set up a reference syntax for parsing the SGML declaration
       // The SGML declaration defines the syntax, but we need a reference syntax
@@ -4498,7 +4508,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
       const entityIter = this.defDtd().generalEntityIter();
       for (;;) {
         const entity = entityIter.next();
-        if (entity.isNull()) {
+        if (entity === null || entity.isNull()) {
           break;
         }
         const external = entity.pointer()!.asExternalDataEntity();
@@ -9061,12 +9071,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     const name = this.nameBuffer();
     this.getCurrentToken(this.syntax().generalSubstTable(), name);
-    // DEBUG: show the name
-    let debugName = '';
-    for (let i = 0; i < name.size(); i++) {
-      debugName += globalThis.String.fromCharCode(name.get(i));
-    }
-
     const result = { value: 0 };
     if (!this.syntax().lookupReservedName(name, result)) {
       this.message(ParserMessages.noSuchReservedName, new StringMessageArg(name));

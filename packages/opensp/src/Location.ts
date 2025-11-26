@@ -559,7 +559,8 @@ class EntityOriginImpl extends InputSourceOriginImpl {
   constructor(entity: ConstPtr<Entity>, refLocation: Location, refLength: Index, markup: Owner<Markup>);
   constructor(entity: ConstPtr<Entity>, refLocation?: Location, refLength?: Index, markup?: Owner<Markup>) {
     super(refLocation);
-    this.entity_ = entity;
+    // Make a copy of the ConstPtr so that clearing the original doesn't affect this origin
+    this.entity_ = new ConstPtr(entity);
     this.refLength_ = refLength ?? 0;
     this.markup_ = markup ?? null;
   }
