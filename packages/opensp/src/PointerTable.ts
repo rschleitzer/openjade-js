@@ -17,6 +17,19 @@ export interface KeyFunction<P, K> {
   key(obj: P): K;
 }
 
+// Interface for keys that support equality comparison
+export interface Equatable<T> {
+  equals(other: T): boolean;
+}
+
+// Helper to check equality - uses equals() if available, otherwise ===
+function keysEqual<K>(a: K, b: K): boolean {
+  if (a && typeof (a as any).equals === 'function') {
+    return (a as any).equals(b);
+  }
+  return a === b;
+}
+
 export class PointerTable<P, K, HF extends HashFunction<K>, KF extends KeyFunction<any, K>> {
   protected used_: number;
   protected usedLimit_: number;
@@ -51,7 +64,7 @@ export class PointerTable<P, K, HF extends HashFunction<K>, KF extends KeyFuncti
     } else {
       for (h = this.startIndex(this.keyFunc_.key(p)); this.vec_.get(h) !== null; h = this.nextIndex(h)) {
         const vecH = this.vec_.get(h);
-        if (vecH !== null && this.keyFunc_.key(vecH) === this.keyFunc_.key(p)) {
+        if (vecH !== null && keysEqual(this.keyFunc_.key(vecH), this.keyFunc_.key(p))) {
           if (replace) {
             const tem = this.vec_.get(h);
             this.vec_.set(h, p);
@@ -101,7 +114,7 @@ export class PointerTable<P, K, HF extends HashFunction<K>, KF extends KeyFuncti
     if (this.used_ > 0) {
       for (let i = this.startIndex(k); this.vec_.get(i) !== null; i = this.nextIndex(i)) {
         const vecI = this.vec_.get(i);
-        if (vecI !== null && this.keyFunc_.key(vecI) === k) {
+        if (vecI !== null && keysEqual(this.keyFunc_.key(vecI), k)) {
           return this.vec_.get(i);
         }
       }
@@ -113,7 +126,7 @@ export class PointerTable<P, K, HF extends HashFunction<K>, KF extends KeyFuncti
     if (this.used_ > 0) {
       for (let i = this.startIndex(k); this.vec_.get(i) !== null; i = this.nextIndex(i)) {
         const vecI = this.vec_.get(i);
-        if (vecI !== null && this.keyFunc_.key(vecI) === k) {
+        if (vecI !== null && keysEqual(this.keyFunc_.key(vecI), k)) {
           const p = this.vec_.get(i);
           do {
             this.vec_.set(i, null);

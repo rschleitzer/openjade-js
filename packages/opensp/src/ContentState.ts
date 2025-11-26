@@ -205,12 +205,16 @@ export class ContentState {
   getOpenElementInfo(v: Vector<OpenElementInfo>, rniPcdata: StringC): void {
     v.clear();
     v.resize(this.tagLevel_);
+    // Initialize the elements (C++ would have default-constructed them)
+    for (let j = 0; j < this.tagLevel_; j++) {
+      v.set(j, new OpenElementInfo());
+    }
 
     let i = this.tagLevel_;
     const iter = new IListIter<OpenElement>(this.openElements_);
 
     while (!iter.done() && i > 0) {
-      const e = v.get(--i);
+      const e = v.get(--i)!;
       const cur = iter.cur();
       if (cur) {
         e.gi = cur.type().name();

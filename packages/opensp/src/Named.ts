@@ -2,12 +2,15 @@
 // See the file COPYING for copying permission.
 
 import { StringC } from './StringC';
+import { String as StringOf } from './StringOf';
+import { Char } from './types';
 
 export class Named {
   private name_: StringC;
 
   constructor(name: StringC) {
-    this.name_ = name;
+    // Must copy the name since in C++ StringC name_ is a value, not a pointer
+    this.name_ = new StringOf<Char>(name);
   }
 
   // virtual ~Named() { }

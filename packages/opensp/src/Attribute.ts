@@ -1376,14 +1376,28 @@ export class AttributeDefinitionList extends Resource {
   ) {
     super();
     if (defsOrOther instanceof ConstPtr) {
-      // Copy constructor
-      const other = defsOrOther.pointer()!;
+      // Copy constructor - port of Attribute.cxx (lines 895-909)
+      // Handles both null and non-null ConstPtr
       this.defs_ = new Vector<CopyOwner<AttributeDefinition>>();
-      this.index_ = other.index_;
-      this.idIndex_ = other.idIndex_;
-      this.notationIndex_ = other.notationIndex_;
-      this.anyCurrent_ = other.anyCurrent_;
       this.prev_ = defsOrOther;
+      this.index_ = -1;  // size_t(-1) in C++
+
+      if (defsOrOther.isNull()) {
+        // Handle null case - initialize with defaults
+        this.anyCurrent_ = false;
+        this.notationIndex_ = -1;
+        this.idIndex_ = -1;
+      } else {
+        // Copy from the other list
+        const other = defsOrOther.pointer()!;
+        this.anyCurrent_ = other.anyCurrent_;
+        this.notationIndex_ = other.notationIndex_;
+        this.idIndex_ = other.idIndex_;
+        // Copy defs_ from the previous list
+        for (let i = 0; i < other.defs_.size(); i++) {
+          this.defs_.push_back(other.defs_.get(i));
+        }
+      }
     } else {
       // Regular constructor
       this.defs_ = new Vector<CopyOwner<AttributeDefinition>>();
@@ -1705,7 +1719,13 @@ export class AttributeList {
 
   // Port of AttributeList.cxx (lines 1210-1214)
   changeDef(def: ConstPtr<AttributeDefinitionList>): void {
-    this.vec_.resize(def.isNull() ? 0 : def.pointer()!.size());
+    const newSize = def.isNull() ? 0 : def.pointer()!.size();
+    const oldSize = this.vec_.size();
+    this.vec_.resize(newSize);
+    // Initialize any new elements
+    for (let i = oldSize; i < newSize; i++) {
+      this.vec_.set(i, new Attribute());
+    }
     this.def_ = def;
   }
 

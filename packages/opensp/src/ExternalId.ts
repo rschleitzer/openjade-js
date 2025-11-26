@@ -177,7 +177,7 @@ export class PublicId {
   }
 
   private initUrn(str: StringC, charset: CharsetInfo, _space: Char, error: { value: MessageType1 | null }): Boolean {
-    let next: number | null = 0;
+    const nextRef: { value: number | null } = { value: 0 };
     const data = str.data()!;
     const lim = str.size();
     const sep = charset.execToDesc(':');
@@ -191,11 +191,10 @@ export class PublicId {
     const fieldStart = { value: 0 };
     const fieldLength = { value: 0 };
 
-    if (!PublicId.nextField(sep, { value: next }, lim, data, fieldStart, fieldLength, false)) {
+    if (!PublicId.nextField(sep, nextRef, lim, data, fieldStart, fieldLength, false)) {
       // error.value = &ParserMessages::urnMissingField;
       return false;
     }
-    next = { value: next }.value;
 
     if (fieldLength.value !== 3 ||
         (data[fieldStart.value] !== lcU && data[fieldStart.value] !== ucU) ||
@@ -205,11 +204,10 @@ export class PublicId {
       return false;
     }
 
-    if (!PublicId.nextField(sep, { value: next }, lim, data, fieldStart, fieldLength, false)) {
+    if (!PublicId.nextField(sep, nextRef, lim, data, fieldStart, fieldLength, false)) {
       // error.value = &ParserMessages::urnMissingField;
       return false;
     }
-    next = { value: next }.value;
 
     if (fieldLength.value < 1) {
       // error.value = &ParserMessages::urnInvalidNid;
@@ -236,13 +234,13 @@ export class PublicId {
 
     this.nid_.assign(data.slice(fieldStart.value, fieldStart.value + fieldLength.value), fieldLength.value);
 
-    if (next === null) {
+    if (nextRef.value === null) {
       // error.value = &ParserMessages::urnMissingField;
       return false;
     }
 
-    const nssStart = next;
-    const nssLength = lim - next;
+    const nssStart = nextRef.value;
+    const nssLength = lim - nssStart;
 
     if (nssLength < 1) {
       // error.value = &ParserMessages::urnInvalidNss;
@@ -306,7 +304,7 @@ export class PublicId {
   }
 
   private initFpi(str: StringC, charset: CharsetInfo, space: Char, error: { value: MessageType1 | null }): Boolean {
-    let next: number | null = 0;
+    const nextRef: { value: number | null } = { value: 0 };
     const data = str.data()!;
     const lim = str.size();
     const solidus = charset.execToDesc('/');
@@ -316,30 +314,27 @@ export class PublicId {
     const fieldStart = { value: 0 };
     const fieldLength = { value: 0 };
 
-    if (!PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
+    if (!PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
       // error.value = &ParserMessages::fpiMissingField;
       return false;
     }
-    next = { value: next }.value;
 
     if (fieldLength.value === 1 && (data[fieldStart.value] === minus || data[fieldStart.value] === plus)) {
       this.ownerType_ = data[fieldStart.value] === plus ? PublicId.OwnerType.registered : PublicId.OwnerType.unregistered;
-      if (!PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
+      if (!PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
         // error.value = &ParserMessages::fpiMissingField;
         return false;
       }
-      next = { value: next }.value;
     } else {
       this.ownerType_ = PublicId.OwnerType.ISO;
     }
 
     this.owner_.assign(data.slice(fieldStart.value, fieldStart.value + fieldLength.value), fieldLength.value);
 
-    if (!PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
+    if (!PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
       // error.value = &ParserMessages::fpiMissingField;
       return false;
     }
-    next = { value: next }.value;
 
     let i: number;
     for (i = 0; i < fieldLength.value; i++) {
@@ -368,22 +363,20 @@ export class PublicId {
 
     if (fieldLength.value === 1 && data[fieldStart.value] === minus) {
       this.unavailable_ = true;
-      if (!PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
+      if (!PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
         // error.value = &ParserMessages::fpiMissingField;
         return false;
       }
-      next = { value: next }.value;
     } else {
       this.unavailable_ = false;
     }
 
     this.description_.assign(data.slice(fieldStart.value, fieldStart.value + fieldLength.value), fieldLength.value);
 
-    if (!PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
+    if (!PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
       // error.value = &ParserMessages::fpiMissingField;
       return false;
     }
-    next = { value: next }.value;
 
     if (this.textClass_ !== PublicId.TextClass.CHARSET) {
       for (i = 0; i < fieldLength.value; i++) {
@@ -402,8 +395,7 @@ export class PublicId {
 
     this.languageOrDesignatingSequence_.assign(data.slice(fieldStart.value, fieldStart.value + fieldLength.value), fieldLength.value);
 
-    if (PublicId.nextField(solidus, { value: next }, lim, data, fieldStart, fieldLength, true)) {
-      next = { value: next }.value;
+    if (PublicId.nextField(solidus, nextRef, lim, data, fieldStart, fieldLength, true)) {
       switch (this.textClass_) {
         case PublicId.TextClass.CAPACITY:
         case PublicId.TextClass.CHARSET:
@@ -420,7 +412,7 @@ export class PublicId {
       this.haveDisplayVersion_ = false;
     }
 
-    if (next !== null) {
+    if (nextRef.value !== null) {
       // error.value = &ParserMessages::fpiExtraField;
       return false;
     }

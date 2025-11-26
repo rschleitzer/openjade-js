@@ -5,7 +5,6 @@ import { Char } from './types';
 import { Boolean } from './Boolean';
 import { Resource } from './Resource';
 import { StringC } from './StringC';
-import { String as StringOf } from './StringOf';
 import { Vector } from './Vector';
 import { Ptr, ConstPtr } from './Ptr';
 import { HashTable } from './HashTable';

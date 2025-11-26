@@ -421,7 +421,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.inEndTag_ = false;
     this.defDtd_.clear();
     this.defLpd_.clear();
-    this.dtd_[0].swap(this.pass1Dtd_);
+    const dtd0 = this.dtd_.get(0);
+    if (dtd0) {
+      dtd0.swap(this.pass1Dtd_);
+    }
     this.dtd_.clear();
     this.dsEntity_.clear();
     this.currentDtd_.clear();
@@ -514,7 +517,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   endDtd(): void {
-    this.dtd_.push_back(this.defDtd_);
+    // Push a COPY of defDtd_, not a reference - in TypeScript/JavaScript objects
+    // are references, so we must create a new Ptr that refs the same underlying Dtd
+    // otherwise clear() would clear the one we just pushed
+    this.dtd_.push_back(new Ptr<Dtd>(this.defDtd_));
     this.defDtd_.clear();
     this.currentDtd_.clear();
     this.currentDtdConst_.clear();
@@ -730,7 +736,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
     this.currentDtd_.clear();
     for (let i = 0; i < this.dtd_.size(); i++) {
-      const dtdPtr = this.dtd_[i].pointer();
+      const dtdItem = this.dtd_.get(i);
+      const dtdPtr = dtdItem ? dtdItem.pointer() : null;
       if (dtdPtr && this.shouldActivateLink(dtdPtr.name())) {
         if (this.nActiveLink() > 0) {
           this.message(ParserMessages.activeDocLink);
@@ -739,14 +746,19 @@ export class ParserState extends ContentState implements ParserStateInterface {
           this.message(ParserMessages.sorryActiveDoctypes);
           break;
         } else {
-          this.currentDtd_ = this.dtd_[i];
+          this.currentDtd_ = dtdItem!;
         }
       }
     }
 
-    if (this.currentDtd_.isNull()) {
-      this.currentDtd_ = this.dtd_[0];
+    if (this.currentDtd_.isNull() && this.dtd_.size() > 0) {
+      const dtd0 = this.dtd_.get(0);
+      if (dtd0 && !dtd0.isNull()) {
+        // Create a new Ptr that refs the same DTD, don't just assign reference
+        this.currentDtd_ = new Ptr<Dtd>(dtd0);
+      }
     }
+
     this.currentDtdConst_ = this.currentDtd_.asConst();
 
     this.startContent(this.currentDtd());
@@ -857,8 +869,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   appendCurrentRank(str: StringC, stem: RankStem | null): Boolean {
     if (!stem) return false;
-    const suffix = this.currentRank_[stem.index()];
-    if (suffix.size() > 0) {
+    const suffix = this.currentRank_.get(stem.index());
+    if (suffix && suffix.size() > 0) {
       // StringC.append needs array and length
       if (suffix.data()) {
         str.append(suffix.data()!, suffix.size());
@@ -870,7 +882,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   setCurrentRank(stem: RankStem | null, suffix: StringC): void {
     if (stem) {
-      this.currentRank_[stem.index()] = suffix;
+      this.currentRank_.set(stem.index(), suffix);
     }
   }
 
@@ -947,15 +959,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
     i: number
   ): AttributeList | null {
     if (i < this.attributeLists_.size()) {
-      const attrList = this.attributeLists_[i].pointer();
+      const owner = this.attributeLists_.get(i);
+      const attrList = owner ? owner.pointer() : null;
       if (attrList) {
         attrList.init(def);
       }
       return attrList;
     } else {
       this.attributeLists_.resize(i + 1);
-      this.attributeLists_[i] = new Owner<AttributeList>(new AttributeList());
-      return this.attributeLists_[i].pointer();
+      const newOwner = new Owner<AttributeList>(new AttributeList());
+      this.attributeLists_.set(i, newOwner);
+      return newOwner.pointer();
     }
   }
 
@@ -971,14 +985,16 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!this.activeLinkTypesSubsted_) {
       for (let i = 0; i < this.activeLinkTypes_.size(); i++) {
         const substTable = this.syntax().generalSubstTable();
-        if (substTable) {
-          substTable.subst(this.activeLinkTypes_[i]);
+        const linkType = this.activeLinkTypes_.get(i);
+        if (substTable && linkType) {
+          substTable.subst(linkType);
         }
       }
       this.activeLinkTypesSubsted_ = true;
     }
     for (let i = 0; i < this.activeLinkTypes_.size(); i++) {
-      if (name.equals(this.activeLinkTypes_[i])) {
+      const linkType = this.activeLinkTypes_.get(i);
+      if (linkType && name.equals(linkType)) {
         return true;
       }
     }
@@ -987,9 +1003,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   lookupDtd(name: StringC): Ptr<Dtd> {
     for (let i = 0; i < this.dtd_.size(); i++) {
-      const dtdPtr = this.dtd_[i].pointer();
+      const dtdItem = this.dtd_.get(i);
+      const dtdPtr = dtdItem ? dtdItem.pointer() : null;
       if (dtdPtr && dtdPtr.name().equals(name)) {
-        return this.dtd_[i];
+        return dtdItem!;
       }
     }
     return new Ptr<Dtd>();
@@ -997,9 +1014,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   lookupLpd(name: StringC): ConstPtr<Lpd> {
     for (let i = 0; i < this.allLpd_.size(); i++) {
-      const lpdPtr = this.allLpd_[i].pointer();
+      const lpdItem = this.allLpd_.get(i);
+      const lpdPtr = lpdItem ? lpdItem.pointer() : null;
       if (lpdPtr && lpdPtr.name().equals(name)) {
-        return this.allLpd_[i];
+        return lpdItem!;
       }
     }
     return new ConstPtr<Lpd>();
@@ -1071,7 +1089,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   noteCurrentAttribute(i: number, value: AttributeValue | null): void {
     if (this.inInstance()) {
-      this.currentAttributes_[i] = new ConstPtr<AttributeValue>(value);
+      this.currentAttributes_.set(i, new ConstPtr<AttributeValue>(value));
     }
   }
 
@@ -1079,7 +1097,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!this.inInstance()) {
       return new ConstPtr<AttributeValue>();
     }
-    return this.currentAttributes_[i];
+    return this.currentAttributes_.get(i) || new ConstPtr<AttributeValue>();
   }
 
   attributeSyntax(): Syntax {
@@ -1378,8 +1396,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (!head) {
       return 0;
     }
-    const result = recognizer.pointer()?.recognize(head, this.messenger()) || 0;
-    return result;
+    return recognizer.pointer()?.recognize(head, this.messenger()) || 0;
   }
 
   hadDtd(): Boolean {
@@ -1559,7 +1576,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   activeLpd(i: number): Lpd {
-    const lpd = this.lpd_[i].pointer();
+    const lpdItem = this.lpd_.get(i);
+    const lpd = lpdItem ? lpdItem.pointer() : null;
     if (!lpd) throw new Error('activeLpd is null');
     return lpd;
   }
@@ -1584,7 +1602,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   baseDtd(): Ptr<Dtd> {
     if (this.dtd_.size() > 0) {
-      return this.dtd_[0];
+      const dtd0 = this.dtd_.get(0);
+      return dtd0 || new Ptr<Dtd>();
     } else {
       return new Ptr<Dtd>();
     }
@@ -1719,6 +1738,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
       if (!this.parseSgmlDecl()) {
         this.giveUp();
         return;
+      }
+      // If we read the SGML declaration from an external file (catalog SGMLDECL),
+      // pop back to the original document input. inputLevel() == 2 means we have
+      // the document entity plus the SGML declaration file.
+      if (this.inputLevel() === 2) {
+        this.popInputStack();
       }
     } else {
       // No explicit SGML declaration - imply one
@@ -2414,7 +2439,15 @@ export class ParserState extends ContentState implements ParserStateInterface {
         continue;
       }
 
-      const docName = internalCharset.execToDesc(referenceNames[i]) as StringC;
+      // execToDesc returns Char for single-char strings, StringC for multi-char
+      const nameStr = referenceNames[i];
+      let docName: StringC;
+      if (nameStr.length === 1) {
+        const c = internalCharset.execToDesc(nameStr) as Char;
+        docName = new String<Char>([c], 1);
+      } else {
+        docName = internalCharset.execToDesc(nameStr) as StringC;
+      }
       if (syn.reservedName(i).size() === 0) {
         syn.setName(i, docName);
       }
@@ -2654,6 +2687,19 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Note: Link type activation would be done here for LINK feature
     // Note: ID references are checked in endInstance() after parsing completes
 
+    // Restore currentDtd_ if it was cleared by endDtd()
+    // The DTD is stored in dtd_[0] by endDtd() and needs to be restored
+    // before compileInstanceModes() which needs access to the DTD
+    // IMPORTANT: Create a copy instead of aliasing, otherwise startInstance's
+    // currentDtd_.clear() will also clear dtd_[0]
+    if (this.currentDtd_.isNull() && this.dtd_.size() > 0) {
+      const dtd0 = this.dtd_.get(0);
+      if (dtd0 && !dtd0.isNull()) {
+        this.currentDtd_ = new Ptr<Dtd>(dtd0);
+        this.currentDtdConst_ = this.currentDtd_.asConst();
+      }
+    }
+
     // Compile instance modes (needed for content parsing)
     this.compileInstanceModes();
 
@@ -2787,6 +2833,22 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case TokenEnum.tokenDsc:
           // End of declaration subset (DSC = ] )
           if (!this.referenceDsEntity(this.currentLocation())) {
+            // After DSC (]), we need to consume optional whitespace and MDC (>)
+            // to complete the DOCTYPE declaration
+            {
+              // Skip whitespace
+              let nextToken = this.getToken(Mode.mdMode);
+              while (nextToken === TokenEnum.tokenS) {
+                nextToken = this.getToken(Mode.mdMode);
+              }
+              // Consume MDC (>)
+              if (nextToken !== TokenEnum.tokenMdc) {
+                // TODO: Add expectedMdc message to ParserMessages
+                // this.message(ParserMessages.expectedMdc);
+                // Try to recover by ungetting the token
+                this.currentInput()?.ungetToken();
+              }
+            }
             if (inDtd) {
               this.parseDoctypeDeclEnd(false);
             } else {
@@ -3316,7 +3378,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
     const constDef = new ConstPtr<ElementDefinition>(def.pointer());
     for (i = 0; i < elements.size(); i++) {
-      if (elements.get(i)!.definition() !== null) {
+      const elemDef = elements.get(i)!.definition();
+      if (elemDef !== null) {
         if (this.validate()) {
           this.message(ParserMessages.duplicateElementDefinition, new StringMessageArg(elements.get(i)!.name()));
         }
@@ -3693,7 +3756,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
       }
     } else {
       const oldEntity = dtd.insertEntity(entity);
-      if (oldEntity.isNull()) {
+      // insertEntity returns null or a Ptr<Entity>. null means no previous entity with that name.
+      if (oldEntity === null || oldEntity.isNull()) {
         ent.generateSystemId(this);
       } else if (oldEntity.pointer()!.defaulted()) {
         dtd.insertEntity(entity, true);
@@ -5761,7 +5825,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const allNotation = dtd.removeNotation(
       this.syntax().rniReservedName(Syntax.ReservedName.rALL)
     );
-    const allNotationAdl = !allNotation.isNull()
+    const allNotationAdl = (allNotation !== null && !allNotation.isNull())
       ? allNotation.pointer()!.attributeDef().attributeDef()
       : new Ptr<AttributeDefinitionList>();
 
@@ -5818,8 +5882,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
     // Merge attributes for notations
     {
       const notationIter = dtd.notationIter();
-      let np: Ptr<Notation>;
-      while (!(np = notationIter.next()).isNull()) {
+      let np: Ptr<Notation> | null;
+      while ((np = notationIter.next()) !== null) {
         const nt = np.pointer()!;
         const nAdl = nt.attributeDef().attributeDef();
 
@@ -5858,7 +5922,7 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const implicitN = dtd.removeNotation(
       this.syntax().rniReservedName(Syntax.ReservedName.rIMPLICIT)
     );
-    if (!implicitN.isNull()) {
+    if (implicitN !== null && !implicitN.isNull()) {
       dtd.setImplicitNotationAttributeDef(implicitN.pointer()!.attributeDef().attributeDef());
     }
   }
@@ -5984,6 +6048,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
       this.allDone();
       return;
     }
+
+    // Initialize content state - this pushes the document element container
+    // onto the openElements_ stack, which is required before any content parsing
+    this.startInstance();
 
     // Note: Upstream also has FIXME to check for valid DTD here
     this.compileInstanceModes();
@@ -9298,6 +9366,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
       // Attribute not in definition - create implied attribute
       // Port of parseAttribute.cxx (lines 146-189)
       if (newAttDef.isNull()) {
+        // Create new AttributeDefinitionList from atts.defPtr()
+        // The constructor can handle null ConstPtr
         newAttDef.assign(new AttributeDefinitionList(atts.defPtr()));
       }
       let newDef: AttributeDefinition | null = null;
@@ -11232,11 +11302,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
         nDuplicates++;
         this.message(ParserMessages.duplicateGroupToken, new StringMessageArg(gt.token));
       } else {
-        vec.resize(vec.size() + 1);
-        const newToken = vec.get(vec.size() - 1);
+        // Create a new NameToken and initialize it before adding to vector
+        const newToken = new NameToken();
         gt.token.swap(newToken.name);
         this.getCurrentToken(newToken.origName);
         newToken.loc = this.currentLocation();
+        vec.push_back(newToken);
       }
 
       const gc = new GroupConnector();
@@ -11735,7 +11806,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
   // Port of Parser::lookupCreateElement from parser.cxx
   // Look up an element in the definition DTD and create it if it doesn't exist
   protected lookupCreateElement(name: StringC): ElementType {
-    let elementType = this.defDtd().lookupElementType(name);
+    const dtd = this.defDtd();
+    let elementType = dtd.lookupElementType(name);
     if (!elementType) {
       elementType = this.lookupCreateUndefinedElement(
         name,
@@ -11904,12 +11976,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   // Port of Parser::lookupCreateNotation from parseDecl.cxx
   protected lookupCreateNotation(name: StringC): Ptr<Notation> {
-    let nt = this.defDtd().lookupNotation(name);
-    if (nt.isNull()) {
-      const newNt = new Ptr<Notation>(new Notation(name, this.defDtd().namePointer(), this.defDtd().isBase()));
-      nt = this.defDtdNonConst().insertNotation(newNt);
+    const existingNt = this.defDtd().lookupNotation(name);
+    // lookupNotation returns null or a Ptr<Notation>. null means not found.
+    if (existingNt !== null && !existingNt.isNull()) {
+      return existingNt;
     }
-    return nt;
+    // Not found, create a new notation and insert it
+    const newNt = new Ptr<Notation>(new Notation(name, this.defDtd().namePointer(), this.defDtd().isBase()));
+    // insertNotation returns null if insertion succeeded (no existing entry), or the existing entry
+    const insertResult = this.defDtdNonConst().insertNotation(newNt);
+    // If insert succeeded, return the new notation; otherwise return what was already there
+    return (insertResult === null || insertResult.isNull()) ? newNt : insertResult;
   }
 
   // Port of Parser::parseExternalId from parseDecl.cxx
@@ -12463,9 +12540,11 @@ export class ParserState extends ContentState implements ParserStateInterface {
       } else if (!givenError.value) {
         found = false;
         const ownerTypeRef: { value: number } = { value: 0 };
-        if (id.getOwnerType(ownerTypeRef) && ownerTypeRef.value === PublicId.OwnerType.ISO) {
+        const hasOwnerType = id.getOwnerType(ownerTypeRef);
+        if (hasOwnerType && ownerTypeRef.value === PublicId.OwnerType.ISO) {
           const sequence = new String<Char>();
-          if (id.getDesignatingSequence(sequence)) {
+          const hasSeq = id.getDesignatingSequence(sequence);
+          if (hasSeq) {
             const number = CharsetRegistry.getRegistrationNumber(sequence, this.sd().internalCharset());
             if (number !== CharsetRegistry.ISORegistrationNumber.UNREGISTERED) {
               const iter = CharsetRegistry.makeIter(number);
@@ -14297,6 +14376,13 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const sgmlChar = new ISet<Char>();
     decl.usedSet(sgmlChar);
 
+    // Set doc charset desc and decl before creating syntax
+    sdBuilder.sd.pointer()!.setDocCharsetDesc(desc);
+    sdBuilder.sd.pointer()!.setDocCharsetDecl(decl);
+
+    // Create syntax based on the Sd (with doc charset now set)
+    sdBuilder.syntax = new Ptr<Syntax>(new Syntax(sdBuilder.sd.pointer()! as any));
+
     // Translate sgmlChar to internal charset if different from doc charset
     if ((this.sd() as any).internalCharsetIsDocCharset()) {
       sdBuilder.syntax.pointer()!.setSgmlChar(sgmlChar);
@@ -14311,7 +14397,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
       sdBuilder.syntax.pointer()!.setSgmlChar(internalSgmlChar);
     }
 
-    sdBuilder.sd.pointer()!.setDocCharsetDesc(desc);
     return true;
   }
 
@@ -14716,41 +14801,44 @@ export class ParserState extends ContentState implements ParserStateInterface {
    */
   protected sdParseSeealso(sdBuilder: SdBuilder, parm: SdParam): Boolean {
     // SEEALSO section is a WWW extension
-    // Parse optional SEEALSO PUBLIC ... MDC
+    // Port of Parser::sdParseSeealso from parseSd.cxx lines 2486-2506
+    const final = sdBuilder.external ? SdParam.Type.eE : SdParam.Type.mdc;
     if (!this.parseSdParam(
       new AllowedSdParams(
         SdParam.Type.reservedName + Sd.ReservedName.rSEEALSO,
-        SdParam.Type.mdc
+        final
       ),
       parm
     )) {
       return false;
     }
-    if (parm.type === SdParam.Type.mdc) {
+    if (parm.type === final) {
       return true;
     }
-    // Parse SEEALSO content
+    this.requireWWW(sdBuilder);
+    // Parse minimum literal or NONE
     if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.reservedName + Sd.ReservedName.rPUBLIC),
+      new AllowedSdParams(
+        SdParam.Type.minimumLiteral,
+        SdParam.Type.reservedName + Sd.ReservedName.rNONE
+      ),
       parm
     )) {
       return false;
     }
-    // Parse public identifier literal
-    if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.minimumLiteral), parm)) {
-      return false;
+    if (parm.type === SdParam.Type.reservedName + Sd.ReservedName.rNONE) {
+      return this.parseSdParam(new AllowedSdParams(final), parm);
     }
-    // Parse optional system identifier
-    if (!this.parseSdParam(
-      new AllowedSdParams(SdParam.Type.systemIdentifier, SdParam.Type.mdc),
-      parm
-    )) {
-      return false;
-    }
-    if (parm.type === SdParam.Type.mdc) {
-      return true;
-    }
-    return this.parseSdParam(new AllowedSdParams(SdParam.Type.mdc), parm);
+    // Parse remaining minimum literals until final delimiter
+    do {
+      if (!this.parseSdParam(
+        new AllowedSdParams(SdParam.Type.minimumLiteral, final),
+        parm
+      )) {
+        return false;
+      }
+    } while (parm.type !== final);
+    return true;
   }
 
 }
