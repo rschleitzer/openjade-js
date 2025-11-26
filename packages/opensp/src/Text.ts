@@ -521,10 +521,11 @@ export class Text {
   }
 
   private addSimple(type: TextItem.Type, loc: Location): void {
-    this.items_.resize(this.items_.size() + 1);
-    this.items_.back().loc = new Location(loc);
-    this.items_.back().type = type;
-    this.items_.back().index = this.chars_.size();
+    const item = new TextItem();
+    item.loc = new Location(loc);
+    item.type = type;
+    item.index = this.chars_.size();
+    this.items_.push_back(item);
   }
 
   // Friend class access for TextIter
