@@ -1272,7 +1272,10 @@ export class DefaultAttributeDefinition extends AttributeDefinition {
   }
 
   makeMissingValue(context: AttributeContext): ConstPtr<AttributeValue> {
-    return this.value_;
+    // Return a new ConstPtr pointing to the same value, not the same ConstPtr instance.
+    // This prevents Attribute.clear() from corrupting the definition's value when
+    // AttributeList.init() clears existing attributes.
+    return new ConstPtr<AttributeValue>(this.value_);
   }
 
   missingValueWouldMatch(text: Text, context: AttributeContext): Boolean {
@@ -1393,9 +1396,10 @@ export class AttributeDefinitionList extends Resource {
         this.anyCurrent_ = other.anyCurrent_;
         this.notationIndex_ = other.notationIndex_;
         this.idIndex_ = other.idIndex_;
-        // Copy defs_ from the previous list
+        // Copy defs_ from the previous list - must deep copy since CopyOwner copy constructor clones
         for (let i = 0; i < other.defs_.size(); i++) {
-          this.defs_.push_back(other.defs_.get(i));
+          // In C++, push_back invokes copy constructor. In TypeScript we must explicitly copy.
+          this.defs_.push_back(new CopyOwner<AttributeDefinition>(other.defs_.get(i)));
         }
       }
     } else {
