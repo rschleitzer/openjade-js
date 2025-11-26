@@ -7432,9 +7432,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
     if (isHex) {
       this.extendHexNumber();
       const tokenStart = input.currentTokenStart();
+      const startIdx = input.currentTokenStartIndex();
 
       for (let i = 0; tokenStart && i < input.currentTokenLength(); i++) {
-        const digitChar = tokenStart[i];
+        const digitChar = tokenStart[startIdx + i];
         const val = this.sd().hexDigitWeight(digitChar);
         const charMax = 0x10ffff; // From constant.h
 
@@ -7449,9 +7450,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
     } else {
       this.extendNumber(this.syntax().namelen(), ParserMessages.numberLength);
       const tokenStart = input.currentTokenStart();
+      const startIdx = input.currentTokenStartIndex();
 
       for (let i = 0; tokenStart && i < input.currentTokenLength(); i++) {
-        const digitChar = tokenStart[i];
+        const digitChar = tokenStart[startIdx + i];
         const val = this.sd().digitWeight(digitChar);
         const charMax = 0x10ffff;
 

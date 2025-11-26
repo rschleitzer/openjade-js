@@ -426,50 +426,60 @@ export class SOEntityCatalog extends EntityCatalog {
   // Add a PUBLIC entry
   addPublicId(publicId: StringC, systemId: StringC, loc: Location, override: Boolean): void {
     const entry = new CatalogEntry();
-    entry.to = systemId;
+    // Must copy systemId since it's often this.param_ which gets reused
+    entry.to.assign(systemId.data(), systemId.size());
     entry.loc = loc;
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
-    this.publicIds_.insert(publicId, entry, override);
+    // Must copy publicId for the same reason
+    const publicIdCopy = new StringOf<Char>();
+    publicIdCopy.assign(publicId.data(), publicId.size());
+    this.publicIds_.insert(publicIdCopy, entry, override);
   }
 
   // Add a DELEGATE entry
   addDelegate(prefix: StringC, systemId: StringC, loc: Location, override: Boolean): void {
     const entry = new CatalogEntry();
-    entry.to = systemId;
+    entry.to.assign(systemId.data(), systemId.size());
     entry.loc = loc;
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
-    this.delegates_.insert(prefix, entry, override);
+    const prefixCopy = new StringOf<Char>();
+    prefixCopy.assign(prefix.data(), prefix.size());
+    this.delegates_.insert(prefixCopy, entry, override);
   }
 
   // Add a DTDDECL entry
   addDtdDecl(publicId: StringC, systemId: StringC, loc: Location, override: Boolean): void {
     const entry = new CatalogEntry();
-    entry.to = systemId;
+    entry.to.assign(systemId.data(), systemId.size());
     entry.loc = loc;
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
 
-    if (!this.dtdDecls_.lookup(publicId)) {
-      this.dtdDecls_.insert(publicId, entry);
+    const publicIdCopy = new StringOf<Char>();
+    publicIdCopy.assign(publicId.data(), publicId.size());
+    if (!this.dtdDecls_.lookup(publicIdCopy)) {
+      this.dtdDecls_.insert(publicIdCopy, entry);
     }
   }
 
   // Add a SYSTEM entry
   addSystemId(systemId: StringC, replSystemId: StringC, loc: Location): void {
     const entry = new CatalogEntry();
-    entry.to = replSystemId;
+    entry.to.assign(replSystemId.data(), replSystemId.size());
     entry.loc = loc;
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
 
-    if (!this.systemIds_.lookup(systemId)) {
-      this.systemIds_.insert(systemId, entry);
+    const systemIdCopy = new StringOf<Char>();
+    systemIdCopy.assign(systemId.data(), systemId.size());
+    if (!this.systemIds_.lookup(systemIdCopy)) {
+      this.systemIds_.insert(systemIdCopy, entry);
     }
   }
 
@@ -482,7 +492,7 @@ export class SOEntityCatalog extends EntityCatalog {
     override: Boolean
   ): void {
     const entry = new CatalogEntry();
-    entry.to = systemId;
+    entry.to.assign(systemId.data(), systemId.size());
     entry.loc = loc;
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
@@ -495,8 +505,10 @@ export class SOEntityCatalog extends EntityCatalog {
       tableIndex = declType;
     }
 
+    const nameCopy = new StringOf<Char>();
+    nameCopy.assign(name.data(), name.size());
     if (tableIndex >= 0 && tableIndex < 5) {
-      this.names_[tableIndex].insert(name, entry, override);
+      this.names_[tableIndex].insert(nameCopy, entry, override);
     }
   }
 
@@ -789,6 +801,12 @@ export class CatalogParser {
       return;
     }
 
+    // Save the current base ID and set it to this catalog's path for relative path resolution
+    const savedBaseId = em.currentBaseId();
+    const savedBaseIdCopy = new StringOf<Char>();
+    savedBaseIdCopy.assign(savedBaseId.data(), savedBaseId.size());
+    em.setCurrentBaseId(sysid);
+
     this.in_ = em.open(
       sysid,
       sysidCharset,
@@ -798,6 +816,7 @@ export class CatalogParser {
     );
 
     if (!this.in_) {
+      em.setCurrentBaseId(savedBaseIdCopy);  // Restore on failure
       catalog.endCatalog();
       return;
     }
@@ -903,6 +922,9 @@ export class CatalogParser {
         );
       }
     }
+
+    // Restore the previous base ID
+    em.setCurrentBaseId(savedBaseIdCopy);
   }
 
   // Check for loop in catalog references

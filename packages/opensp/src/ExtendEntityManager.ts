@@ -476,15 +476,44 @@ export class ExtendEntityManager extends EntityManager {
     mgr: Messenger,
     result: StringC
   ): Boolean {
-    // Simple implementation: if str is an absolute path or no location, use as-is
-    // Otherwise resolve relative to the location's storage object
     if (str.size() === 0) {
       return false;
     }
 
-    // For now, just copy the system ID to result (simple file path handling)
-    // Full implementation would handle relative path resolution, storage manager lookup, etc.
-    result.assign(str.data(), str.size());
+    // Convert StringC to JavaScript string
+    const sysidStr = String.fromCharCode(...str.data().slice(0, str.size()));
+
+    // Check if it's an absolute path
+    const isAbsolutePath = sysidStr.startsWith('/') ||
+                          /^[A-Za-z]:[\\/]/.test(sysidStr) ||  // Windows absolute
+                          sysidStr.startsWith('file://');
+
+    if (isAbsolutePath) {
+      result.assign(str.data(), str.size());
+      return true;
+    }
+
+    // Resolve relative path using the current base ID
+    let basePath = '';
+
+    // Use current base ID for relative path resolution
+    if (this.currentBaseId_.size() > 0) {
+      basePath = String.fromCharCode(...this.currentBaseId_.data().slice(0, this.currentBaseId_.size()));
+    }
+
+    // Resolve relative path
+    let resolvedPath = sysidStr;
+    if (basePath) {
+      // Get the directory from the base path and resolve
+      const path = require('path');
+      const baseDir = path.dirname(basePath);
+      resolvedPath = path.resolve(baseDir, sysidStr);
+    }
+
+    // Convert back to StringC
+    for (let i = 0; i < resolvedPath.length; i++) {
+      result.append([resolvedPath.charCodeAt(i)], 1);
+    }
     return true;
   }
 }

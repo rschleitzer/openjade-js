@@ -42,11 +42,13 @@ export class HashTable<K extends Hashable, V> {
   }
 
   private getHashKey(key: K): string {
-    // For StringC, use the Hash function
-    if (key instanceof String || (key as any).data) {
-      const hashFunc = new Hash();
-      const h = hashFunc.hash(key as any as StringC);
-      return h.toString();
+    // For StringC, convert to actual string content for comparison
+    // Using hash alone causes collisions - different strings with same hash would match
+    if ((key as any).data && typeof (key as any).size === 'function') {
+      const data = (key as any).data();
+      const size = (key as any).size();
+      // Convert StringC to string for Map key (preserves exact content)
+      return String.fromCharCode(...data.slice(0, size));
     }
     // For other types, use toString()
     return key.toString();
