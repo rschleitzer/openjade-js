@@ -567,6 +567,8 @@ export class ExternalInputSource extends InputSource {
     asis: 5
   } as const;
   private recordType_: number;
+  private lastWasCr_: boolean;  // Track if previous char was CR for CRLF detection
+  private pendingCr_: boolean;  // CR at buffer boundary waiting to see if LF follows
 
   // Leftover bytes from incomplete UTF-8 sequences at buffer boundaries
   // Port of leftOver_ and nLeftOver_ from ExtendEntityManager.cxx
@@ -608,6 +610,8 @@ export class ExternalInputSource extends InputSource {
     this.insertRS_ = true;
     this.soIndex_ = 0;
     this.recordType_ = ExternalInputSource.RecordType.unknown;
+    this.lastWasCr_ = false;
+    this.pendingCr_ = false;
     // Reset base class buffer state
     this.buffer_ = [];
     this.start_ = 0;
@@ -681,6 +685,21 @@ export class ExternalInputSource extends InputSource {
       }
 
       if (!this.so_) {
+        // End of entity - handle any pending CR
+        if (this.pendingCr_) {
+          this.pendingCr_ = false;
+          // Output pending CR as RE (end of file, no LF follows)
+          const newChars: Char[] = [];
+          for (let j = this.start_; j < this.end_; j++) {
+            newChars.push(this.buffer_[j]);
+          }
+          newChars.push(13); // RE from pending CR
+          this.buffer_ = newChars;
+          this.start_ = 0;
+          this.cur_ = 0;
+          this.end_ = newChars.length;
+          return this.nextChar();
+        }
         return InputSource.eE;
       }
 
@@ -708,8 +727,11 @@ export class ExternalInputSource extends InputSource {
       // Track where new data starts (for adjusting cur_ if needed)
       const newDataStartIdx = newChars.length;
 
-      // Insert RS at start of storage object if needed
-      if (this.insertRS_) {
+      // Insert RS at start of new data if insertRS_ is set (from previous line ending)
+      // This is ONLY inserted at the start of NEW decoded data, not into kept data
+      if (this.insertRS_ && newDataStartIdx === keepSize) {
+        // Only insert if we're truly at the start of new data
+        // This prevents double-insertion when there's kept data
         newChars.push(10); // RS = newline (record start)
         this.insertRS_ = false;
       }
@@ -729,7 +751,23 @@ export class ExternalInputSource extends InputSource {
         totalBytes = result.bytesRead;
       }
 
+      // Handle pending CR from previous buffer (CR at buffer boundary)
       let i = 0;
+      if (this.pendingCr_) {
+        this.pendingCr_ = false;
+        if (totalBytes > 0 && combinedBuf[0] === 10) {
+          // CR followed by LF - this is CRLF pair
+          // Output RE (from pending CR), LF will be output as RS in loop
+          newChars.push(13); // RE
+          this.lastWasCr_ = true;
+        } else {
+          // CR not followed by LF - handle as CR-only line ending
+          newChars.push(13); // RE
+          this.insertRS_ = true;
+          this.lastWasCr_ = false;
+        }
+      }
+
       while (i < totalBytes) {
         const byte = combinedBuf[i];
         let codePoint: number;
@@ -815,36 +853,80 @@ export class ExternalInputSource extends InputSource {
         // Skip output if we broke out due to incomplete sequence
         if (this.nLeftOver_ > 0) break;
 
-        // Handle record separators (simplified: treat LF as RE, insert RS after)
+        // Handle record separators based on detected record type
+        // Port of ExtendEntityManager.cxx lines 906-1013
+        const RecordType = ExternalInputSource.RecordType;
+
         if (codePoint === 10) { // LF
-          // If we have a pending RS from a previous line ending, insert it first.
-          // This handles consecutive line endings (blank lines) correctly:
-          // Input: LF LF -> Output: RE RS RE RS (not RE RE RS)
-          if (this.insertRS_) {
-            newChars.push(10); // RS (record start)
-            this.insertRS_ = false;
+          if (this.recordType_ === RecordType.unknown) {
+            // First line ending found - detect record type as LF-only
+            this.recordType_ = RecordType.lf;
           }
-          newChars.push(13); // RE (carriage return in SGML terminology)
-          this.insertRS_ = true;
+
+          if (this.recordType_ === RecordType.crlf) {
+            // In CRLF mode, LF is always RS (10)
+            // Whether it follows CR (CRLF pair) or is naked, output it as RS
+            newChars.push(10); // LF stays as RS
+            this.lastWasCr_ = false;
+            this.insertRS_ = false;
+          } else {
+            // In LF mode (or unknown detecting as LF), convert LF to RE and insert RS before next record
+            if (this.recordType_ === RecordType.unknown) {
+              this.recordType_ = RecordType.lf;
+            }
+            if (this.insertRS_) {
+              newChars.push(10); // RS (record start)
+              this.insertRS_ = false;
+            }
+            newChars.push(13); // RE (record end)
+            this.insertRS_ = true;
+            this.lastWasCr_ = false;
+          }
         } else if (codePoint === 13) { // CR
-          // Skip CR, will be handled with following LF if CRLF
-          if (i < result.bytesRead && readBuf[i] === 10) {
-            // CRLF - skip the CR, LF will be converted
-            continue;
+          // Check if this is CRLF
+          if (i < totalBytes && combinedBuf[i] === 10) {
+            // CRLF detected
+            if (this.recordType_ === RecordType.unknown) {
+              this.recordType_ = RecordType.crlf;
+            }
+            // In CRLF mode: CR is RE (13), the following LF will be RS (10)
+            // CR passes through as RE, mark that we saw CR
+            newChars.push(13); // CR stays as RE
+            this.lastWasCr_ = true; // Mark that next LF is part of CRLF pair
+            // Don't skip the LF - it will be handled in the next iteration as RS
+          } else if (i >= totalBytes && (this.recordType_ === RecordType.crlf || this.recordType_ === RecordType.unknown)) {
+            // CR at buffer boundary - can't tell if LF follows
+            // Save CR for next buffer to determine if it's CRLF or CR-only
+            this.pendingCr_ = true;
+          } else if (this.recordType_ === RecordType.crlf) {
+            // In CRLF mode, CR not followed by LF is NOT a line ending
+            // It's just a regular character (code 13 = RE character)
+            if (this.insertRS_) {
+              newChars.push(10); // RS (record start)
+              this.insertRS_ = false;
+            }
+            newChars.push(13); // CR as regular character
+            this.lastWasCr_ = false;
+          } else {
+            // CR-only line ending (in unknown/cr/lf mode)
+            if (this.recordType_ === RecordType.unknown) {
+              this.recordType_ = RecordType.cr;
+            }
+            if (this.insertRS_) {
+              newChars.push(10); // RS (record start)
+              this.insertRS_ = false;
+            }
+            newChars.push(13); // RE
+            this.insertRS_ = true;
+            this.lastWasCr_ = false;
           }
-          // If we have a pending RS from a previous line ending, insert it first.
-          if (this.insertRS_) {
-            newChars.push(10); // RS (record start)
-            this.insertRS_ = false;
-          }
-          newChars.push(13); // RE
-          this.insertRS_ = true;
         } else {
           if (this.insertRS_) {
             newChars.push(10); // RS (record start)
             this.insertRS_ = false;
           }
           newChars.push(codePoint);
+          this.lastWasCr_ = false;
         }
       }
 
