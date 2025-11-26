@@ -568,6 +568,11 @@ export class ExternalInputSource extends InputSource {
   } as const;
   private recordType_: number;
 
+  // Leftover bytes from incomplete UTF-8 sequences at buffer boundaries
+  // Port of leftOver_ and nLeftOver_ from ExtendEntityManager.cxx
+  private leftOver_: Uint8Array;
+  private nLeftOver_: number;
+
   constructor(
     parsedSysid: ParsedSystemId,
     internalCharset: CharsetInfo,
@@ -608,6 +613,9 @@ export class ExternalInputSource extends InputSource {
     this.start_ = 0;
     this.cur_ = 0;
     this.end_ = 0;
+    // Reset leftover byte tracking (port of lines 682-683)
+    this.leftOver_ = new Uint8Array(6); // Max 6 bytes for UTF-8 sequence
+    this.nLeftOver_ = 0;
   }
 
   pushCharRef(ch: Char, ref: any): void {
@@ -706,10 +714,24 @@ export class ExternalInputSource extends InputSource {
         this.insertRS_ = false;
       }
 
-      // Simple UTF-8 decoding
+      // UTF-8 decoding with leftover byte handling (port of UTF8CodingSystem.cxx)
+      // Combine leftover bytes from previous read with new data
+      let combinedBuf: Uint8Array;
+      let totalBytes: number;
+      if (this.nLeftOver_ > 0) {
+        totalBytes = this.nLeftOver_ + result.bytesRead;
+        combinedBuf = new Uint8Array(totalBytes);
+        combinedBuf.set(this.leftOver_.subarray(0, this.nLeftOver_), 0);
+        combinedBuf.set(readBuf.subarray(0, result.bytesRead), this.nLeftOver_);
+        this.nLeftOver_ = 0;
+      } else {
+        combinedBuf = readBuf;
+        totalBytes = result.bytesRead;
+      }
+
       let i = 0;
-      while (i < result.bytesRead) {
-        const byte = readBuf[i];
+      while (i < totalBytes) {
+        const byte = combinedBuf[i];
         let codePoint: number;
 
         if (byte < 0x80) {
@@ -718,36 +740,80 @@ export class ExternalInputSource extends InputSource {
           i++;
         } else if ((byte & 0xE0) === 0xC0) {
           // 2-byte sequence
-          if (i + 1 < result.bytesRead) {
-            codePoint = ((byte & 0x1F) << 6) | (readBuf[i + 1] & 0x3F);
-            i += 2;
+          if (i + 1 < totalBytes) {
+            const c1 = combinedBuf[i + 1] ^ 0x80;
+            if (c1 & 0xC0) {
+              // Invalid continuation byte - emit replacement and skip
+              codePoint = this.replacementChar_;
+              i++;
+            } else {
+              codePoint = ((byte & 0x1F) << 6) | c1;
+              if (codePoint < 0x80) codePoint = this.replacementChar_; // Overlong
+              i += 2;
+            }
           } else {
-            codePoint = this.replacementChar_;
-            i++;
+            // Incomplete sequence at buffer boundary - save for next read
+            this.leftOver_[0] = byte;
+            this.nLeftOver_ = 1;
+            break;
           }
         } else if ((byte & 0xF0) === 0xE0) {
           // 3-byte sequence
-          if (i + 2 < result.bytesRead) {
-            codePoint = ((byte & 0x0F) << 12) | ((readBuf[i + 1] & 0x3F) << 6) | (readBuf[i + 2] & 0x3F);
-            i += 3;
+          if (i + 2 < totalBytes) {
+            const c1 = combinedBuf[i + 1] ^ 0x80;
+            const c2 = combinedBuf[i + 2] ^ 0x80;
+            if ((c1 | c2) & 0xC0) {
+              codePoint = this.replacementChar_;
+              i++;
+            } else {
+              codePoint = ((byte & 0x0F) << 12) | (c1 << 6) | c2;
+              if (codePoint < 0x800) codePoint = this.replacementChar_; // Overlong
+              i += 3;
+            }
           } else {
-            codePoint = this.replacementChar_;
-            i++;
+            // Incomplete sequence - save remaining bytes for next read
+            const remaining = totalBytes - i;
+            for (let j = 0; j < remaining; j++) {
+              this.leftOver_[j] = combinedBuf[i + j];
+            }
+            this.nLeftOver_ = remaining;
+            break;
           }
         } else if ((byte & 0xF8) === 0xF0) {
           // 4-byte sequence
-          if (i + 3 < result.bytesRead) {
-            codePoint = ((byte & 0x07) << 18) | ((readBuf[i + 1] & 0x3F) << 12) |
-                        ((readBuf[i + 2] & 0x3F) << 6) | (readBuf[i + 3] & 0x3F);
-            i += 4;
+          if (i + 3 < totalBytes) {
+            const c1 = combinedBuf[i + 1] ^ 0x80;
+            const c2 = combinedBuf[i + 2] ^ 0x80;
+            const c3 = combinedBuf[i + 3] ^ 0x80;
+            if ((c1 | c2 | c3) & 0xC0) {
+              codePoint = this.replacementChar_;
+              i++;
+            } else {
+              codePoint = ((byte & 0x07) << 18) | (c1 << 12) | (c2 << 6) | c3;
+              if (codePoint < 0x10000) codePoint = this.replacementChar_; // Overlong
+              i += 4;
+            }
           } else {
-            codePoint = this.replacementChar_;
-            i++;
+            // Incomplete sequence - save remaining bytes for next read
+            const remaining = totalBytes - i;
+            for (let j = 0; j < remaining; j++) {
+              this.leftOver_[j] = combinedBuf[i + j];
+            }
+            this.nLeftOver_ = remaining;
+            break;
           }
+        } else if ((byte & 0xC0) === 0x80) {
+          // Unexpected continuation byte - skip it (error recovery)
+          codePoint = this.replacementChar_;
+          i++;
         } else {
+          // Invalid start byte
           codePoint = this.replacementChar_;
           i++;
         }
+
+        // Skip output if we broke out due to incomplete sequence
+        if (this.nLeftOver_ > 0) break;
 
         // Handle record separators (simplified: treat LF as RE, insert RS after)
         if (codePoint === 10) { // LF
