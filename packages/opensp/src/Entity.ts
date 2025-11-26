@@ -19,6 +19,7 @@ import * as ParserMessages from './ParserMessages';
 import { StringMessageArg, NumberMessageArg } from './MessageArg';
 import { PiEntityEvent, CdataEntityEvent, SdataEntityEvent, ExternalDataEntityEvent, SubdocEntityEvent, EntityStartEvent } from './Event';
 import { InternalInputSource } from './InternalInputSource';
+import { Sd } from './Sd';
 
 // Forward declarations
 export class ParserState { }
@@ -175,7 +176,7 @@ export abstract class InternalEntity extends Entity {
   protected checkRef(parserState: ParserState): void {
     // Port of InternalEntity::checkRef from Entity.cxx (lines 600-603)
     const ps = parserState as any;
-    if (ps.sd().entityRef() === 0) { // Sd::entityRefNone = 0
+    if (ps.sd().entityRef() === Sd.EntityRef.entityRefNone) {
       ps.message(ParserMessages.entityRefNone);
     }
   }
@@ -515,7 +516,7 @@ export abstract class ExternalEntity extends Entity {
   protected checkRef(parserState: ParserState): void {
     // Port of ExternalEntity::checkRef from Entity.cxx (lines 605-608)
     const ps = parserState as any;
-    if (ps.sd().entityRef() !== 2) { // Sd::entityRefAny = 2
+    if (ps.sd().entityRef() !== Sd.EntityRef.entityRefAny) {
       ps.message(ParserMessages.entityRefInternal);
     }
   }

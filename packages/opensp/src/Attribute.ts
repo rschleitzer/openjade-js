@@ -1706,13 +1706,19 @@ export class AttributeList {
       this.vec_.resize(0);
     } else {
       const newLength = def.pointer()!.size();
-      let clearLim = this.vec_.size();
+      const oldLength = this.vec_.size();
+      let clearLim = oldLength;
       if (clearLim > newLength) {
         clearLim = newLength;
       }
       this.vec_.resize(newLength);
+      // Clear existing elements
       for (let i = 0; i < clearLim; i++) {
         this.vec_.get(i).clear();
+      }
+      // Initialize new elements (Vector.resize leaves new slots undefined)
+      for (let i = oldLength; i < newLength; i++) {
+        this.vec_.set(i, new Attribute());
       }
     }
   }

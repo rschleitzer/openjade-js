@@ -968,8 +968,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
     } else {
       this.attributeLists_.resize(i + 1);
       const newOwner = new Owner<AttributeList>(new AttributeList());
+      const attrList = newOwner.pointer();
+      if (attrList) {
+        attrList.init(def);
+      }
       this.attributeLists_.set(i, newOwner);
-      return newOwner.pointer();
+      return attrList;
     }
   }
 
@@ -3025,11 +3029,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
             this.extendS();
             const input = this.currentInput();
             if (input) {
-              const data = new Uint32Array(input.currentTokenStart());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              const data = new Uint32Array(buf.slice(startIdx, startIdx + tokenLen));
               this.eventHandler().sSep(
                 new SSepEvent(
                   data,
-                  input.currentTokenLength(),
+                  tokenLen,
                   this.currentLocation(),
                   true
                 )
@@ -3043,11 +3050,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
           if (this.eventsWanted().wantPrologMarkup()) {
             const input = this.currentInput();
             if (input) {
-              const data = new Uint32Array(input.currentTokenStart());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              const data = new Uint32Array(buf.slice(startIdx, startIdx + tokenLen));
               this.eventHandler().ignoredChars(
                 new IgnoredCharsEvent(
                   data,
-                  input.currentTokenLength(),
+                  tokenLen,
                   this.currentLocation(),
                   true
                 )
@@ -5775,15 +5785,30 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
   protected parseDoctypeDeclEnd(fake: boolean = false): boolean {
     // End of DOCTYPE declaration parsing
-    // Port from parseDecl.cxx
+    // Port from parseDecl.cxx (lines 2350-2382)
     this.checkDtd(this.defDtd());
 
-    // Fire EndDtdEvent before ending DTD
+    const tem = this.defDtdPointer();
+    this.endDtd();
+
+    if (fake) {
+      this.startMarkup(this.eventsWanted().wantPrologMarkup(), this.currentLocation());
+    } else {
+      this.startMarkup(this.eventsWanted().wantPrologMarkup(), this.currentLocation());
+      const parm = new Param();
+      // End DTD before parsing final param so parameter entity reference
+      // not allowed between ] and >.
+      const allowMdc = new AllowedParams(Param.mdc);
+      if (!this.parseParam(allowMdc, this.inputLevel(), parm)) {
+        return false;
+      }
+    }
+
+    // Fire EndDtdEvent
     this.eventHandler().endDtd(
-      new EndDtdEvent(this.currentDtdPointer(), this.currentLocation(), this.currentMarkup())
+      new EndDtdEvent(new ConstPtr<Dtd>(tem.pointer()), this.markupLocation(), this.currentMarkup())
     );
 
-    this.endDtd();
     return true;
   }
 
@@ -6358,9 +6383,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
           if (this.eventsWanted().wantInstanceMarkup()) {
             const input = this.currentInput();
             if (input) {
-              const data = new Uint32Array(input.currentTokenStart());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              const data = new Uint32Array(buf.slice(startIdx, startIdx + tokenLen));
               this.eventHandler().sSep(
-                new SSepEvent(data, input.currentTokenLength(), this.currentLocation(), false)
+                new SSepEvent(data, tokenLen, this.currentLocation(), false)
               );
             }
           }
@@ -6372,9 +6400,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
           if (this.eventsWanted().wantMarkedSections()) {
             const input = this.currentInput();
             if (input) {
-              const data = new Uint32Array(input.currentTokenStart());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              const data = new Uint32Array(buf.slice(startIdx, startIdx + tokenLen));
               this.eventHandler().ignoredChars(
-                new IgnoredCharsEvent(data, input.currentTokenLength(), this.currentLocation(), false)
+                new IgnoredCharsEvent(data, tokenLen, this.currentLocation(), false)
               );
             }
           }
@@ -6392,9 +6423,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
           {
             const input = this.currentInput();
             if (input) {
-              const start = input.currentTokenStart();
-              const len = input.currentTokenLength();
-              const str = new String<Char>(start, len);
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              const str = new String<Char>(buf.slice(startIdx, startIdx + tokenLen), tokenLen);
               this.message(ParserMessages.dataCharDelim, new StringMessageArg(str));
             }
           }
@@ -7335,9 +7367,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
           // fall through
 
         case TokenEnum.tokenChar:
-          const start = input.currentTokenStart();
-          if (start && start.length > 0) {
-            buf.append([start[0]], 1);
+          const charBuf = input.currentTokenStart();
+          const charStartIdx = input.currentTokenStartIndex();
+          if (charBuf && charStartIdx < charBuf.length) {
+            buf.append([charBuf[charStartIdx]], 1);
           }
 
           if (buf.size() / 2 > this.syntax().pilen()) {
@@ -7992,12 +8025,15 @@ export class ParserState extends ContentState implements ParserStateInterface {
     this.noteData();
     const input = this.currentInput();
     if (input) {
-      const data = new Uint32Array(input.currentTokenStart());
+      const buf = input.currentTokenStart();
+      const startIdx = input.currentTokenStartIndex();
+      const tokenLen = input.currentTokenLength();
+      const data = new Uint32Array(buf.slice(startIdx, startIdx + tokenLen));
       this.eventHandler().data(
         new ImmediateDataEvent(
           Event.Type.characterData,
           data,
-          input.currentTokenLength(),
+          tokenLen,
           this.currentLocation(),
           false
         )
@@ -9200,9 +9236,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
             const text = new Text();
             const input = this.currentInput();
             if (input) {
-              const start = input.currentTokenStart();
-              if (start) {
-                text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              if (buf) {
+                const tokenChars = buf.slice(startIdx, startIdx + tokenLen);
+                text.addChars(Array.from(tokenChars), tokenLen, this.currentLocation());
               }
             }
 
@@ -9247,9 +9286,12 @@ export class ParserState extends ContentState implements ParserStateInterface {
             const text = new Text();
             const input = this.currentInput();
             if (input) {
-              const start = input.currentTokenStart();
-              if (start) {
-                text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              const buf = input.currentTokenStart();
+              const startIdx = input.currentTokenStartIndex();
+              const tokenLen = input.currentTokenLength();
+              if (buf) {
+                const tokenChars = buf.slice(startIdx, startIdx + tokenLen);
+                text.addChars(Array.from(tokenChars), tokenLen, this.currentLocation());
               }
             }
 
@@ -11803,18 +11845,17 @@ export class ParserState extends ContentState implements ParserStateInterface {
     }
   }
 
-  // Port of Parser::lookupCreateElement from parser.cxx
+  // Port of Parser::lookupCreateElement from parseDecl.cxx
   // Look up an element in the definition DTD and create it if it doesn't exist
+  // This is used during DTD parsing - it does NOT set a definition (unlike lookupCreateUndefinedElement)
   protected lookupCreateElement(name: StringC): ElementType {
     const dtd = this.defDtd();
     let elementType = dtd.lookupElementType(name);
     if (!elementType) {
-      elementType = this.lookupCreateUndefinedElement(
-        name,
-        this.currentLocation(),
-        this.defDtdNonConst(),
-        true
-      );
+      // Note: Original C++ checks haveDefLpd() and issues noSuchSourceElement message
+      // Create element without definition - matches original C++ behavior
+      elementType = new ElementType(name, this.defDtdNonConst().allocElementTypeIndex());
+      this.defDtdNonConst().insertElementType(elementType);
     }
     return elementType;
   }
