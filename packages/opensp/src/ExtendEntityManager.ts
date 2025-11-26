@@ -721,6 +721,13 @@ export class ExternalInputSource extends InputSource {
 
         // Handle record separators (simplified: treat LF as RE, insert RS after)
         if (codePoint === 10) { // LF
+          // If we have a pending RS from a previous line ending, insert it first.
+          // This handles consecutive line endings (blank lines) correctly:
+          // Input: LF LF -> Output: RE RS RE RS (not RE RE RS)
+          if (this.insertRS_) {
+            newChars.push(10); // RS (record start)
+            this.insertRS_ = false;
+          }
           newChars.push(13); // RE (carriage return in SGML terminology)
           this.insertRS_ = true;
         } else if (codePoint === 13) { // CR
@@ -728,6 +735,11 @@ export class ExternalInputSource extends InputSource {
           if (i < result.bytesRead && readBuf[i] === 10) {
             // CRLF - skip the CR, LF will be converted
             continue;
+          }
+          // If we have a pending RS from a previous line ending, insert it first.
+          if (this.insertRS_) {
+            newChars.push(10); // RS (record start)
+            this.insertRS_ = false;
           }
           newChars.push(13); // RE
           this.insertRS_ = true;
