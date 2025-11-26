@@ -17,7 +17,7 @@ export abstract class OutputCharStream extends Link {
 
   protected ptr_: Uint32Array | null;
   protected end_: number;
-  private ptrOffset_: number;
+  protected ptrOffset_: number;  // Made protected so derived classes can reset it
 
   constructor() {
     super();
@@ -152,10 +152,9 @@ export class EncodeOutputCharStream extends OutputCharStream {
 
   flush(): void {
     if (this.buf_ && this.ptr_ && this.encoder_ && this.byteStream_) {
-      const length = this.ptr_.indexOf(0, 0); // Find actual used length
-      if (length > 0) {
-        this.encoder_.output(Array.from(this.buf_), length, this.byteStream_);
-        this.ptr_.fill(0);
+      if (this.ptrOffset_ > 0) {
+        this.encoder_.output(Array.from(this.buf_.subarray(0, this.ptrOffset_)), this.ptrOffset_, this.byteStream_);
+        this.ptrOffset_ = 0;
       }
     }
     if (this.byteStream_) {
@@ -170,15 +169,14 @@ export class EncodeOutputCharStream extends OutputCharStream {
   protected flushBuf(c: Char): void {
     ASSERT(this.buf_ !== null);
     if (this.buf_ && this.ptr_ && this.encoder_ && this.byteStream_) {
-      const length = this.ptr_.indexOf(0, 0);
-      this.encoder_.output(Array.from(this.buf_), length, this.byteStream_);
-      this.ptr_.fill(0);
-      this.ptr_[0] = c;
+      this.encoder_.output(Array.from(this.buf_.subarray(0, this.ptrOffset_)), this.ptrOffset_, this.byteStream_);
+      this.ptrOffset_ = 0;
+      this.ptr_[this.ptrOffset_++] = c;
     }
   }
 
   private allocBuf(bytesPerChar: number): void {
-    const blockSize = 1024;
+    const blockSize = 16384;  // Increased from 1024 for better I/O batching
     const bufSize = bytesPerChar ? Math.floor(blockSize / bytesPerChar) : blockSize;
     this.buf_ = new Uint32Array(bufSize);
     this.ptr_ = this.buf_;
@@ -207,9 +205,8 @@ export class StrOutputCharStream extends OutputCharStream {
 
   extractString(str: StringC): void {
     if (this.buf_ && this.ptr_) {
-      const length = this.ptr_.indexOf(0, 0);
       const data: number[] = [];
-      for (let i = 0; i < length && i < this.buf_.length; i++) {
+      for (let i = 0; i < this.ptrOffset_ && i < this.buf_.length; i++) {
         data.push(this.buf_[i]);
       }
       (str as any).assign(data, data.length);
@@ -222,17 +219,17 @@ export class StrOutputCharStream extends OutputCharStream {
   }
 
   protected flushBuf(c: Char): void {
-    const used = this.ptr_ ? this.ptr_.indexOf(0, 0) : 0;
+    const used = this.ptrOffset_;
     const oldSize = this.bufSize_;
     this.bufSize_ = oldSize ? 2 * oldSize : 10;
     const oldBuf = this.buf_;
     this.buf_ = new Uint32Array(this.bufSize_);
     if (oldSize && oldBuf) {
-      this.buf_.set(oldBuf.subarray(0, oldSize));
+      this.buf_.set(oldBuf.subarray(0, used));
     }
     this.sync(used);
     if (this.ptr_) {
-      this.ptr_[0] = c;
+      this.ptr_[this.ptrOffset_++] = c;
     }
   }
 
@@ -241,6 +238,7 @@ export class StrOutputCharStream extends OutputCharStream {
       this.buf_ = new Uint32Array(this.bufSize_ || 10);
     }
     this.ptr_ = this.buf_;
+    this.ptrOffset_ = length;
     this.end_ = this.bufSize_;
   }
 }
@@ -248,7 +246,7 @@ export class StrOutputCharStream extends OutputCharStream {
 export class RecordOutputCharStream extends OutputCharStream {
   private os_: OutputCharStream;
   private buf_: Uint32Array;
-  private readonly bufSize_: number = 1024;
+  private readonly bufSize_: number = 16384;  // Increased from 1024
 
   constructor(os: OutputCharStream) {
     super();
@@ -270,7 +268,7 @@ export class RecordOutputCharStream extends OutputCharStream {
   protected flushBuf(c: Char): void {
     this.outputBuf();
     if (this.ptr_) {
-      this.ptr_[0] = c;
+      this.ptr_[this.ptrOffset_++] = c;
     }
   }
 
@@ -279,9 +277,8 @@ export class RecordOutputCharStream extends OutputCharStream {
 
     let start = 0;
     let p = 0;
-    const length = this.ptr_.indexOf(0, 0);
 
-    while (p < length) {
+    while (p < this.ptrOffset_) {
       const ch = this.buf_[p];
       if (ch === 0x0D) { // '\r' - translate RE to newline
         if (start < p) {
@@ -304,6 +301,7 @@ export class RecordOutputCharStream extends OutputCharStream {
     }
 
     this.ptr_ = this.buf_;
+    this.ptrOffset_ = 0;
     this.end_ = this.bufSize_;
   }
 }
