@@ -120,6 +120,12 @@ export class Parser extends ParserState {
       origin = params.origin;
     }
 
+    // Set the base ID for resolving relative paths (e.g., DTD references)
+    const em = this.entityManager() as any;
+    if (em.setCurrentBaseId) {
+      em.setCurrentBaseId(sysid);
+    }
+
     this.pushInput(
       this.entityManager().open(
         sysid,

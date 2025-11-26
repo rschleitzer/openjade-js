@@ -297,7 +297,16 @@ export class FileStorageManager extends StorageManager {
     result: { object: StorageObject | null }
   ): Boolean {
     // Convert StringC to JavaScript string for file path
-    const path = this.stringCToPath(id);
+    let path = this.stringCToPath(id);
+
+    // Resolve relative paths against baseId
+    if (baseId.size() > 0 && !this.isAbsolutePath(path)) {
+      const basePath = this.stringCToPath(baseId);
+      // Get the directory of the base path
+      const lastSep = basePath.lastIndexOf('/');
+      const baseDir = lastSep >= 0 ? basePath.substring(0, lastSep + 1) : '';
+      path = baseDir + path;
+    }
 
     if (!this.fileReader_) {
       result.object = null;
@@ -310,8 +319,17 @@ export class FileStorageManager extends StorageManager {
       return false;
     }
 
-    result.object = new FileStorageObject(contents, id);
+    // Store the resolved path in the result for future baseId use
+    const resolvedId = new StringOf<Char>();
+    for (let i = 0; i < path.length; i++) {
+      resolvedId.appendChar(path.charCodeAt(i));
+    }
+    result.object = new FileStorageObject(contents, resolvedId);
     return true;
+  }
+
+  private isAbsolutePath(path: string): boolean {
+    return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path);
   }
 
   idCharset(): CharsetInfo {
@@ -346,6 +364,7 @@ export class ExtendEntityManager extends EntityManager {
   private charset_: CharsetInfo;
   private catalogManager_: CatalogManager | null;
   private storageManagers_: StorageManager[];
+  private currentBaseId_: StringC;  // Stack of base IDs for nested entities
 
   constructor(
     defaultStorageManager: StorageManager | null,
@@ -360,6 +379,15 @@ export class ExtendEntityManager extends EntityManager {
     this.internalCharsetIsDocCharset_ = internalCharsetIsDocCharset;
     this.catalogManager_ = null;
     this.storageManagers_ = [];
+    this.currentBaseId_ = new StringOf<Char>();
+  }
+
+  setCurrentBaseId(baseId: StringC): void {
+    this.currentBaseId_ = baseId;
+  }
+
+  currentBaseId(): StringC {
+    return this.currentBaseId_;
   }
 
   setCatalogManager(catalogManager: CatalogManager): void {
@@ -393,7 +421,9 @@ export class ExtendEntityManager extends EntityManager {
     // Simple implementation: treat sysid as a file path
     const spec = new StorageObjectSpec();
     spec.id = sysid;
+    // Use current base ID for resolving relative paths
     spec.baseId = new StringOf<Char>();
+    spec.baseId.appendString(this.currentBaseId_);
     spec.storageManager = this.defaultStorageManager_;
     spec.codingSystem = this.defaultCodingSystem_;
     spec.records = StorageObjectSpec.RecordType.find;

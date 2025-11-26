@@ -9483,8 +9483,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
           const input = this.currentInput();
           if (input) {
             const start = input.currentTokenStart();
+            const startIdx = input.currentTokenStartIndex();
+            const len = input.currentTokenLength();
             if (start) {
-              text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              text.addChars(start.slice(startIdx, startIdx + len), len, this.currentLocation());
             }
           }
         }
@@ -9524,8 +9526,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
           const input = this.currentInput();
           if (input) {
             const start = input.currentTokenStart();
+            const startIdx = input.currentTokenStartIndex();
+            const len = input.currentTokenLength();
             if (start) {
-              text.addChars(Array.from(start), input.currentTokenLength(), this.currentLocation());
+              text.addChars(start.slice(startIdx, startIdx + len), len, this.currentLocation());
             }
           }
         }
@@ -11781,7 +11785,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
     parm.type = Param.attributeValue;
     const text = new Text();
     const input = this.currentInput()!;
-    text.addChars(input.currentTokenStart(), input.currentTokenLength(), this.currentLocation());
+    const start = input.currentTokenStart();
+    const startIdx = input.currentTokenStartIndex();
+    const len = input.currentTokenLength();
+    text.addChars(start.slice(startIdx, startIdx + len), len, this.currentLocation());
     text.swap(parm.literalText);
     if (this.currentMarkup()) {
       this.currentMarkup()!.addAttributeValue(input);
