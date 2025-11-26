@@ -206,7 +206,7 @@ export class ParserOptions extends Warnings {
     this.formal = true;
     this.typeValid = ParserOptions.sgmlDeclTypeValid;
     this.shortref = true;
-    this.errorIdref = true;
+    this.errorIdref = false; // Default to false to match original onsgmls behavior
     this.errorSignificant = true;
     this.errorAfdr = true;
     this.noUnclosedTag = false;
