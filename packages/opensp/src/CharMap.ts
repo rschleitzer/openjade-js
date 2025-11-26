@@ -82,6 +82,31 @@ export class CharMap<T> {
     this.hi_.clear();
     this.defaultValue_ = val;
   }
+
+  getDefault(): T | undefined {
+    return this.defaultValue_;
+  }
+
+  *entriesNotDefault(): IterableIterator<[Char, T]> {
+    for (let i = 0; i < 256; i++) {
+      if (this.lo_[i] !== this.defaultValue_) {
+        yield [i, this.lo_[i]];
+      }
+    }
+    for (const [k, v] of this.hi_) {
+      if (v !== this.defaultValue_) {
+        yield [k, v];
+      }
+    }
+  }
+
+  copyFrom(other: CharMap<T>): void {
+    for (let i = 0; i < 256; i++) {
+      this.lo_[i] = other.lo_[i];
+    }
+    this.hi_ = new Map(other.hi_);
+    this.defaultValue_ = other.defaultValue_;
+  }
 }
 
 export class CharMapResource<T> extends Resource {

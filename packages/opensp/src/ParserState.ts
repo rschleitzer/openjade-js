@@ -14280,31 +14280,53 @@ export class ParserState extends ContentState implements ParserStateInterface {
    * Port of Parser::findMissingMinimum from parseSd.cxx lines 652-675
    */
   protected findMissingMinimum(charset: CharsetInfoClass | UnivCharsetDesc, missing: ISet<WideChar>): void {
-    // Check letters A-Z and a-z
+    // For minimum data characters, we need to check if certain ASCII characters
+    // can be represented in the document charset. These are the characters required
+    // by SGML for basic operation.
+    //
+    // Optimization: Instead of doing expensive inverse lookups (univToDesc),
+    // we check if the charset can represent these characters by doing a forward
+    // lookup (descToUniv) on the ASCII range where these characters typically live.
+
+    // Characters to check: A-Z, a-z, 0-9, and special chars ' ( ) + , - . / : = ?
+    const charsToCheck: number[] = [];
+
+    // A-Z (65-90) and a-z (97-122)
     for (let i = 0; i < 26; i++) {
-      const result = { c: 0 as Char, set: new ISet<WideChar>() };
-      if ((charset as any).univToDesc(UnivCharsetDesc.A + i, result) <= 0) {
-        missing.add(UnivCharsetDesc.A + i);
-      }
-      if ((charset as any).univToDesc(UnivCharsetDesc.a + i, result) <= 0) {
-        missing.add(UnivCharsetDesc.a + i);
-      }
+      charsToCheck.push(UnivCharsetDesc.A + i);
+      charsToCheck.push(UnivCharsetDesc.a + i);
     }
 
-    // Check digits 0-9
+    // 0-9 (48-57)
     for (let i = 0; i < 10; i++) {
-      const result = { c: 0 as Char, set: new ISet<WideChar>() };
-      if ((charset as any).univToDesc(UnivCharsetDesc.zero + i, result) <= 0) {
-        missing.add(UnivCharsetDesc.zero + i);
-      }
+      charsToCheck.push(UnivCharsetDesc.zero + i);
     }
 
-    // Check special characters: ' ( ) + , - . / : = ?
-    const special = [39, 40, 41, 43, 44, 45, 46, 47, 58, 61, 63];
-    for (const c of special) {
-      const result = { c: 0 as Char, set: new ISet<WideChar>() };
-      if ((charset as any).univToDesc(c, result) <= 0) {
-        missing.add(c);
+    // Special characters: ' ( ) + , - . / : = ?
+    charsToCheck.push(39, 40, 41, 43, 44, 45, 46, 47, 58, 61, 63);
+
+    // For each required character, check if it can be represented
+    // Try forward lookup first - if the charset maps desc char C to univ char C,
+    // then the character is present
+    for (const univChar of charsToCheck) {
+      // Try direct mapping - assume ASCII identity mapping for basic chars
+      const result = { value: 0 as UnivChar, alsoMax: 0 as WideChar };
+      if ((charset as any).descToUniv) {
+        // CharsetInfo/UnivCharsetDesc has descToUniv
+        if (!(charset as any).descToUniv(univChar, result) || result.value !== univChar) {
+          // Character not mapped or mapped to different value
+          // Fall back to inverse lookup for this character only
+          const toResult = { c: 0 as Char, set: new ISet<WideChar>() };
+          if ((charset as any).univToDesc(univChar, toResult) <= 0) {
+            missing.add(univChar);
+          }
+        }
+      } else {
+        // Fallback to inverse lookup
+        const toResult = { c: 0 as Char, set: new ISet<WideChar>() };
+        if ((charset as any).univToDesc(univChar, toResult) <= 0) {
+          missing.add(univChar);
+        }
       }
     }
   }

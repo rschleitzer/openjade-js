@@ -42,13 +42,11 @@ export class UnivCharsetDesc {
       // Copy constructor
       this.charMap_ = new CharMap<Unsigned32>((1 << 31) >>> 0);
       this.rangeMap_ = new RangeMap<WideChar, UnivChar>();
-      // Deep copy the maps
+      // Deep copy the maps efficiently
       const otherCharMap = (rangesOrOther as any).charMap_ as CharMap<Unsigned32>;
       const otherRangeMap = (rangesOrOther as any).rangeMap_ as RangeMap<WideChar, UnivChar>;
-      // Copy CharMap
-      for (let i = 0; i < charMax + 1; i++) {
-        this.charMap_.setChar(i, otherCharMap.get(i));
-      }
+      // Copy CharMap efficiently
+      this.charMap_.copyFrom(otherCharMap);
       // Copy RangeMap - will copy on addRange
       const otherRanges = otherRangeMap.getRanges();
       for (let i = 0; i < otherRanges.size(); i++) {
@@ -122,15 +120,17 @@ export class UnivCharsetDesc {
     }
 
     let ret = this.rangeMap_.inverseMap(from, to, toSet, count);
-    let min: Char = 0;
-    do {
-      const max = { value: 0 };
-      const tem = this.charMap_.getRange(min, max);
+
+    // Efficiently iterate over only the set entries in charMap_
+    // instead of iterating through all 1.1M possible characters
+    const defaultVal = this.charMap_.getDefault();
+    for (const [min, tem] of this.charMap_.entriesNotDefault()) {
       if (!UnivCharsetDesc.noDesc(tem)) {
         const toMin = UnivCharsetDesc.extractChar(tem, min);
-        if (toMin <= from && from <= toMin + (max.value - min)) {
-          const n = min + (from - toMin);
-          const thisCount = max.value - n + 1;
+        // For single character entries, max = min, so the range check simplifies
+        if (toMin === from) {
+          const n = min;
+          const thisCount = 1;
           if (ret > 1) {
             toSet.add(n);
             if (thisCount < count.value) {
@@ -158,8 +158,7 @@ export class UnivCharsetDesc {
           count.value = toMin - from;
         }
       }
-      min = max.value;
-    } while (min++ !== charMax);
+    }
     return ret;
   }
 
