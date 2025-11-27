@@ -775,7 +775,7 @@ export class SchemeParser extends Messenger {
       if (!this.parseRuleBody(expr, ruleType)) {
         return false;
       }
-      // this.defMode_.addRule(false, patterns, expr.value!, ruleType.value, loc, this.interp_);
+      this.defMode_.addRule(false, patterns, expr.value!, ruleType.value, loc, this.interp_);
     } else if (!this.parseRuleBody(expr, ruleType)) {
       return false;
     }
@@ -819,9 +819,9 @@ export class SchemeParser extends Messenger {
       return false;
     }
 
-    // if (ok) {
-    //   this.defMode_.addRule(false, patterns, expr.value!, ruleType.value, loc, this.interp_);
-    // }
+    if (ok) {
+      this.defMode_.addRule(false, patterns, expr.value!, ruleType.value, loc, this.interp_);
+    }
     return true;
   }
 

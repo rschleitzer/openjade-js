@@ -158,6 +158,8 @@ export class ProcessContext {
     this.currentFOTBuilder().startNode(nodePtr, processingMode.name());
 
     // Find matching rules
+    const gi = nodePtr.getGi();
+    const giStr = gi ? String.fromCharCode(...Array.from(gi.data()).slice(0, gi.size())) : '(none)';
     for (;;) {
       const rule = processingMode.findMatch(
         nodePtr,
@@ -283,7 +285,7 @@ export class ProcessContext {
         child = child.nextChunkSibling();
       }
     } else {
-      // Try document element
+      // If no children, try document element (for SgmlDocument node)
       const docElem = node.getDocumentElement();
       if (docElem) {
         this.processNode(docElem, processingMode);

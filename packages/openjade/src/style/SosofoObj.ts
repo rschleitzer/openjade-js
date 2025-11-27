@@ -295,6 +295,13 @@ export class CompoundFlowObj extends FlowObj {
   processInner(context: ProcessContext): void {
     if (this.content_) {
       this.content_.process(context);
+    } else {
+      // When no explicit content, implicitly process children
+      // This matches upstream CompoundFlowObj::processInner behavior
+      const vm = context.vm();
+      const interp = vm.interp as any;
+      const initialMode = interp.initialProcessingMode ? interp.initialProcessingMode() : null;
+      context.processChildren(initialMode);
     }
   }
 

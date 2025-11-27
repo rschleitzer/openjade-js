@@ -50,7 +50,7 @@ import {
 } from './FOTBuilder';
 import { NodePtr, GroveString, AccessResult } from '../grove/Node';
 import { Environment } from './Expression';
-import { Pattern, MatchContext } from './Pattern';
+import { Pattern, MatchContext, Element } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
 import { FormattingInstructionFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
@@ -685,6 +685,8 @@ export class ProcessingMode implements ProcessingModeInterface {
     const gi = node.getGi();
     if (gi) {
       const giStr: StringC = stringToStringC(groveStringToString(gi));
+      // Normalize the GI for rule lookup (SGML element names are case-insensitive)
+      Interpreter.normalizeGeneralName(node, giStr);
       return this.findElementMatch(giStr, node, context, mgr, specificity);
     }
     // Check if node has no origin (is a root node)
@@ -733,6 +735,7 @@ export class ProcessingMode implements ProcessingModeInterface {
       specificity.ruleType_ = RuleType.constructionRule;
       specificity.nextRuleIndex_ = 0;
       specificity.toInitial_ = false;
+      vecP = null;  // Reset to get rules for new ruleType
     }
     return null;
   }
@@ -1441,11 +1444,57 @@ export class Interpreter {
   }
 
   // Normalize a general name using grove's normalization (usually case-folding)
-  static normalizeGeneralName(_node: NodePtr, _gi: StringC): void {
+  static normalizeGeneralName(node: NodePtr, gi: StringC): void {
     // In SGML, general names (element/attribute names) are typically normalized
-    // to uppercase. In XML, they're case-sensitive.
-    // For now, we don't transform - the grove should handle this.
-    // This matches the C++ behavior where it calls node->generalName() to normalize.
+    // using the general substitution table from the SGML declaration.
+    // This converts names to a canonical form (typically lowercase).
+
+    // Get the general substitution table from the grove root
+    const nodeObj = node.node();
+    if (!nodeObj) {
+      // Fall back to lowercase
+      Interpreter.lowercaseStringC(gi);
+      return;
+    }
+    const tem = new NodePtr();
+    const rootResult = nodeObj.getGroveRoot(tem);
+    if (rootResult !== AccessResult.accessOK || !tem.node()) {
+      // Fall back to lowercase
+      Interpreter.lowercaseStringC(gi);
+      return;
+    }
+    const sdResult = tem.node()!.queryInterface('SdNode');
+    if (!sdResult.result || !sdResult.ptr) {
+      // Fall back to lowercase
+      Interpreter.lowercaseStringC(gi);
+      return;
+    }
+    const sdNode = sdResult.ptr as any;
+    const sd = sdNode.getSd();
+    if (sd.result !== AccessResult.accessOK || !sd.prologSyntax) {
+      // Fall back to lowercase
+      Interpreter.lowercaseStringC(gi);
+      return;
+    }
+    const substTable = sd.prologSyntax.generalSubstTable();
+    if (!substTable) {
+      // Fall back to lowercase
+      Interpreter.lowercaseStringC(gi);
+      return;
+    }
+    substTable.subst(gi);
+  }
+
+  // Fall back for case-folding when SD info isn't available
+  private static lowercaseStringC(str: StringC): void {
+    if (!str.ptr_) return;
+    for (let i = 0; i < str.length_; i++) {
+      const c = str.ptr_[i];
+      // ASCII uppercase A-Z to lowercase a-z
+      if (c >= 0x41 && c <= 0x5A) {
+        str.ptr_[i] = c + 0x20;
+      }
+    }
   }
 
   // Lexical category lookup
@@ -2468,8 +2517,17 @@ export class Interpreter {
   }
 
   // Pattern conversion
+  // Converts a DSSSL pattern expression (e.g., element name symbol) to a Pattern object
   convertToPattern(obj: ELObj, loc: Location, pattern: { value: Pattern }): boolean {
-    // TODO: Implement pattern conversion
+    // Simple case: symbol representing element name (e.g., "p" in "(element p ...)")
+    if (obj instanceof SymbolObj) {
+      const nameObj = obj.name();
+      const gi = stringToStringC(nameObj.toStyleString());
+      const elem = new Element(gi);
+      pattern.value = new Pattern([elem]);
+      return true;
+    }
+    // TODO: Handle more complex patterns (lists, qualifiers, etc.)
     return false;
   }
 

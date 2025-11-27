@@ -98,9 +98,15 @@ class MessageItem {
 // Chunk base class
 abstract class Chunk {
   origin: ParentChunk | null = null;
+  // Track allocation order to emulate C++ pointer arithmetic for after()
+  nextInAllocationOrder_: Chunk | null = null;
 
   abstract setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult;
-  abstract after(): Chunk | null;
+
+  // Returns the next chunk in allocation order (emulates C++ this+1 pointer arithmetic)
+  after(): Chunk | null {
+    return this.nextInAllocationOrder_;
+  }
 
   setNodePtrFirstElement(ptr: NodePtr, node: ElementNode): AccessResult {
     return this.setNodePtrFirst(ptr, node);
@@ -133,10 +139,6 @@ class LocChunk extends Chunk {
 
   setNodePtrFirst(_ptr: NodePtr, _node: BaseNode): AccessResult {
     return AccessResult.accessNotInClass;
-  }
-
-  after(): Chunk | null {
-    return null;
   }
 }
 
@@ -171,10 +173,6 @@ class ElementChunk extends ParentChunk {
     return AccessResult.accessOK;
   }
 
-  override after(): Chunk | null {
-    return this.nextSibling;
-  }
-
   static key(chunk: ElementChunk): StringC | null {
     return chunk.id();
   }
@@ -189,10 +187,6 @@ class SgmlDocumentChunk extends ParentChunk {
   override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
     ptr.assign(new SgmlDocumentNode(node.grove(), this));
     return AccessResult.accessOK;
-  }
-
-  override after(): Chunk | null {
-    return null; // Document is the root
   }
 }
 
@@ -220,10 +214,6 @@ class DataChunk extends LocChunk {
       return AccessResult.accessOK;
     }
     return this.setNodePtrFirst(ptr, node);
-  }
-
-  override after(): Chunk | null {
-    return this.nextSibling;
   }
 
   get nextSibling(): Chunk | null {
@@ -254,10 +244,6 @@ class CharsChunk extends LocChunk {
 
   override setNodePtrFirst(_ptr: NodePtr, _node: BaseNode): AccessResult {
     return AccessResult.accessNotInClass;
-  }
-
-  override after(): Chunk | null {
-    return this.nextSibling;
   }
 
   get nextSibling(): Chunk | null {
@@ -311,10 +297,6 @@ class EntityRefChunk extends LocChunk {
     return AccessResult.accessNotInClass;
   }
 
-  override after(): Chunk | null {
-    return this.nextSibling;
-  }
-
   get nextSibling(): Chunk | null {
     return (this as any)._nextSibling ?? null;
   }
@@ -339,10 +321,6 @@ class NonSgmlChunk extends LocChunk {
   override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
     ptr.assign(new NonSgmlNode(node.grove(), this));
     return AccessResult.accessOK;
-  }
-
-  override after(): Chunk | null {
-    return this.nextSibling;
   }
 
   get nextSibling(): Chunk | null {
@@ -378,13 +356,19 @@ class PiEntityChunk extends EntityRefChunk {
   }
 }
 
+// TailTarget - tracks where to link next sibling (emulates C++ Chunk** tailPtr_)
+interface TailTarget {
+  obj: any;
+  prop: 'nextSibling' | 'prolog' | 'epilog' | 'documentElement';
+}
+
 // GroveImpl - the main grove implementation
 class GroveImpl {
   private groveIndex_: number;
   private root_: SgmlDocumentChunk;
   private origin_: ParentChunk;
   private pendingData_: DataChunk | null = null;
-  private tailPtr_: { chunk: Chunk | null } | null = null;
+  private tailTarget_: TailTarget | null = null;
 
   private dtd_: Dtd | null = null;
   private sd_: Sd | null = null;
@@ -409,6 +393,8 @@ class GroveImpl {
   // Storage
   private chunks_: Chunk[] = [];
   private defaultedEntityTable_: Map<string, Entity> = new Map();
+  // Track the last allocated chunk to maintain allocation order (for after())
+  private lastAllocatedChunk_: Chunk | null = null;
 
   constructor(groveIndex: number) {
     this.groveIndex_ = groveIndex;
@@ -416,7 +402,10 @@ class GroveImpl {
     this.root_.origin = null;
     this.root_.locIndex = 0;
     this.origin_ = this.root_;
-    this.tailPtr_ = { chunk: null };
+    // tailTarget_ starts pointing at root_->prolog (matching C++ tailPtr_ = &root_->prolog)
+    this.tailTarget_ = { obj: this.root_, prop: 'prolog' };
+    // Root is the first "allocated" chunk for allocation order tracking
+    this.lastAllocatedChunk_ = this.root_;
   }
 
   // Reference counting
@@ -488,7 +477,11 @@ class GroveImpl {
   setComplete(): void {
     this.completeLimit_ = null;
     this.completeLimitWithLocChunkAfter_ = null;
-    this.tailPtr_ = null;
+    // Flush any pending data before completing
+    if (this.pendingData_ && this.tailTarget_) {
+      this.tailTarget_.obj[this.tailTarget_.prop] = this.pendingData_;
+    }
+    this.tailTarget_ = null;
     this.pendingData_ = null;
     this.complete_ = true;
   }
@@ -510,37 +503,41 @@ class GroveImpl {
   pendingData(): DataChunk | null { return this.pendingData_; }
 
   push(chunk: ElementChunk, _hasId: boolean): void {
+    // Flush pending data first
     if (this.pendingData_) {
-      if (this.tailPtr_) {
-        this.tailPtr_.chunk = this.pendingData_;
-        this.tailPtr_ = null;
+      if (this.tailTarget_) {
+        this.tailTarget_.obj[this.tailTarget_.prop] = this.pendingData_;
+        this.tailTarget_ = null;
       }
       this.pendingData_ = null;
     }
     chunk.elementIndex = this.nElements_++;
     chunk.origin = this.origin_;
+    // Must set origin_ to chunk before advancing completeLimit_
     this.origin_ = chunk;
 
-    // Set as document element if appropriate
+    // Set as document element if appropriate, or link via tailTarget_
     if (chunk.origin === this.root_ && this.root_.documentElement === null) {
       this.root_.documentElement = chunk;
-    } else if (this.tailPtr_) {
-      this.tailPtr_.chunk = chunk;
-      this.tailPtr_ = null;
+    } else if (this.tailTarget_) {
+      this.tailTarget_.obj[this.tailTarget_.prop] = chunk;
+      this.tailTarget_ = null;
     }
 
     this.maybePulse();
   }
 
   pop(): void {
+    // Flush pending data first
     if (this.pendingData_) {
-      if (this.tailPtr_) {
-        this.tailPtr_.chunk = this.pendingData_;
-        this.tailPtr_ = null;
+      if (this.tailTarget_) {
+        this.tailTarget_.obj[this.tailTarget_.prop] = this.pendingData_;
+        this.tailTarget_ = null;
       }
       this.pendingData_ = null;
     }
-    this.tailPtr_ = { chunk: this.origin_.nextSibling };
+    // tailTarget_ now points to origin_->nextSibling (matching C++ tailPtr_ = &origin_->nextSibling)
+    this.tailTarget_ = { obj: this.origin_, prop: 'nextSibling' };
     this.origin_ = this.origin_.origin!;
     if (this.origin_ === this.root_) {
       this.finishDocumentElement();
@@ -549,27 +546,29 @@ class GroveImpl {
   }
 
   appendSibling(chunk: Chunk): void {
+    // Flush pending data first
     if (this.pendingData_) {
-      if (this.tailPtr_) {
-        this.tailPtr_.chunk = this.pendingData_;
-        this.tailPtr_ = null;
+      if (this.tailTarget_) {
+        this.tailTarget_.obj[this.tailTarget_.prop] = this.pendingData_;
+        this.tailTarget_ = null;
       }
       this.pendingData_ = null;
     }
     chunk.origin = this.origin_;
-    if (this.tailPtr_) {
-      this.tailPtr_.chunk = chunk;
-      this.tailPtr_ = null;
+    if (this.tailTarget_) {
+      this.tailTarget_.obj[this.tailTarget_.prop] = chunk;
+      this.tailTarget_ = null;
     }
     this.pendingData_ = null;
     this.maybePulse();
   }
 
   appendDataSibling(chunk: DataChunk): void {
+    // Flush previous pending data first
     if (this.pendingData_) {
-      if (this.tailPtr_) {
-        this.tailPtr_.chunk = this.pendingData_;
-        this.tailPtr_ = null;
+      if (this.tailTarget_) {
+        this.tailTarget_.obj[this.tailTarget_.prop] = this.pendingData_;
+        this.tailTarget_ = null;
       }
     }
     chunk.origin = this.origin_;
@@ -604,6 +603,11 @@ class GroveImpl {
     this.nChunksSinceLocOrigin_++;
     const chunk = new ChunkClass();
     this.chunks_.push(chunk);
+    // Link in allocation order (emulates C++ pointer arithmetic for after())
+    if (this.lastAllocatedChunk_) {
+      this.lastAllocatedChunk_.nextInAllocationOrder_ = chunk;
+    }
+    this.lastAllocatedChunk_ = chunk;
     return chunk;
   }
 
@@ -623,12 +627,14 @@ class GroveImpl {
   }
 
   private finishProlog(): void {
-    this.tailPtr_ = null;
+    this.tailTarget_ = null;
   }
 
   private finishDocumentElement(): void {
+    // Be robust in the case of erroneous documents.
     if (this.root_.epilog === null) {
-      this.tailPtr_ = { chunk: null };
+      // tailTarget_ now points to root_->epilog (matching C++ tailPtr_ = &root_->epilog)
+      this.tailTarget_ = { obj: this.root_, prop: 'epilog' };
     }
   }
 
@@ -760,10 +766,32 @@ abstract class ChunkNode extends BaseNode {
   }
 
   override nextChunkSibling(ptr: NodePtr): AccessResult {
-    const p = this.chunk_.after();
-    if (!p) return AccessResult.accessNull;
-    if (p.origin !== this.chunk_.origin) return AccessResult.accessNull;
-    return p.setNodePtrFirst(ptr, this);
+    // Traverse allocation order to find next sibling (chunk with same origin/parent)
+    let p: Chunk | null = this.chunk_.after();
+    const myOrigin = this.chunk_.origin;
+    while (p) {
+      if (p.origin === myOrigin) {
+        // Found a sibling
+        return p.setNodePtrFirst(ptr, this);
+      }
+      // If this chunk's origin is an ancestor of our origin, we've gone past our siblings
+      // (This happens when we traverse past the end of our parent's content)
+      if (this.isAncestorOf(p.origin, myOrigin)) {
+        break;
+      }
+      p = p.after();
+    }
+    return AccessResult.accessNull;
+  }
+
+  // Check if 'ancestor' is an ancestor of 'descendant'
+  private isAncestorOf(ancestor: ParentChunk | null, descendant: ParentChunk | null): boolean {
+    let current = descendant;
+    while (current) {
+      if (current === ancestor) return true;
+      current = current.origin;
+    }
+    return false;
   }
 
   override firstSibling(ptr: NodePtr): AccessResult {
@@ -951,9 +979,10 @@ class ElementNode extends ChunkNode {
 
   override firstChild(ptr: NodePtr): AccessResult {
     const chunk = this.elemChunk();
-    const firstChild = chunk.nextSibling;
-    if (firstChild && firstChild.origin === chunk) {
-      return firstChild.setNodePtrFirst(ptr, this);
+    // Use after() to get the next chunk in allocation order (emulates C++ pointer arithmetic)
+    const p = chunk.after();
+    if (p && p.origin === chunk) {
+      return p.setNodePtrFirst(ptr, this);
     }
     return AccessResult.accessNull;
   }
