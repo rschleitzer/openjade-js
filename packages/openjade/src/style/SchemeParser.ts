@@ -559,9 +559,6 @@ export class SchemeParser extends Messenger {
   private dsssl2_: boolean;
   private lang_: LangObj | null = null;
 
-  // Lookahead character for peek simulation (-2 means no lookahead)
-  private lookahead_: Xchar = -2;
-
   constructor(interp: Interpreter, inputSource: InputSource | null) {
     super();
     this.interp_ = interp;
@@ -577,40 +574,15 @@ export class SchemeParser extends Messenger {
     this.interp_.dispatchMessage(msg);
   }
 
-  // Low-level character reading - delegates to InputSource with this as messenger
-  private getChar(): Xchar {
-    if (this.lookahead_ !== -2) {
-      const c = this.lookahead_;
-      this.lookahead_ = -2;
-      return c;
-    }
-    if (!this.in_) return eE;
-    return this.in_.tokenChar(this);
-  }
-
-  // Peek at next character without consuming
-  private peekChar(): Xchar {
-    if (this.lookahead_ !== -2) {
-      return this.lookahead_;
-    }
-    if (!this.in_) return eE;
-    this.lookahead_ = this.in_.tokenChar(this);
-    return this.lookahead_;
-  }
-
-  // Extend token by reading identifier characters
+  // Extend token to a delimiter - matches upstream extendToken()
   private extendToken(): void {
     if (!this.in_) return;
-    for (;;) {
-      const c = this.peekChar();
-      if (c === eE) break;
-      const cat = this.interp_.lexCategory(c);
-      if (cat !== LexCategory.lexOther && cat !== LexCategory.lexLetter &&
-          cat !== LexCategory.lexDigit && cat !== LexCategory.lexAddNameStart) {
-        break;
-      }
-      this.getChar(); // consume
+    // extend to a delimiter
+    let length = this.in_.currentTokenLength();
+    while (this.interp_.lexCategory(this.in_.tokenChar(this)) <= LexCategory.lexOther) {
+      length++;
     }
+    this.in_.endToken(length);
   }
 
   // Build currentToken_ from InputSource buffer
@@ -2726,7 +2698,7 @@ export class SchemeParser extends Messenger {
     return true;
   }
 
-  // Token handling
+  // Token handling - matches upstream getToken() structure
 
   private getToken(allowed: number, tok: { value: Token }): boolean {
     if (!this.in_) {
@@ -2734,374 +2706,428 @@ export class SchemeParser extends Messenger {
       return true;
     }
 
-    // Skip whitespace and comments
-    this.skipWhitespace();
-
-    // Start a new token
-    this.in_.startToken();
-
-    const c = this.getChar();
-    if (c === eE) {
-      tok.value = Token.tokenEndOfEntity;
-      return (allowed & allowEndOfEntity) !== 0;
-    }
-
-    switch (c) {
-      case 0x28: // '('
-        tok.value = Token.tokenOpenParen;
-        return (allowed & allowOpenParen) !== 0;
-
-      case 0x29: // ')'
-        tok.value = Token.tokenCloseParen;
-        return (allowed & allowCloseParen) !== 0;
-
-      case 0x27: // '\''
-        tok.value = Token.tokenQuote;
-        return (allowed & allowOtherExpr) !== 0;
-
-      case 0x60: // '`'
-        tok.value = Token.tokenQuasiquote;
-        return (allowed & allowOtherExpr) !== 0;
-
-      case 0x2C: // ','
-        if (this.peekChar() === 0x40) { // '@'
-          this.getChar();
-          tok.value = Token.tokenUnquoteSplicing;
-          return (allowed & allowUnquoteSplicing) !== 0;
-        }
-        tok.value = Token.tokenUnquote;
-        return (allowed & allowUnquote) !== 0;
-
-      case 0x22: // '"'
-        return this.scanString(allowed, tok);
-
-      case 0x23: // '#'
-        return this.handleHash(allowed, tok);
-
-      case 0x2E: // '.'
-        tok.value = Token.tokenPeriod;
-        return (allowed & allowPeriod) !== 0;
-
-      default:
-        return this.handleIdentifierOrNumber(allowed, tok, c);
-    }
-  }
-
-  private skipWhitespace(): void {
-    if (!this.in_) return;
+    const inSrc = this.in_;
     for (;;) {
-      const c = this.peekChar();
-      if (c === eE) return;
+      inSrc.startToken();
+      const c = inSrc.tokenChar(this);
+      switch (c) {
+        case eE:
+          if (!(allowed & allowEndOfEntity)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenEndOfEntity;
+          return true;
 
-      const cat = this.interp_.lexCategory(c);
-      if (cat === LexCategory.lexWhiteSpace || cat === LexCategory.lexAddWhiteSpace) {
-        this.getChar();
-        continue;
+        case 0x28: // '('
+          if (!(allowed & allowOpenParen)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenOpenParen;
+          return true;
+
+        case 0x29: // ')'
+          if (!(allowed & allowCloseParen)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenCloseParen;
+          return true;
+
+        case 0x27: // '\''
+          if (!(allowed & allowOtherExpr)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenQuote;
+          return true;
+
+        case 0x60: // '`'
+          if (!(allowed & allowOtherExpr)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenQuasiquote;
+          return true;
+
+        case 0x2C: { // ','
+          const c2 = inSrc.tokenChar(this);
+          if (c2 === 0x40) { // '@'
+            if (!(allowed & allowUnquoteSplicing)) {
+              return this.tokenRecover(allowed, tok);
+            }
+            tok.value = Token.tokenUnquoteSplicing;
+          } else {
+            if (!(allowed & allowUnquote)) {
+              return this.tokenRecover(allowed, tok);
+            }
+            tok.value = Token.tokenUnquote;
+            inSrc.endToken(1);
+          }
+          return true;
+        }
+
+        case 0x20: // ' '
+        case 0x0D: // '\r'
+        case 0x0A: // '\n'
+        case 0x09: // '\t'
+        case 0x0C: // '\f'
+          // whitespace - continue loop
+          break;
+
+        case 0x23: // '#'
+          return this.handleHash(allowed, tok);
+
+        case 0x22: // '"'
+          return this.scanString(allowed, tok);
+
+        case 0x3B: // ';'
+          this.skipComment();
+          break;
+
+        case 0x2E: // '.'
+          this.extendToken();
+          if (inSrc.currentTokenLength() === 1) {
+            if (!(allowed & allowPeriod)) {
+              return this.tokenRecover(allowed, tok);
+            }
+            tok.value = Token.tokenPeriod;
+            return true;
+          }
+          // Check for '...'
+          if (inSrc.currentTokenLength() === 3) {
+            const start = inSrc.currentTokenStart();
+            const startIdx = inSrc.currentTokenStartIndex();
+            if (start[startIdx + 1] === 0x2E && start[startIdx + 2] === 0x2E) {
+              return this.handleIdentifier(allowed, tok);
+            }
+          }
+          return this.handleNumber(allowed, tok);
+
+        default:
+          return this.handleDefaultToken(allowed, tok, c);
       }
-      if (c === 0x3B) { // ';'
-        this.skipComment();
-        continue;
-      }
-      break;
     }
   }
 
   private skipComment(): void {
-    this.getChar(); // consume ';'
+    if (!this.in_) return;
     for (;;) {
-      const c = this.getChar();
-      if (c === eE || c === 0x0A || c === 0x0D) { // end or newline
+      const c = this.in_.get(this);
+      if (c === eE || c === 0x0D) { // end or '\r'
         break;
+      }
+    }
+  }
+
+  private tokenRecover(allowed: number, tok: { value: Token }): boolean {
+    if (!this.in_) return false;
+    if (allowed === allowCloseParen) {
+      this.in_.ungetToken();
+      tok.value = Token.tokenCloseParen;
+      this.reportMessage(SchemeParserMessages.missingCloseParen);
+      return true;
+    }
+    if (this.in_.currentTokenLength() === 0) {
+      this.reportMessage(SchemeParserMessages.unexpectedEof);
+    } else {
+      this.setCurrentToken();
+      this.reportMessage(SchemeParserMessages.unexpectedToken, stringCToString(this.currentToken_));
+    }
+    return false;
+  }
+
+  private handleIdentifier(allowed: number, tok: { value: Token }): boolean {
+    if (!(allowed & allowIdentifier)) {
+      return this.tokenRecover(allowed, tok);
+    }
+    this.setCurrentToken();
+    tok.value = Token.tokenIdentifier;
+    return true;
+  }
+
+  private handleNumber(allowed: number, tok: { value: Token }): boolean {
+    if (!(allowed & allowOtherExpr)) {
+      return this.tokenRecover(allowed, tok);
+    }
+    this.setCurrentToken();
+    tok.value = Token.tokenNumber;
+    return true;
+  }
+
+  // Handle default case in getToken - identifiers and numbers
+  private handleDefaultToken(allowed: number, tok: { value: Token }, c: Xchar): boolean {
+    if (!this.in_) return false;
+    const inSrc = this.in_;
+
+    switch (this.interp_.lexCategory(c)) {
+      case LexCategory.lexAddWhiteSpace:
+        // Additional whitespace - continue outer loop by returning special
+        return this.getToken(allowed, tok);
+
+      case LexCategory.lexOtherNumberStart:
+        this.extendToken();
+        // handle + and - as identifiers
+        if (inSrc.currentTokenLength() === 1) {
+          return this.handleIdentifier(allowed, tok);
+        }
+        return this.handleNumber(allowed, tok);
+
+      case LexCategory.lexDigit:
+        this.extendToken();
+        return this.handleNumber(allowed, tok);
+
+      case LexCategory.lexOther:
+        if (c < 0x20) { // control character
+          this.reportMessage(SchemeParserMessages.invalidChar);
+          // Continue outer loop
+          return this.getToken(allowed, tok);
+        }
+        inSrc.ungetToken();
+        // fall through
+
+      default: {
+        let invalid = false;
+        let length = inSrc.currentTokenLength();
+        for (;;) {
+          const lc = this.interp_.lexCategory(inSrc.tokenChar(this));
+          if (lc > LexCategory.lexOther) {
+            break;
+          }
+          if (lc === LexCategory.lexOther) {
+            invalid = true;
+          }
+          length++;
+        }
+        inSrc.endToken(length);
+
+        // Check for keyword (ends with ':')
+        const tokenEnd = inSrc.currentTokenStart();
+        const endIdx = inSrc.currentTokenStartIndex() + inSrc.currentTokenLength();
+        if (tokenEnd[endIdx - 1] === 0x3A && inSrc.currentTokenLength() > 1) { // ':'
+          if (!(allowed & allowKeyword)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          // Assign without the trailing ':'
+          const start = inSrc.currentTokenStart();
+          const startIdx = inSrc.currentTokenStartIndex();
+          this.currentToken_ = makeStringCFromArray(start, startIdx, inSrc.currentTokenLength() - 1);
+          tok.value = Token.tokenKeyword;
+          if (invalid || (this.currentToken_.length_ > 1 &&
+              stringCCharAt(this.currentToken_, this.currentToken_.length_ - 1) === 0x3A)) {
+            this.reportMessage(SchemeParserMessages.invalidIdentifier, stringCToString(this.currentToken_));
+          }
+          return true;
+        }
+
+        if (invalid) {
+          this.setCurrentToken();
+          this.reportMessage(SchemeParserMessages.invalidIdentifier, stringCToString(this.currentToken_));
+        }
+        return this.handleIdentifier(allowed, tok);
       }
     }
   }
 
   private scanString(allowed: number, tok: { value: Token }): boolean {
+    if (!this.in_) return false;
+    const inSrc = this.in_;
     const chars: Char[] = [];
     for (;;) {
-      const c = this.getChar();
-      if (c === eE) {
-        this.reportMessage(SchemeParserMessages.unterminatedString);
-        return false;
-      }
-      if (c === 0x22) { // '"'
-        this.currentToken_ = makeStringCFromChars(chars);
-        tok.value = Token.tokenString;
-        return (allowed & allowString) !== 0;
-      }
-      if (c === 0x5C) { // '\\'
-        const esc = this.getChar();
-        if (esc === eE) {
+      const c = inSrc.tokenChar(this);
+      switch (c) {
+        case eE:
           this.reportMessage(SchemeParserMessages.unterminatedString);
+          inSrc.endToken(1);
           return false;
+
+        case 0x22: // '"'
+          this.currentToken_ = makeStringCFromChars(chars);
+          tok.value = Token.tokenString;
+          return (allowed & allowString) !== 0;
+
+        case 0x5C: { // '\\'
+          const esc = inSrc.tokenChar(this);
+          if (esc === eE) {
+            this.reportMessage(SchemeParserMessages.unterminatedString);
+            return false;
+          }
+          // Handle escape sequences
+          switch (esc) {
+            case 0x6E: // 'n'
+              chars.push(0x0A);
+              break;
+            case 0x74: // 't'
+              chars.push(0x09);
+              break;
+            case 0x72: // 'r'
+              chars.push(0x0D);
+              break;
+            default:
+              chars.push(esc);
+              break;
+          }
+          break;
         }
-        // Handle escape sequences
-        switch (esc) {
-          case 0x6E: // 'n'
-            chars.push(0x0A);
-            break;
-          case 0x74: // 't'
-            chars.push(0x09);
-            break;
-          case 0x72: // 'r'
-            chars.push(0x0D);
-            break;
-          default:
-            chars.push(esc);
-            break;
-        }
-      } else {
-        chars.push(c);
+
+        default:
+          chars.push(c);
+          break;
       }
     }
   }
 
+  // Handle '#' token - matches upstream inline handling in getToken
   private handleHash(allowed: number, tok: { value: Token }): boolean {
-    const c = this.peekChar();
+    if (!this.in_) return false;
+    const inSrc = this.in_;
+
+    const c = inSrc.tokenChar(this);
     switch (c) {
       case 0x74: // 't'
-        this.getChar();
+        if (!(allowed & allowOtherExpr)) {
+          return this.tokenRecover(allowed, tok);
+        }
         tok.value = Token.tokenTrue;
-        return (allowed & allowOtherExpr) !== 0;
+        return true;
 
       case 0x66: // 'f'
-        this.getChar();
-        tok.value = Token.tokenFalse;
-        return (allowed & allowFalse) !== 0;
-
-      case 0x5C: // '\\'
-        this.getChar();
-        return this.handleCharLiteral(allowed, tok);
-
-      case 0x28: // '('
-        if (this.dsssl2()) {
-          this.getChar();
-          tok.value = Token.tokenVector;
-          return (allowed & allowVector) !== 0;
+        if (!(allowed & allowFalse)) {
+          return this.tokenRecover(allowed, tok);
         }
-        // fall through
-        break;
+        tok.value = Token.tokenFalse;
+        return true;
+
+      case 0x5C: { // '\\'
+        const c2 = inSrc.tokenChar(this);
+        if (c2 === eE) {
+          this.reportMessage(SchemeParserMessages.unexpectedEof);
+          if (allowed & allowEndOfEntity) {
+            tok.value = Token.tokenEndOfEntity;
+            return true;
+          }
+          return false;
+        }
+        if (!(allowed & allowOtherExpr)) {
+          this.extendToken();
+          return this.tokenRecover(allowed, tok);
+        }
+        inSrc.discardInitial();
+        this.extendToken();
+        tok.value = Token.tokenChar;
+        if (inSrc.currentTokenLength() === 1) {
+          this.setCurrentToken();
+        } else {
+          const start = inSrc.currentTokenStart();
+          const startIdx = inSrc.currentTokenStartIndex();
+          const tem = makeStringCFromArray(start, startIdx, inSrc.currentTokenLength());
+          const result = this.interp_.convertCharName(tem);
+          if (!result.found) {
+            this.reportMessage(SchemeParserMessages.unknownCharName, stringCToString(tem));
+            this.currentToken_ = makeStringCFromChars([defaultChar]);
+          } else {
+            this.currentToken_ = makeStringCFromChars([result.c]);
+          }
+        }
+        return true;
+      }
 
       case 0x21: // '!'
-        this.getChar();
+        this.extendToken();
         return this.handleHashBang(allowed, tok);
-
-      case 0x76: // 'v'
-        if (this.dsssl2()) {
-          this.getChar();
-          tok.value = Token.tokenVoid;
-          return (allowed & allowOtherExpr) !== 0;
-        }
-        break;
 
       case 0x62: // 'b' - binary
       case 0x6F: // 'o' - octal
       case 0x78: // 'x' - hex
       case 0x64: // 'd' - decimal
-        this.getChar();
-        this.currentToken_ = makeStringCFromChars([0x23, c]); // '#' + radix char
-        this.extendTokenChars();
+        this.extendToken();
+        if (!(allowed & allowOtherExpr)) {
+          return this.tokenRecover(allowed, tok);
+        }
         tok.value = Token.tokenNumber;
-        return (allowed & allowOtherExpr) !== 0;
+        this.setCurrentToken();
+        return true;
 
       case 0x41: // 'A' - AFII glyph ID
-        this.getChar();
-        this.currentToken_ = Interpreter.makeStringC('');
-        this.extendTokenChars();
+        this.extendToken();
+        if (!(allowed & allowOtherExpr)) {
+          return this.tokenRecover(allowed, tok);
+        }
         tok.value = Token.tokenGlyphId;
-        return (allowed & allowOtherExpr) !== 0;
+        // Skip '#A' prefix
+        const start = inSrc.currentTokenStart();
+        const startIdx = inSrc.currentTokenStartIndex();
+        this.currentToken_ = makeStringCFromArray(start, startIdx + 2, inSrc.currentTokenLength() - 2);
+        return true;
+
+      case eE:
+        this.reportMessage(SchemeParserMessages.unexpectedEof);
+        if (allowed & allowEndOfEntity) {
+          tok.value = Token.tokenEndOfEntity;
+          return true;
+        }
+        return false;
+
+      case 0x76: // 'v'
+        if (this.dsssl2()) {
+          if (!(allowed & allowOtherExpr)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenVoid;
+          return true;
+        }
+        // fall through to default
+
+      case 0x28: // '('
+        if (this.dsssl2()) {
+          if (!(allowed & allowVector)) {
+            return this.tokenRecover(allowed, tok);
+          }
+          tok.value = Token.tokenVector;
+          return true;
+        }
+        // fall through to default
 
       default:
+        this.reportMessage(SchemeParserMessages.unknownHash);
         break;
     }
-
-    // Could be #optional, #key, #rest, #contents or unknown
-    if (c === eE) {
-      this.reportMessage(SchemeParserMessages.unexpectedEof);
-      if (allowed & allowEndOfEntity) {
-        tok.value = Token.tokenEndOfEntity;
-        return true;
-      }
-      return false;
-    }
-
-    this.currentToken_ = makeStringCFromChars([0x23]); // '#'
-    return this.extendIdentifier(allowed, tok);
-  }
-
-  private handleCharLiteral(allowed: number, tok: { value: Token }): boolean {
-    const c = this.getChar();
-    if (c === eE) {
-      this.reportMessage(SchemeParserMessages.unexpectedEof);
-      if (allowed & allowEndOfEntity) {
-        tok.value = Token.tokenEndOfEntity;
-        return true;
-      }
-      return false;
-    }
-
-    // Check for named character - collect chars into array
-    const chars: Char[] = [c];
-    this.extendTokenCharsInto(chars);
-    this.currentToken_ = makeStringCFromChars(chars);
-
-    if (this.currentToken_.length_ === 1) {
-      // Single character
-      tok.value = Token.tokenChar;
-      return (allowed & allowOtherExpr) !== 0;
-    }
-
-    // Named character
-    const result = this.interp_.convertCharName(this.currentToken_);
-    if (!result.found) {
-      this.reportMessage(SchemeParserMessages.unknownCharName, stringCToString(this.currentToken_));
-      this.currentToken_ = makeStringCFromChars([defaultChar]);
-    } else {
-      this.currentToken_ = makeStringCFromChars([result.c]);
-    }
-    tok.value = Token.tokenChar;
-    return (allowed & allowOtherExpr) !== 0;
-  }
-
-  // Extend token characters and store in currentToken_
-  private extendTokenChars(): void {
-    const chars: Char[] = [];
-    // Copy existing currentToken_ chars
-    for (let i = 0; i < this.currentToken_.length_; i++) {
-      chars.push(stringCCharAt(this.currentToken_, i));
-    }
-    this.extendTokenCharsInto(chars);
-    this.currentToken_ = makeStringCFromChars(chars);
-  }
-
-  // Extend token characters into provided array
-  private extendTokenCharsInto(chars: Char[]): void {
-    while (true) {
-      const c = this.peekChar();
-      if (c === eE) break;
-      const cat = this.interp_.lexCategory(c);
-      if (cat > LexCategory.lexOther) {
-        break;
-      }
-      chars.push(this.getChar());
-    }
-  }
-
-  private handleHashBang(allowed: number, tok: { value: Token }): boolean {
-    // #!optional, #!key, #!rest, #!contents
-    const chars: Char[] = [];
-    while (true) {
-      const c = this.peekChar();
-      if (c === eE) break;
-      const cat = this.interp_.lexCategory(c);
-      if (cat === LexCategory.lexLetter || cat === LexCategory.lexDigit ||
-          cat === LexCategory.lexOtherNameStart || cat === LexCategory.lexAddNameStart) {
-        chars.push(this.getChar());
-      } else {
-        break;
-      }
-    }
-    this.currentToken_ = makeStringCFromChars(chars);
-
-    if (stringCEquals(this.currentToken_, 'optional')) {
-      tok.value = Token.tokenHashOptional;
-      return (allowed & allowHashOptional) !== 0;
-    }
-    if (stringCEquals(this.currentToken_, 'key')) {
-      tok.value = Token.tokenHashKey;
-      return (allowed & allowHashKey) !== 0;
-    }
-    if (stringCEquals(this.currentToken_, 'rest')) {
-      tok.value = Token.tokenHashRest;
-      return (allowed & allowHashRest) !== 0;
-    }
-    if (stringCEquals(this.currentToken_, 'contents')) {
-      tok.value = Token.tokenHashContents;
-      return (allowed & allowHashContents) !== 0;
-    }
-    this.reportMessage(SchemeParserMessages.unknownNamedConstant, stringCToString(this.currentToken_));
     return false;
   }
 
-  private handleIdentifierOrNumber(allowed: number, tok: { value: Token }, firstChar: number): boolean {
-    // Start with the first character that was already consumed
-    const chars: Char[] = [firstChar];
-    // Add any existing currentToken_ chars (usually empty at this point)
-    for (let i = 0; i < this.currentToken_.length_; i++) {
-      chars.push(stringCCharAt(this.currentToken_, i));
-    }
-    while (true) {
-      const c = this.peekChar();
-      if (c === eE) break;
-      const cat = this.interp_.lexCategory(c);
-      if (cat === LexCategory.lexLetter || cat === LexCategory.lexDigit ||
-          cat === LexCategory.lexOtherNameStart || cat === LexCategory.lexAddNameStart ||
-          c === 0x2D || c === 0x2B || c === 0x2E) { // '-', '+', '.'
-        chars.push(this.getChar());
-      } else {
-        break;
+  private handleHashBang(allowed: number, tok: { value: Token }): boolean {
+    if (!this.in_) return false;
+    // Token already extended, extract the name after '#!'
+    const start = this.in_.currentTokenStart();
+    const startIdx = this.in_.currentTokenStartIndex();
+    const tem = makeStringCFromArray(start, startIdx + 2, this.in_.currentTokenLength() - 2);
+
+    if (stringCEquals(tem, 'optional')) {
+      if (!(allowed & allowHashOptional)) {
+        return this.tokenRecover(allowed, tok);
       }
-    }
-    this.currentToken_ = makeStringCFromChars(chars);
-
-    // Try to parse as number
-    const num = this.interp_.convertNumber(this.currentToken_);
-    if (num) {
-      tok.value = Token.tokenNumber;
-      return (allowed & allowOtherExpr) !== 0;
-    }
-
-    // Check if it's a keyword (ends with ':')
-    if (stringCEndsWith(this.currentToken_, 0x3A)) { // ':'
-      tok.value = Token.tokenKeyword;
-      this.currentToken_ = stringCDropLast(this.currentToken_);
-      return (allowed & allowKeyword) !== 0;
-    }
-
-    // It's an identifier
-    tok.value = Token.tokenIdentifier;
-    return (allowed & allowIdentifier) !== 0;
-  }
-
-  private extendIdentifier(allowed: number, tok: { value: Token }): boolean {
-    const chars: Char[] = [];
-    // Copy existing currentToken_ chars
-    for (let i = 0; i < this.currentToken_.length_; i++) {
-      chars.push(stringCCharAt(this.currentToken_, i));
-    }
-    while (true) {
-      const c = this.peekChar();
-      if (c === eE) break;
-      const cat = this.interp_.lexCategory(c);
-      if (cat === LexCategory.lexLetter || cat === LexCategory.lexDigit ||
-          cat === LexCategory.lexOtherNameStart || cat === LexCategory.lexAddNameStart ||
-          c === 0x2D || c === 0x2B || c === 0x2E) { // '-', '+', '.'
-        chars.push(this.getChar());
-      } else {
-        break;
-      }
-    }
-    this.currentToken_ = makeStringCFromChars(chars);
-
-    // Check for special hash identifiers
-    if (stringCEquals(this.currentToken_, '#optional')) {
       tok.value = Token.tokenHashOptional;
-      return (allowed & allowHashOptional) !== 0;
+      return true;
     }
-    if (stringCEquals(this.currentToken_, '#key')) {
+    if (stringCEquals(tem, 'key')) {
+      if (!(allowed & allowHashKey)) {
+        return this.tokenRecover(allowed, tok);
+      }
       tok.value = Token.tokenHashKey;
-      return (allowed & allowHashKey) !== 0;
+      return true;
     }
-    if (stringCEquals(this.currentToken_, '#rest')) {
+    if (stringCEquals(tem, 'rest')) {
+      if (!(allowed & allowHashRest)) {
+        return this.tokenRecover(allowed, tok);
+      }
       tok.value = Token.tokenHashRest;
-      return (allowed & allowHashRest) !== 0;
+      return true;
     }
-    if (stringCEquals(this.currentToken_, '#contents')) {
+    if (stringCEquals(tem, 'contents')) {
+      if (!(allowed & allowHashContents)) {
+        return this.tokenRecover(allowed, tok);
+      }
       tok.value = Token.tokenHashContents;
-      return (allowed & allowHashContents) !== 0;
+      return true;
     }
-    tok.value = Token.tokenIdentifier;
-    return (allowed & allowIdentifier) !== 0;
+    this.reportMessage(SchemeParserMessages.unknownNamedConstant, stringCToString(tem));
+    return false;
   }
 
   // Datum parsing
