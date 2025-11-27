@@ -302,10 +302,10 @@ export class FileStorageManager extends StorageManager {
     // Resolve relative paths against baseId
     if (baseId.size() > 0 && !this.isAbsolutePath(path)) {
       const basePath = this.stringCToPath(baseId);
-      // Get the directory of the base path
-      const lastSep = basePath.lastIndexOf('/');
-      const baseDir = lastSep >= 0 ? basePath.substring(0, lastSep + 1) : '';
-      path = baseDir + path;
+      // Get the directory of the base path - use Node's path module for proper resolution
+      const nodePath = require('path');
+      const baseDir = nodePath.dirname(basePath);
+      path = nodePath.resolve(baseDir, path);
     }
 
     if (!this.fileReader_) {
@@ -414,6 +414,7 @@ export class ExtendEntityManager extends EntityManager {
     flags: number,
     mgr: Messenger
   ): InputSource | null {
+
     // Parse the system identifier into ParsedSystemId
     // Port of parseSystemId call from line 319-321
     const parsedSysid = new ParsedSystemId();

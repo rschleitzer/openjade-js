@@ -370,6 +370,12 @@ function main(): number {
     }
   }
 
+  // Add built-in DSSSL catalog (contains style-sheet.dtd, etc.)
+  const builtinCatalog = path.join(__dirname, '..', '..', 'dsssl', 'catalog');
+  if (fs.existsSync(builtinCatalog)) {
+    catalogSysids.push_back(makeStringC(builtinCatalog));
+  }
+
   if (catalogSysids.size() > 0) {
     const catalogManager = SOCatalogManager.make(
       catalogSysids,

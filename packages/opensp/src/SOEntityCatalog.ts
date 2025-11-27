@@ -33,6 +33,8 @@ export class CatalogEntry {
   catalogNumber: number;
   baseNumber: number;
   serial: number;
+  // Store the catalog's base path for resolving relative system IDs
+  catalogBasePath: StringC;
 
   constructor() {
     this.to = new StringOf<Char>();
@@ -40,6 +42,7 @@ export class CatalogEntry {
     this.catalogNumber = 0;
     this.baseNumber = 0;
     this.serial = 0;
+    this.catalogBasePath = new StringOf<Char>();
   }
 
   copy(): CatalogEntry {
@@ -49,6 +52,7 @@ export class CatalogEntry {
     entry.catalogNumber = this.catalogNumber;
     entry.baseNumber = this.baseNumber;
     entry.serial = this.serial;
+    entry.catalogBasePath = this.catalogBasePath;
     return entry;
   }
 }
@@ -132,14 +136,18 @@ export class SOEntityCatalog extends EntityCatalog {
   private sgmlDecl_: StringC;
   private sgmlDeclLoc_: Location;
   private sgmlDeclBaseNumber_: number;
+  private sgmlDeclCatalogPath_: StringC;
   private document_: StringC;
   private haveDocument_: PackedBoolean;
   private documentLoc_: Location;
   private documentBaseNumber_: number;
+  private documentCatalogPath_: StringC;
   private haveCurrentBase_: PackedBoolean;
   private base_: Vector<Location>;
   private em_: ExtendEntityManager | null;
   private nextSerial_: number;
+  // Current catalog path for resolving relative system IDs in entries
+  private currentCatalogPath_: StringC;
 
   constructor(em: ExtendEntityManager | null) {
     super();
@@ -156,14 +164,23 @@ export class SOEntityCatalog extends EntityCatalog {
     this.sgmlDecl_ = new StringOf<Char>();
     this.sgmlDeclLoc_ = new Location();
     this.sgmlDeclBaseNumber_ = 0;
+    this.sgmlDeclCatalogPath_ = new StringOf<Char>();
     this.document_ = new StringOf<Char>();
     this.haveDocument_ = false;
     this.documentLoc_ = new Location();
     this.documentBaseNumber_ = 0;
+    this.documentCatalogPath_ = new StringOf<Char>();
     this.haveCurrentBase_ = false;
     this.base_ = new Vector<Location>();
     this.em_ = em;
     this.nextSerial_ = 0;
+    this.currentCatalogPath_ = new StringOf<Char>();
+  }
+
+  // Set the current catalog path (called during catalog parsing)
+  setCurrentCatalogPath(path: StringC): void {
+    this.currentCatalogPath_ = new StringOf<Char>();
+    this.currentCatalogPath_.assign(path.data(), path.size());
   }
 
   entityManager(): ExtendEntityManager | null {
@@ -270,6 +287,7 @@ export class SOEntityCatalog extends EntityCatalog {
         entry.to,
         entry.loc,
         entry.baseNumber,
+        entry.catalogBasePath,
         entity.dataType() === EntityDecl.DataType.ndata,
         charset,
         entry === delegatedEntry && pubId ? pubId : null,
@@ -308,6 +326,7 @@ export class SOEntityCatalog extends EntityCatalog {
         entry.to,
         entry.loc,
         entry.baseNumber,
+        entry.catalogBasePath,
         false,
         charset,
         delegated.value ? publicId : null,
@@ -364,6 +383,7 @@ export class SOEntityCatalog extends EntityCatalog {
         entry.to,
         entry.loc,
         entry.baseNumber,
+        entry.catalogBasePath,
         false,
         charset,
         null,
@@ -396,6 +416,7 @@ export class SOEntityCatalog extends EntityCatalog {
         this.sgmlDecl_,
         this.sgmlDeclLoc_,
         this.sgmlDeclBaseNumber_,
+        this.sgmlDeclCatalogPath_,
         false,
         charset,
         null,
@@ -413,6 +434,7 @@ export class SOEntityCatalog extends EntityCatalog {
         this.document_,
         this.documentLoc_,
         this.documentBaseNumber_,
+        this.documentCatalogPath_,
         false,
         charset,
         null,
@@ -432,6 +454,8 @@ export class SOEntityCatalog extends EntityCatalog {
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
+    // Store the catalog path for resolving relative system IDs
+    entry.catalogBasePath.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
     // Must copy publicId for the same reason
     const publicIdCopy = new StringOf<Char>();
     publicIdCopy.assign(publicId.data(), publicId.size());
@@ -446,6 +470,7 @@ export class SOEntityCatalog extends EntityCatalog {
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
+    entry.catalogBasePath.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
     const prefixCopy = new StringOf<Char>();
     prefixCopy.assign(prefix.data(), prefix.size());
     this.delegates_.insert(prefixCopy, entry, override);
@@ -459,6 +484,7 @@ export class SOEntityCatalog extends EntityCatalog {
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
+    entry.catalogBasePath.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
 
     const publicIdCopy = new StringOf<Char>();
     publicIdCopy.assign(publicId.data(), publicId.size());
@@ -475,6 +501,7 @@ export class SOEntityCatalog extends EntityCatalog {
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
+    entry.catalogBasePath.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
 
     const systemIdCopy = new StringOf<Char>();
     systemIdCopy.assign(systemId.data(), systemId.size());
@@ -497,6 +524,7 @@ export class SOEntityCatalog extends EntityCatalog {
     entry.catalogNumber = this.catalogNumber_;
     entry.baseNumber = this.haveCurrentBase_ ? this.base_.size() : 0;
     entry.serial = this.nextSerial_++;
+    entry.catalogBasePath.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
 
     let tableIndex: number;
     if (declType >= EntityDecl.DeclType.parameterEntity) {
@@ -520,6 +548,7 @@ export class SOEntityCatalog extends EntityCatalog {
       this.sgmlDecl_.assign(str.data(), str.size());
       this.sgmlDeclLoc_ = new Location(loc);
       this.sgmlDeclBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
+      this.sgmlDeclCatalogPath_.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
       this.haveSgmlDecl_ = true;
     }
   }
@@ -532,6 +561,7 @@ export class SOEntityCatalog extends EntityCatalog {
       this.document_.assign(str.data(), str.size());
       this.documentLoc_ = new Location(loc);
       this.documentBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
+      this.documentCatalogPath_.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
       this.haveDocument_ = true;
     }
   }
@@ -598,6 +628,7 @@ export class SOEntityCatalog extends EntityCatalog {
     str: StringC,
     loc: Location,
     baseNumber: number,
+    catalogBasePath: StringC,
     isNdata: Boolean,
     charset: CharsetInfo,
     lookupPublicId: StringC | null,
@@ -608,6 +639,30 @@ export class SOEntityCatalog extends EntityCatalog {
       // No entity manager, just copy the string
       result.assign(str.data(), str.size());
       return true;
+    }
+
+    // If baseNumber is 0 (no BASE directive), use the catalog's path as the base
+    // for resolving relative system IDs
+    if (baseNumber === 0 && catalogBasePath.size() > 0) {
+      // Temporarily set the entity manager's base ID to the catalog path
+      const savedBaseId = this.em_.currentBaseId();
+      const savedBaseIdCopy = new StringOf<Char>();
+      savedBaseIdCopy.assign(savedBaseId.data(), savedBaseId.size());
+      this.em_.setCurrentBaseId(catalogBasePath);
+
+      const success = this.em_.expandSystemId(
+        str,
+        loc,
+        isNdata,
+        charset,
+        lookupPublicId,
+        mgr,
+        result
+      );
+
+      // Restore the previous base ID
+      this.em_.setCurrentBaseId(savedBaseIdCopy);
+      return success;
     }
 
     const baseLoc = baseNumber > 0 ? this.base_.get(baseNumber - 1) : loc;
@@ -820,6 +875,9 @@ export class CatalogParser {
       catalog.endCatalog();
       return;
     }
+
+    // Store the catalog path so entries can be resolved relative to it
+    catalog.setCurrentCatalogPath(sysid);
 
     this.catalog_ = catalog;
     this.mgr_ = mgr;
