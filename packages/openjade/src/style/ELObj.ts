@@ -16,9 +16,66 @@ import {
   Address
 } from './FOTBuilder';
 
+// Forward declaration for Insn and InsnPtr
+export interface Insn {
+  execute(vm: unknown): Insn | null;
+  isReturn(nArgs: { value: number }): boolean;
+  isPopBindings(n: { value: number }, next: { insn: Insn | null }): boolean;
+}
+
+export type InsnPtr = Insn | null;
+
 // Forward declarations (will be defined in other files)
 export class Interpreter {
   // Placeholder - will be fully implemented in Interpreter.ts
+  private nextLocation_: Location | null = null;
+  private debugMode_: boolean = false;
+  private nilObj_: ELObj | null = null;
+  private falseObj_: ELObj | null = null;
+  private errorObj_: ELObj | null = null;
+
+  setNextLocation(loc: Location): void {
+    this.nextLocation_ = loc;
+  }
+
+  message(_msgType: string, ..._args: unknown[]): void {
+    // Placeholder for message handling
+  }
+
+  debugMode(): boolean {
+    return this.debugMode_;
+  }
+
+  makePermanent(_obj: ELObj): void {
+    // Mark object as permanent (no-op in JS GC)
+  }
+
+  makeNil(): ELObj {
+    if (!this.nilObj_) {
+      this.nilObj_ = new NilObj();
+    }
+    return this.nilObj_;
+  }
+
+  makeFalse(): ELObj {
+    if (!this.falseObj_) {
+      this.falseObj_ = new FalseObj();
+    }
+    return this.falseObj_;
+  }
+
+  makePair(car: ELObj, cdr: ELObj): ELObj {
+    return new PairObj(car, cdr);
+  }
+
+  isError(obj: ELObj): boolean {
+    return obj === this.errorObj_;
+  }
+
+  lookup(_name: string): Identifier | null {
+    // Placeholder - will be implemented in Interpreter.ts
+    return null;
+  }
 }
 
 export class EvalContext {
@@ -29,13 +86,100 @@ export class Unit {
   // Placeholder for unit definition
 }
 
+// Forward declaration for InheritedC
+export interface InheritedC {
+  make(val: ELObj, loc: Location, interp: Interpreter): InheritedC | null;
+}
+
+// Forward declaration for FlowObj
+export interface FlowObj {
+  hasNonInheritedC(ident: Identifier): boolean;
+  hasPseudoNonInheritedC(ident: Identifier): boolean;
+  asCompoundFlowObj(): FlowObj | null;
+  copy(interp: Interpreter): FlowObj;
+  setNonInheritedC(ident: Identifier, val: ELObj, loc: Location, interp: Interpreter): void;
+  isCharacter(): boolean;
+}
+
 export class Identifier {
   // Placeholder for identifier
   private name_: StyleString;
+  private syntacticKey_: number = 0;
+  private hasSyntacticKey_: boolean = false;
+  private inheritedC_: InheritedC | null = null;
+  private flowObj_: FlowObj | null = null;
+  private value_: ELObj | null = null;
+  private evaluated_: boolean = false;
+  private definedPart_: number = 0;
+  private definedLoc_: Location | null = null;
+  private defined_: boolean = false;
+
+  // Syntactic key constants
+  static readonly SyntacticKey = {
+    keyUse: 1,
+    keyLabel: 2,
+    keyContentMap: 3
+  } as const;
+
   constructor(name: StyleString) {
     this.name_ = name;
   }
+
   name(): StyleString { return this.name_; }
+
+  syntacticKey(sk: { value: number }): boolean {
+    if (this.hasSyntacticKey_) {
+      sk.value = this.syntacticKey_;
+      return true;
+    }
+    return false;
+  }
+
+  setSyntacticKey(sk: number): void {
+    this.syntacticKey_ = sk;
+    this.hasSyntacticKey_ = true;
+  }
+
+  inheritedC(): InheritedC | null {
+    return this.inheritedC_;
+  }
+
+  setInheritedC(ic: InheritedC | null): void {
+    this.inheritedC_ = ic;
+  }
+
+  flowObj(): FlowObj | null {
+    return this.flowObj_;
+  }
+
+  setFlowObj(fo: FlowObj | null): void {
+    this.flowObj_ = fo;
+  }
+
+  defined(part: { value: number }, loc: { value: Location | null }): boolean {
+    part.value = this.definedPart_;
+    loc.value = this.definedLoc_;
+    return this.defined_;
+  }
+
+  setDefined(part: number, loc: Location): void {
+    this.definedPart_ = part;
+    this.definedLoc_ = loc;
+    this.defined_ = true;
+  }
+
+  computeValue(_part: number, _interp: Interpreter): ELObj | null {
+    return this.value_;
+  }
+
+  setValue(val: ELObj): void {
+    this.value_ = val;
+    this.evaluated_ = true;
+  }
+
+  evaluated(): boolean {
+    return this.evaluated_;
+  }
 }
 
 // Output stream interface for printing
@@ -978,9 +1122,57 @@ export class PairNodeListObj extends NodeListObj {
   }
 }
 
+// Function signature
+export interface Signature {
+  nRequiredArgs: number;
+  nOptionalArgs: number;
+  restArg: boolean;
+  nKeyArgs: number;
+  keys: (Identifier | null)[];
+}
+
 // Abstract function object
 export abstract class FunctionObj extends ELObj {
+  protected sig_: Signature;
+
+  constructor(sig: Signature) {
+    super();
+    this.sig_ = sig;
+  }
+
   override asFunction(): FunctionObj { return this; }
+
+  signature(): Signature {
+    return this.sig_;
+  }
+
+  nRequiredArgs(): number {
+    return this.sig_.nRequiredArgs;
+  }
+
+  nOptionalArgs(): number {
+    return this.sig_.nOptionalArgs;
+  }
+
+  nKeyArgs(): number {
+    return this.sig_.nKeyArgs;
+  }
+
+  restArg(): boolean {
+    return this.sig_.restArg;
+  }
+
+  totalArgs(): number {
+    return this.sig_.nRequiredArgs + this.sig_.nOptionalArgs + this.sig_.nKeyArgs + (this.sig_.restArg ? 1 : 0);
+  }
+
+  makeCallInsn(_nArgs: number, _interp: Interpreter, _loc: Location, next: InsnPtr): InsnPtr {
+    return next;
+  }
+
+  makeTailCallInsn(_nArgs: number, _interp: Interpreter, _loc: Location, _nCallerArgs: number): InsnPtr {
+    return null;
+  }
 }
 
 // Abstract SOSOFO object

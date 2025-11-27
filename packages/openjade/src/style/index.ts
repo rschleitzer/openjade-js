@@ -50,5 +50,12 @@ export {
   ColorSpaceObj,
   StyleObj,
   BoxObj,
-  LanguageObj
+  LanguageObj,
+  Signature,
+  InsnPtr as ELObjInsnPtr,
+  InheritedC,
+  FlowObj as ELObjFlowObj
 } from './ELObj';
+
+// Export Expression module
+export * from './Expression';
