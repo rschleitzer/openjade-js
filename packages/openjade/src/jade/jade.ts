@@ -357,23 +357,19 @@ function main(): number {
   // Set up catalog manager
   const catalogSysids = new Vector<StringC>();
 
-  for (const cat of parsed.catalogs) {
-    catalogSysids.push_back(makeStringC(cat));
-  }
-
-  // Look for default catalog in document directory
-  if (parsed.files.length > 0) {
-    const docDir = path.dirname(path.resolve(parsed.files[0]));
-    const docCatalog = path.join(docDir, 'catalog');
-    if (fs.existsSync(docCatalog)) {
-      catalogSysids.push_back(makeStringC(docCatalog));
-    }
-  }
-
-  // Add built-in DSSSL catalog (contains style-sheet.dtd, etc.)
+  // Add built-in DSSSL catalog
+  // Note: We intentionally do NOT load the document directory's catalog here,
+  // because it might have an SGMLDECL that specifies XML-style syntax which
+  // is incompatible with DSSSL stylesheets. The DSSSL catalog provides
+  // all the PUBLIC identifiers needed for DSSSL processing.
   const builtinCatalog = path.join(__dirname, '..', '..', 'dsssl', 'catalog');
   if (fs.existsSync(builtinCatalog)) {
     catalogSysids.push_back(makeStringC(builtinCatalog));
+  }
+
+  // Add user-specified catalogs (these are explicitly requested by -c option)
+  for (const cat of parsed.catalogs) {
+    catalogSysids.push_back(makeStringC(cat));
   }
 
   if (catalogSysids.size() > 0) {
