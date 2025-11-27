@@ -89,7 +89,7 @@ export function testTransformFOTBuilder(): boolean {
 
   try {
     const output = new StringOutputStream();
-    const fotb = new TransformFOTBuilder(output, true, ['raw']);  // XML mode with raw option (no RE chars)
+    const fotb = new TransformFOTBuilder(output, true);  // XML mode (keeps RE chars for OpenJade compatibility)
 
     // Create a simple element
     fotb.startElement({
@@ -102,7 +102,8 @@ export function testTransformFOTBuilder(): boolean {
     const result = output.toString();
     console.log('  Output:', JSON.stringify(result));
 
-    if (result.includes('<test') && result.includes('Hello') && result.includes('</test')) {
+    // Note: Output includes \r (RE) chars for SGML compatibility: <test\r>Hello</test\r>
+    if (result.includes('<test') && result.includes('Hello') && result.includes('</test\r>')) {
       console.log('  TransformFOTBuilder working correctly.');
       return true;
     } else {
