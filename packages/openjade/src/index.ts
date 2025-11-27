@@ -8,3 +8,6 @@ export * from './grove';
 
 // SPGrove module - Grove building from parser events
 export * from './spgrove';
+
+// Style module - DSSSL style engine
+export * from './style';

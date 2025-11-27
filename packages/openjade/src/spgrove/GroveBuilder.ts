@@ -9,20 +9,14 @@ import {
   Syntax,
   Dtd,
   Entity,
-  InternalEntity,
-  ExternalDataEntity,
-  ExternalEntity,
-  Notation,
   EntityDecl,
   ElementTypeFromElementType as ElementType,
   AttributeDefinitionList,
   AttributeValue,
-  TokenizedAttributeValue,
   SubstTable,
   Location,
   Origin,
   StringC,
-  Event,
   StartElementEvent,
   EndElementEvent,
   DataEvent,
@@ -36,10 +30,6 @@ import {
   SgmlDeclEvent,
   EntityDefaultedEvent,
   MessageEvent,
-  TextIter,
-  ModelGroup,
-  ElementToken,
-  PcdataToken,
   Char,
   Index,
   ConstPtr
@@ -51,22 +41,13 @@ import {
   ClassDef,
   Node,
   NodeList,
-  NamedNodeList,
-  NamedNodeListType,
   NodePtr,
   NodeListPtr,
-  NamedNodeListPtr,
   GroveString,
-  GroveChar,
   SdataMapper,
   NodeVisitor,
   Severity,
-  OccurIndicator,
-  EntityType,
-  DeclValueType,
-  DefaultValueType,
-  ContentType,
-  Connector
+  EntityType
 } from '../grove/Node';
 
 import { LocNode } from '../grove/LocNode';
@@ -74,8 +55,6 @@ import { SdNode } from './SdNode';
 
 // Configuration
 let blockingAccess = true;
-const initialBlockSize = 8192;
-const maxBlocksPerSize = 20;
 
 // Utility function
 function roundUp(n: number): number {
@@ -131,11 +110,11 @@ abstract class Chunk {
     return this.setNodePtrFirst(ptr, node);
   }
 
-  getFollowing(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null; nNodes: number } {
+  getFollowing(_grove: GroveImpl): { result: AccessResult; chunk: Chunk | null; nNodes: number } {
     return { result: AccessResult.accessNotInClass, chunk: null, nNodes: 0 };
   }
 
-  getFirstSibling(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
+  getFirstSibling(_grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
     return { result: AccessResult.accessNotInClass, chunk: null };
   }
 
@@ -152,7 +131,7 @@ abstract class Chunk {
 class LocChunk extends Chunk {
   locIndex: Index = 0;
 
-  setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+  setNodePtrFirst(_ptr: NodePtr, _node: BaseNode): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
@@ -171,7 +150,7 @@ class ElementChunk extends ParentChunk {
   type: ElementType | null = null;
   elementIndex: number = 0;
 
-  attributeValue(attIndex: number, grove: GroveImpl): AttributeValue | null {
+  attributeValue(_attIndex: number, _grove: GroveImpl): AttributeValue | null {
     return null;
   }
 
@@ -273,7 +252,7 @@ class CharsChunk extends LocChunk {
     return this.data_;
   }
 
-  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+  override setNodePtrFirst(_ptr: NodePtr, _node: BaseNode): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
@@ -328,7 +307,7 @@ class EpilogPiChunk extends PiChunk {
 class EntityRefChunk extends LocChunk {
   entity: Entity | null = null;
 
-  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+  override setNodePtrFirst(_ptr: NodePtr, _node: BaseNode): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
@@ -424,10 +403,8 @@ class GroveImpl {
   private refCount_: number = 0;
   private nEvents_: number = 0;
   private nElements_: number = 0;
-  private pulseStep_: number = 0;
   private nChunksSinceLocOrigin_: number = 0;
   private messageList_: MessageItem | null = null;
-  private messageListTailP_: { item: MessageItem | null } = { item: null };
 
   // Storage
   private chunks_: Chunk[] = [];
@@ -532,7 +509,7 @@ class GroveImpl {
   // Grove building
   pendingData(): DataChunk | null { return this.pendingData_; }
 
-  push(chunk: ElementChunk, hasId: boolean): void {
+  push(chunk: ElementChunk, _hasId: boolean): void {
     if (this.pendingData_) {
       if (this.tailPtr_) {
         this.tailPtr_.chunk = this.pendingData_;
@@ -715,19 +692,19 @@ abstract class BaseNode extends Node implements LocNode {
     return { result: false, ptr: null };
   }
 
-  override nextSibling(ptr: NodePtr): AccessResult {
+  override nextSibling(_ptr: NodePtr): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
-  override follow(ptr: NodeListPtr): AccessResult {
+  override follow(_ptr: NodeListPtr): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
-  override children(ptr: NodeListPtr): AccessResult {
+  override children(_ptr: NodeListPtr): AccessResult {
     return AccessResult.accessNotInClass;
   }
 
-  override getOrigin(ptr: NodePtr): AccessResult {
+  override getOrigin(_ptr: NodePtr): AccessResult {
     return AccessResult.accessNull;
   }
 
@@ -736,11 +713,11 @@ abstract class BaseNode extends Node implements LocNode {
     return AccessResult.accessOK;
   }
 
-  inChunk(node: DataNode): boolean {
+  inChunk(_node: DataNode): boolean {
     return false;
   }
 
-  inChunkCdata(node: CdataAttributeValueNode): boolean {
+  inChunkCdata(_node: CdataAttributeValueNode): boolean {
     return false;
   }
 }
@@ -828,12 +805,12 @@ class SgmlDocumentNode extends ChunkNode implements SdNode {
     return AccessResult.accessNull;
   }
 
-  override getProlog(ptr: NodeListPtr): AccessResult {
+  override getProlog(_ptr: NodeListPtr): AccessResult {
     // TODO: Implement prolog
     return AccessResult.accessNull;
   }
 
-  override getEpilog(ptr: NodeListPtr): AccessResult {
+  override getEpilog(_ptr: NodeListPtr): AccessResult {
     // TODO: Implement epilog
     return AccessResult.accessNull;
   }
