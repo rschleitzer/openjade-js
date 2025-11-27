@@ -9,9 +9,11 @@ import {
   Syntax,
   Dtd,
   Entity,
+  InternalEntity,
   ExternalDataEntity,
   ExternalEntity,
   Notation,
+  EntityDecl,
   ElementTypeFromElementType as ElementType,
   AttributeDefinitionList,
   AttributeValue,
@@ -39,7 +41,8 @@ import {
   ElementToken,
   PcdataToken,
   Char,
-  Index
+  Index,
+  ConstPtr
 } from '@openjade-js/opensp';
 
 import {
@@ -257,6 +260,145 @@ class DataChunk extends LocChunk {
   }
 }
 
+// CharsChunk - stores inline character data (for PI)
+class CharsChunk extends LocChunk {
+  size: number = 0;
+  private data_: Uint32Array = new Uint32Array(0);
+
+  setData(data: Uint32Array): void {
+    this.data_ = data;
+  }
+
+  data(): Uint32Array {
+    return this.data_;
+  }
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override after(): Chunk | null {
+    return this.nextSibling;
+  }
+
+  get nextSibling(): Chunk | null {
+    return (this as any)._nextSibling ?? null;
+  }
+
+  set nextSibling(chunk: Chunk | null) {
+    (this as any)._nextSibling = chunk;
+  }
+
+  static allocSize(nChars: number): number {
+    return roundUp(16 + nChars * 4);
+  }
+}
+
+// PiChunk - chunk for processing instructions
+class PiChunk extends CharsChunk {
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new PiNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+}
+
+// PrologPiChunk - PI in prolog
+class PrologPiChunk extends PiChunk {
+  override getFirstSibling(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
+    const prolog = grove.root().prolog;
+    if (prolog) {
+      return { result: AccessResult.accessOK, chunk: prolog };
+    }
+    return { result: AccessResult.accessNull, chunk: null };
+  }
+}
+
+// EpilogPiChunk - PI in epilog
+class EpilogPiChunk extends PiChunk {
+  override getFirstSibling(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
+    const epilog = grove.root().epilog;
+    if (epilog) {
+      return { result: AccessResult.accessOK, chunk: epilog };
+    }
+    return { result: AccessResult.accessNull, chunk: null };
+  }
+}
+
+// EntityRefChunk - base chunk for entity references
+class EntityRefChunk extends LocChunk {
+  entity: Entity | null = null;
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override after(): Chunk | null {
+    return this.nextSibling;
+  }
+
+  get nextSibling(): Chunk | null {
+    return (this as any)._nextSibling ?? null;
+  }
+
+  set nextSibling(chunk: Chunk | null) {
+    (this as any)._nextSibling = chunk;
+  }
+}
+
+// SdataChunk - chunk for SDATA entities
+class SdataChunk extends EntityRefChunk {
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new SdataNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+}
+
+// NonSgmlChunk - chunk for non-SGML characters
+class NonSgmlChunk extends LocChunk {
+  c: Char = 0;
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new NonSgmlNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+
+  override after(): Chunk | null {
+    return this.nextSibling;
+  }
+
+  get nextSibling(): Chunk | null {
+    return (this as any)._nextSibling ?? null;
+  }
+
+  set nextSibling(chunk: Chunk | null) {
+    (this as any)._nextSibling = chunk;
+  }
+}
+
+// ExternalDataChunk - chunk for external data entities
+class ExternalDataChunk extends EntityRefChunk {
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new ExternalDataNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+}
+
+// SubdocChunk - chunk for subdocument entities
+class SubdocChunk extends EntityRefChunk {
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new SubdocNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+}
+
+// PiEntityChunk - chunk for PI entities
+class PiEntityChunk extends EntityRefChunk {
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new PiEntityNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+}
+
 // GroveImpl - the main grove implementation
 class GroveImpl {
   private groveIndex_: number;
@@ -289,6 +431,7 @@ class GroveImpl {
 
   // Storage
   private chunks_: Chunk[] = [];
+  private defaultedEntityTable_: Map<string, Entity> = new Map();
 
   constructor(groveIndex: number) {
     this.groveIndex_ = groveIndex;
@@ -485,6 +628,21 @@ class GroveImpl {
     const chunk = new ChunkClass();
     this.chunks_.push(chunk);
     return chunk;
+  }
+
+  addDefaultedEntity(entityPtr: ConstPtr<Entity>): void {
+    const entity = entityPtr.pointer();
+    if (entity) {
+      const nameStr = entity.name();
+      const name = nameStr.toString();
+      this.defaultedEntityTable_.set(name, entity);
+    }
+    this.pulse();
+  }
+
+  lookupDefaultedEntity(name: StringC): Entity | null {
+    const nameKey = name.toString();
+    return this.defaultedEntityTable_.get(nameKey) ?? null;
   }
 
   private finishProlog(): void {
@@ -1072,6 +1230,550 @@ class CdataAttributeValueNode extends BaseNode {
   }
 }
 
+// EntityRefNode - base class for entity reference nodes
+class EntityRefNode extends ChunkNode {
+  constructor(grove: GroveImpl, chunk: EntityRefChunk) {
+    super(grove, chunk);
+  }
+
+  protected entityRefChunk(): EntityRefChunk {
+    return this.chunk_ as EntityRefChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    // Subclasses override this
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.entity;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  override getEntity(ptr: NodePtr): AccessResult {
+    const entity = this.entityRefChunk().entity;
+    if (entity) {
+      ptr.assign(new EntityNode(this.grove(), entity));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override getEntityName(): { result: AccessResult; str: GroveString } {
+    const entity = this.entityRefChunk().entity;
+    if (entity) {
+      const str = new GroveString();
+      setString(str, entity.name());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nextPtr = new NodePtr();
+    const result = this.nextChunkSibling(nextPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nextPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+}
+
+// EntityNodeBase - base class for entity nodes
+class EntityNodeBase extends BaseNode {
+  protected entity_: Entity;
+
+  constructor(grove: GroveImpl, entity: Entity) {
+    super(grove);
+    this.entity_ = entity;
+  }
+
+  override same(node: BaseNode): boolean {
+    if (!(node instanceof EntityNodeBase)) return false;
+    return this.entity_ === node.entity_;
+  }
+
+  override getName(): { result: AccessResult; str: GroveString } {
+    const str = new GroveString();
+    setString(str, this.entity_.name());
+    return { result: AccessResult.accessOK, str };
+  }
+
+  override getExternalId(ptr: NodePtr): AccessResult {
+    const external = this.entity_.asExternalEntity();
+    if (external) {
+      ptr.assign(new ExternalIdNode(this.grove(), external.externalId()));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override getText(): { result: AccessResult; str: GroveString } {
+    const internal = this.entity_.asInternalEntity();
+    if (internal) {
+      const str = new GroveString();
+      setString(str, internal.string());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getEntityType(): { result: AccessResult; entityType: EntityType.Enum } {
+    // Use EntityDecl.DataType to determine entity type
+    const dataType = this.entity_.dataType();
+    switch (dataType) {
+      case EntityDecl.DataType.sdata:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.sdata };
+      case EntityDecl.DataType.cdata:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.cdata };
+      case EntityDecl.DataType.pi:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.pi };
+      case EntityDecl.DataType.ndata:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.ndata };
+      case EntityDecl.DataType.subdoc:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.subdocument };
+      case EntityDecl.DataType.sgmlText:
+      default:
+        return { result: AccessResult.accessOK, entityType: EntityType.Enum.text };
+    }
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.entity(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.entity;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idGeneralEntities };
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+}
+
+// EntityNode - for entity nodes
+class EntityNode extends EntityNodeBase {
+  constructor(grove: GroveImpl, entity: Entity) {
+    super(grove, entity);
+  }
+
+  override getOrigin(ptr: NodePtr): AccessResult {
+    const dtd = this.grove().governingDtd();
+    if (dtd) {
+      ptr.assign(new DocumentTypeNode(this.grove(), dtd));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override getDefaulted(): { result: AccessResult; defaulted: boolean } {
+    return { result: AccessResult.accessOK, defaulted: this.entity_.defaulted() };
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.entity(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.entity;
+  }
+}
+
+// ExternalIdNode - for external ID nodes
+class ExternalIdNode extends BaseNode {
+  private externalId_: any; // ExternalId type
+
+  constructor(grove: GroveImpl, externalId: any) {
+    super(grove);
+    this.externalId_ = externalId;
+  }
+
+  override same(node: BaseNode): boolean {
+    if (!(node instanceof ExternalIdNode)) return false;
+    return this.externalId_ === node.externalId_;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.externalId(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.externalId;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idExternalId };
+  }
+
+  override getPublicId(): { result: AccessResult; str: GroveString } {
+    if (this.externalId_ && this.externalId_.publicIdString()) {
+      const str = new GroveString();
+      setString(str, this.externalId_.publicIdString());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getSystemId(): { result: AccessResult; str: GroveString } {
+    if (this.externalId_ && this.externalId_.systemIdString()) {
+      const str = new GroveString();
+      setString(str, this.externalId_.systemIdString());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+}
+
+// PiNode - for processing instructions
+class PiNode extends ChunkNode {
+  constructor(grove: GroveImpl, chunk: PiChunk) {
+    super(grove, chunk);
+  }
+
+  private piChunk(): PiChunk {
+    return this.chunk_ as PiChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.pi(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.pi;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  override getSystemData(): { result: AccessResult; str: GroveString } {
+    const chunk = this.piChunk();
+    const str = new GroveString(chunk.data(), chunk.size);
+    return { result: AccessResult.accessOK, str };
+  }
+
+  override getEntityName(): { result: AccessResult; str: GroveString } {
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getEntity(ptr: NodePtr): AccessResult {
+    return AccessResult.accessNull;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nextPtr = new NodePtr();
+    const result = this.nextChunkSibling(nextPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nextPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  static add(grove: GroveImpl, event: PiEvent): void {
+    const entity = event.entity();
+    if (entity) {
+      PiEntityNode.add(grove, entity, event.location());
+    } else {
+      const origin = event.location().origin();
+      if (origin && origin.pointer()) {
+        grove.setLocOrigin(origin.pointer()!);
+      }
+      const dataLen = event.dataLength();
+      let chunk: PiChunk;
+      if (grove.haveRootOrigin()) {
+        if (grove.root().documentElement) {
+          chunk = grove.allocChunk(EpilogPiChunk);
+        } else {
+          chunk = grove.allocChunk(PrologPiChunk);
+        }
+      } else {
+        chunk = grove.allocChunk(PiChunk);
+      }
+      chunk.size = dataLen;
+      chunk.locIndex = event.location().index();
+      // Copy data
+      const eventData = event.data();
+      const data = new Uint32Array(dataLen);
+      for (let i = 0; i < dataLen; i++) {
+        data[i] = eventData[i];
+      }
+      chunk.setData(data);
+      grove.appendSibling(chunk);
+    }
+  }
+}
+
+// PiEntityNode - for PI entities
+class PiEntityNode extends EntityRefNode {
+  constructor(grove: GroveImpl, chunk: PiEntityChunk) {
+    super(grove, chunk);
+  }
+
+  private piEntityChunk(): PiEntityChunk {
+    return this.chunk_ as PiEntityChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.pi(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.pi;
+  }
+
+  override getSystemData(): { result: AccessResult; str: GroveString } {
+    const entity = this.piEntityChunk().entity;
+    if (entity) {
+      const internal = entity.asInternalEntity();
+      if (internal) {
+        const str = new GroveString();
+        setString(str, internal.string());
+        return { result: AccessResult.accessOK, str };
+      }
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  static add(grove: GroveImpl, entity: Entity, loc: Location): void {
+    const origin = loc.origin();
+    if (origin && origin.pointer()) {
+      grove.setLocOrigin(origin.pointer()!);
+    }
+    const chunk = grove.allocChunk(PiEntityChunk);
+    chunk.entity = entity;
+    chunk.locIndex = loc.index();
+    grove.appendSibling(chunk);
+  }
+}
+
+// SdataNode - for SDATA entities
+class SdataNode extends EntityRefNode {
+  private c_: Char = 0;
+
+  constructor(grove: GroveImpl, chunk: SdataChunk) {
+    super(grove, chunk);
+  }
+
+  private sdataChunk(): SdataChunk {
+    return this.chunk_ as SdataChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.sdata(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.sdata;
+  }
+
+  override charChunk(mapper: SdataMapper): { result: AccessResult; str: GroveString } {
+    const entity = this.sdataChunk().entity;
+    if (entity) {
+      const name = entity.name();
+      const internal = entity.asInternalEntity();
+      if (internal) {
+        const text = internal.string();
+        const nameGs = new GroveString();
+        setString(nameGs, name);
+        const textGs = new GroveString();
+        setString(textGs, text);
+        const mapResult = mapper.sdataMap(nameGs, textGs);
+        if (mapResult.result) {
+          this.c_ = mapResult.ch;
+          const data = new Uint32Array(1);
+          data[0] = this.c_;
+          const str = new GroveString(data, 1);
+          return { result: AccessResult.accessOK, str };
+        }
+      }
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getSystemData(): { result: AccessResult; str: GroveString } {
+    const entity = this.sdataChunk().entity;
+    if (entity) {
+      const internal = entity.asInternalEntity();
+      if (internal) {
+        const str = new GroveString();
+        setString(str, internal.string());
+        return { result: AccessResult.accessOK, str };
+      }
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  static add(grove: GroveImpl, event: SdataEntityEvent): void {
+    const loc = event.location();
+    const parentOrigin = loc.origin();
+    if (parentOrigin && parentOrigin.pointer()) {
+      const parent = parentOrigin.pointer()!.parent();
+      if (parent.origin() && parent.origin()!.pointer()) {
+        grove.setLocOrigin(parent.origin()!.pointer()!);
+      }
+    }
+    const chunk = grove.allocChunk(SdataChunk);
+    chunk.entity = event.entity();
+    chunk.locIndex = loc.index();
+    grove.appendSibling(chunk);
+  }
+}
+
+// NonSgmlNode - for non-SGML characters
+class NonSgmlNode extends ChunkNode {
+  constructor(grove: GroveImpl, chunk: NonSgmlChunk) {
+    super(grove, chunk);
+  }
+
+  private nonSgmlChunk(): NonSgmlChunk {
+    return this.chunk_ as NonSgmlChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.nonSgml(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.nonSgml;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  override charChunk(mapper: SdataMapper): { result: AccessResult; str: GroveString } {
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getNonSgml(): { result: AccessResult; value: number } {
+    return { result: AccessResult.accessOK, value: this.nonSgmlChunk().c };
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nextPtr = new NodePtr();
+    const result = this.nextChunkSibling(nextPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nextPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  static add(grove: GroveImpl, event: NonSgmlCharEvent): void {
+    const origin = event.location().origin();
+    if (origin && origin.pointer()) {
+      grove.setLocOrigin(origin.pointer()!);
+    }
+    const chunk = grove.allocChunk(NonSgmlChunk);
+    chunk.c = event.character();
+    chunk.locIndex = event.location().index();
+    grove.appendSibling(chunk);
+  }
+}
+
+// ExternalDataNode - for external data entities
+class ExternalDataNode extends EntityRefNode {
+  constructor(grove: GroveImpl, chunk: ExternalDataChunk) {
+    super(grove, chunk);
+  }
+
+  private externalDataChunk(): ExternalDataChunk {
+    return this.chunk_ as ExternalDataChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.externalData(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.externalData;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  static add(grove: GroveImpl, event: ExternalDataEntityEvent): void {
+    const origin = event.location().origin();
+    if (origin && origin.pointer()) {
+      grove.setLocOrigin(origin.pointer()!);
+    }
+    const chunk = grove.allocChunk(ExternalDataChunk);
+    chunk.entity = event.entity();
+    chunk.locIndex = event.location().index();
+    grove.appendSibling(chunk);
+  }
+}
+
+// SubdocNode - for subdocument entities
+class SubdocNode extends EntityRefNode {
+  constructor(grove: GroveImpl, chunk: SubdocChunk) {
+    super(grove, chunk);
+  }
+
+  private subdocChunk(): SubdocChunk {
+    return this.chunk_ as SubdocChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.subdocument(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.subdocument;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  static add(grove: GroveImpl, event: SubdocEntityEvent): void {
+    const origin = event.location().origin();
+    if (origin && origin.pointer()) {
+      grove.setLocOrigin(origin.pointer()!);
+    }
+    const chunk = grove.allocChunk(SubdocChunk);
+    chunk.entity = event.entity();
+    chunk.locIndex = event.location().index();
+    grove.appendSibling(chunk);
+  }
+}
+
 // BaseNodeList
 class BaseNodeList extends NodeList {
   canReuse(ptr: NodeListPtr): boolean {
@@ -1225,27 +1927,27 @@ class GroveBuilderEventHandler extends GroveBuilderMessageEventHandler {
   }
 
   override sdataEntity(event: SdataEntityEvent): void {
-    // TODO: Implement SdataNode.add
+    SdataNode.add(this.grove_, event);
   }
 
   override nonSgmlChar(event: NonSgmlCharEvent): void {
-    // TODO: Implement NonSgmlNode.add
+    NonSgmlNode.add(this.grove_, event);
   }
 
   override externalDataEntity(event: ExternalDataEntityEvent): void {
-    // TODO: Implement ExternalDataNode.add
+    ExternalDataNode.add(this.grove_, event);
   }
 
   override subdocEntity(event: SubdocEntityEvent): void {
-    // TODO: Implement SubdocNode.add
+    SubdocNode.add(this.grove_, event);
   }
 
   override pi(event: PiEvent): void {
-    // TODO: Implement PiNode.add
+    PiNode.add(this.grove_, event);
   }
 
   override entityDefaulted(event: EntityDefaultedEvent): void {
-    // TODO: Implement defaulted entity handling
+    this.grove_.addDefaultedEntity(event.entityPointer());
   }
 }
 
@@ -1316,5 +2018,26 @@ export {
   ParentChunk,
   ElementChunk,
   DataChunk,
-  SgmlDocumentChunk
+  SgmlDocumentChunk,
+  // New node types
+  PiNode,
+  PiEntityNode,
+  SdataNode,
+  NonSgmlNode,
+  ExternalDataNode,
+  SubdocNode,
+  EntityNode,
+  EntityRefNode,
+  ExternalIdNode,
+  // New chunk types
+  PiChunk,
+  PrologPiChunk,
+  EpilogPiChunk,
+  SdataChunk,
+  NonSgmlChunk,
+  ExternalDataChunk,
+  SubdocChunk,
+  PiEntityChunk,
+  EntityRefChunk,
+  CharsChunk
 };
