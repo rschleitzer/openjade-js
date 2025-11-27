@@ -928,12 +928,36 @@ export class SerialFOTBuilder extends FOTBuilder {
   protected multiModeStack_: MultiMode[][] = [];
 
   // Non-serial versions that delegate to serial methods
-  override startSimplePageSequence(_headerFooter: (FOTBuilder | null)[]): void {
+  // Simple page sequence has nHF header/footer ports
+  override startSimplePageSequence(headerFooter: (FOTBuilder | null)[]): void {
+    // Create nHF SaveFOTBuilders for header/footer collection
+    for (let i = 0; i < HF.nHF; i++) {
+      const save = new ConcreteSaveFOTBuilder();
+      this.save_.push(save);
+      headerFooter[HF.nHF - 1 - i] = save;
+    }
     this.startSimplePageSequenceSerial();
   }
 
   override endSimplePageSequenceHeaderFooter(): void {
-    // handled by serial methods
+    // Collect all header/footer SaveFOTBuilders
+    const hf: SaveFOTBuilder[] = [];
+    for (let k = 0; k < HF.nHF; k++) {
+      hf.push(this.save_.pop()!);
+    }
+    // Reverse to get correct order
+    hf.reverse();
+
+    // Output all header/footer parts (in same order as upstream for compatibility)
+    for (let i = 0; i < (1 << 2); i++) {
+      for (let j = 0; j < 6; j++) {
+        const k = i | (j << 2);
+        this.startSimplePageSequenceHeaderFooterSerial(k);
+        hf[k].emit(this);
+        this.endSimplePageSequenceHeaderFooterSerial(k);
+      }
+    }
+    this.endAllSimplePageSequenceHeaderFooter();
   }
 
   override endSimplePageSequence(): void {

@@ -24,6 +24,7 @@ import { FOTBuilder } from '../style/FOTBuilder';
 import { FOTBuilderExtension } from '../style/StyleEngine';
 import { TransformFOTBuilder, FileOutputStream } from '../style/TransformFOTBuilder';
 import { SgmlFOTBuilder } from '../style/SgmlFOTBuilder';
+import { makeRtfFOTBuilder } from '../style/RtfFOTBuilder';
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
@@ -148,10 +149,17 @@ class JadeApp extends DssslApp {
         return fotBuilder;
       }
 
-      case OutputType.rtfType:
-        // RTF output - not yet implemented
-        console.error('RTF output not yet implemented');
-        return null;
+      case OutputType.rtfType: {
+        // RTF output
+        const rtfOutputStream = new FileOutputStream(this.outputFilename_);
+        const rtfBuilder = makeRtfFOTBuilder(
+          (s: string) => rtfOutputStream.write(s),
+          () => rtfOutputStream.flush(),
+          [],
+          exts
+        );
+        return rtfBuilder;
+      }
 
       case OutputType.texType:
         // TeX output - not yet implemented
