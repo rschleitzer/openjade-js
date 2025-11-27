@@ -3023,9 +3023,10 @@ export class SchemeParser extends Messenger {
     return false;
   }
 
-  private handleIdentifierOrNumber(allowed: number, tok: { value: Token }, _firstChar: number): boolean {
-    // Extend the token - currentToken_ already has the first char
-    const chars: Char[] = [];
+  private handleIdentifierOrNumber(allowed: number, tok: { value: Token }, firstChar: number): boolean {
+    // Start with the first character that was already consumed
+    const chars: Char[] = [firstChar];
+    // Add any existing currentToken_ chars (usually empty at this point)
     for (let i = 0; i < this.currentToken_.length_; i++) {
       chars.push(stringCCharAt(this.currentToken_, i));
     }
