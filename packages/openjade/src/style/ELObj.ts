@@ -110,6 +110,8 @@ export interface Interpreter {
   initialStyle(): StyleObjRef | null;
   initialProcessingMode(): ProcessingModeRef;
   charProperty(prop: StringC, c: Char, loc: Location, def: ELObj | null): ELObj;
+  // External procedure lookup
+  lookupExternalProc(pubid: StringC): FunctionObj | null;
 }
 
 // Forward type for node pointer

@@ -2,10 +2,31 @@
 // See the file copying.txt for copying permission.
 
 import { Location, Char, StringC, String as StringOf, InputSource, Messenger, Message, Xchar } from '@openjade-js/opensp';
-import { Interpreter, LexCategory, SyntacticKey, ProcessingMode, IdentifierImpl, Unit } from './Interpreter';
-import { Expression, Environment } from './Interpreter';
-import { ELObj, PairObj, SymbolObj, NilObj, CharObj, StringObj, IntegerObj, RealObj, VectorObj, LangObj } from './ELObj';
+import { Interpreter, LexCategory, SyntacticKey, ProcessingMode, IdentifierImpl, Unit, RuleType, Environment } from './Interpreter';
+import { ELObj, PairObj, SymbolObj, NilObj, CharObj, StringObj, IntegerObj, RealObj, VectorObj, LangObj, Identifier } from './ELObj';
 import { Pattern } from './Pattern';
+import {
+  MakeExpression,
+  Owner,
+  Expression,
+  ConstantExpression,
+  VariableExpression,
+  CallExpression,
+  LambdaExpression,
+  IfExpression,
+  OrExpression,
+  CaseExpression,
+  SequenceExpression,
+  LetExpression,
+  LetStarExpression,
+  LetrecExpression,
+  AssignmentExpression,
+  WithModeExpression,
+  CondFailExpression,
+  QuasiquoteExpression,
+  QuasiquoteType,
+  StyleExpression
+} from './Expression';
 
 // Default character for unmapped entities
 const defaultChar: Char = 0xfffd;
@@ -113,386 +134,6 @@ const SchemeParserMessages = {
   badAddCharProperty: 'badAddCharProperty',
   duplicateDefLangDecl: 'duplicateDefLangDecl'
 } as const;
-
-// Processing mode rule types
-export enum RuleType {
-  constructionRule,
-  styleRule
-}
-
-// Expression types (stubs - full implementations in Expression.ts)
-export class ConstantExpression implements Expression {
-  private obj_: ELObj;
-  private loc_: Location;
-
-  constructor(obj: ELObj, loc: Location) {
-    this.obj_ = obj;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return this.obj_; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class VariableExpression implements Expression {
-  private ident_: IdentifierImpl;
-  private loc_: Location;
-
-  constructor(ident: IdentifierImpl, loc: Location) {
-    this.ident_ = ident;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class CallExpression implements Expression {
-  private func_: Expression;
-  private args_: Expression[];
-  private loc_: Location;
-
-  constructor(func: Expression, args: Expression[], loc: Location) {
-    this.func_ = func;
-    this.args_ = args;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class LambdaExpression implements Expression {
-  private formals_: IdentifierImpl[];
-  private inits_: Expression[];
-  private nOptional_: number;
-  private hasRest_: boolean;
-  private nKey_: number;
-  private body_: Expression;
-  private loc_: Location;
-
-  constructor(
-    formals: IdentifierImpl[],
-    inits: Expression[],
-    nOptional: number,
-    hasRest: boolean,
-    nKey: number,
-    body: Expression,
-    loc: Location
-  ) {
-    this.formals_ = formals;
-    this.inits_ = inits;
-    this.nOptional_ = nOptional;
-    this.hasRest_ = hasRest;
-    this.nKey_ = nKey;
-    this.body_ = body;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class IfExpression implements Expression {
-  private test_: Expression;
-  private consequent_: Expression;
-  private alternate_: Expression | null;
-  private loc_: Location;
-
-  constructor(test: Expression, consequent: Expression, alternate: Expression | null, loc: Location) {
-    this.test_ = test;
-    this.consequent_ = consequent;
-    this.alternate_ = alternate;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class CondExpression implements Expression {
-  private clauses_: Array<{ test: Expression; consequent: Expression }>;
-  private else_: Expression | null;
-  private loc_: Location;
-
-  constructor(clauses: Array<{ test: Expression; consequent: Expression }>, elseExpr: Expression | null, loc: Location) {
-    this.clauses_ = clauses;
-    this.else_ = elseExpr;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class SequenceExpression implements Expression {
-  private exprs_: Expression[];
-  private loc_: Location;
-
-  constructor(exprs: Expression[], loc: Location) {
-    this.exprs_ = exprs;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class StyleExpression implements Expression {
-  private keys_: IdentifierImpl[];
-  private exprs_: Expression[];
-  private loc_: Location;
-
-  constructor(keys: IdentifierImpl[], exprs: Expression[], loc: Location) {
-    this.keys_ = keys;
-    this.exprs_ = exprs;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class AssignmentExpression implements Expression {
-  private var_: IdentifierImpl;
-  private value_: Expression;
-  private loc_: Location;
-
-  constructor(varIdent: IdentifierImpl, value: Expression, loc: Location) {
-    this.var_ = varIdent;
-    this.value_ = value;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class WithModeExpression implements Expression {
-  private mode_: ProcessingMode;
-  private content_: Expression;
-  private loc_: Location;
-
-  constructor(mode: ProcessingMode, content: Expression, loc: Location) {
-    this.mode_ = mode;
-    this.content_ = content;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class MakeExpression implements Expression {
-  private foc_: IdentifierImpl;
-  private keys_: IdentifierImpl[];
-  private exprs_: Expression[];
-  private loc_: Location;
-
-  constructor(foc: IdentifierImpl, keys: IdentifierImpl[], exprs: Expression[], loc: Location) {
-    this.foc_ = foc;
-    this.keys_ = keys;
-    this.exprs_ = exprs;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class LetExpression implements Expression {
-  private vars_: IdentifierImpl[];
-  private inits_: Expression[];
-  private body_: Expression;
-  private loc_: Location;
-
-  constructor(vars: IdentifierImpl[], inits: Expression[], body: Expression, loc: Location) {
-    this.vars_ = vars;
-    this.inits_ = inits;
-    this.body_ = body;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class LetStarExpression implements Expression {
-  private vars_: IdentifierImpl[];
-  private inits_: Expression[];
-  private body_: Expression;
-  private loc_: Location;
-
-  constructor(vars: IdentifierImpl[], inits: Expression[], body: Expression, loc: Location) {
-    this.vars_ = vars;
-    this.inits_ = inits;
-    this.body_ = body;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class LetrecExpression implements Expression {
-  private vars_: IdentifierImpl[];
-  private inits_: Expression[];
-  private body_: Expression;
-  private loc_: Location;
-
-  constructor(vars: IdentifierImpl[], inits: Expression[], body: Expression, loc: Location) {
-    this.vars_ = vars;
-    this.inits_ = inits;
-    this.body_ = body;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class CaseExpression implements Expression {
-  private keyExpr_: Expression;
-  private cases_: Array<{ datums: ELObj[]; expr: Expression }>;
-  private elseClause_: Expression | null;
-  private loc_: Location;
-
-  constructor(
-    keyExpr: Expression,
-    cases: Array<{ datums: ELObj[]; expr: Expression }>,
-    elseClause: Expression | null,
-    loc: Location
-  ) {
-    this.keyExpr_ = keyExpr;
-    this.cases_ = cases;
-    this.elseClause_ = elseClause;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class OrExpression implements Expression {
-  private test1_: Expression;
-  private test2_: Expression;
-  private loc_: Location;
-
-  constructor(test1: Expression, test2: Expression, loc: Location) {
-    this.test1_ = test1;
-    this.test2_ = test2;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export class CondFailExpression implements Expression {
-  private loc_: Location;
-
-  constructor(loc: Location) {
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
-
-export enum QuasiquoteType {
-  listType,
-  vectorType,
-  improperType
-}
-
-export class QuasiquoteExpression implements Expression {
-  private exprs_: Expression[];
-  private spliced_: boolean[];
-  private type_: QuasiquoteType;
-  private loc_: Location;
-
-  constructor(exprs: Expression[], spliced: boolean[], type: QuasiquoteType, loc: Location) {
-    this.exprs_ = exprs;
-    this.spliced_ = spliced;
-    this.type_ = type;
-    this.loc_ = loc;
-  }
-
-  location(): Location { return this.loc_; }
-  constantValue(): ELObj | null { return null; }
-  canEval(_depth: number): boolean { return true; }
-  optimize(_interp: Interpreter, _env: Environment, _owner: { expr: Expression }): void {}
-  compile(_interp: Interpreter, _env: Environment, _depth: number, _next: any): any { return null; }
-  keyword(): IdentifierImpl | null { return null; }
-}
 
 // Helper function to convert StringC to string
 function stringCToString(sc: StringC): string {
@@ -1010,6 +651,7 @@ export class SchemeParser extends Messenger {
       expr.value = new LambdaExpression(formals, inits, nOptional, hasRest, nKey, expr.value, loc);
     }
 
+
     const defLoc = { value: null as Location | null };
     const defPart = { value: 0 };
     if (ident.defined(defPart, defLoc) && defPart.value <= this.interp_.currentPartIndex()) {
@@ -1201,7 +843,15 @@ export class SchemeParser extends Messenger {
     if (!this.parseRuleBody(expr, ruleType)) {
       return false;
     }
-    // Add root rule
+    // Add root rule to the processing mode
+    this.defMode_.addRule(
+      true,   // root = true
+      [],     // no patterns for root rule
+      expr.value!,
+      ruleType.value,
+      loc,
+      this.interp_
+    );
     return true;
   }
 
@@ -1313,7 +963,20 @@ export class SchemeParser extends Messenger {
     if (!this.getToken(allowString, tok)) {
       return false;
     }
-    // Handle flow object class declaration
+    const pubid = this.currentToken_;
+
+    // Check for duplicate definition
+    const defLoc = { value: null as Location | null };
+    const defPart = { value: 0 };
+    if (ident.inheritedCDefined(defPart, defLoc) && defPart.value <= this.interp_.currentPartIndex()) {
+      if (defPart.value === this.interp_.currentPartIndex()) {
+        this.reportMessage(SchemeParserMessages.duplicateFlowObjectClass, ident.name(), defLoc.value);
+      }
+    } else {
+      // Install the flow object class
+      this.interp_.installExtensionFlowObjectClass(ident, pubid, loc);
+    }
+
     if (!this.getToken(allowCloseParen, tok)) {
       return false;
     }
@@ -1868,6 +1531,11 @@ export class SchemeParser extends Messenger {
 
   private parseLambda(expr: { value: Expression | null }): boolean {
     const loc = this.currentLocation();
+    const tok = { value: Token.tokenVoid };
+    // Get opening paren for formals list
+    if (!this.getToken(allowOpenParen, tok)) {
+      return false;
+    }
     const formals: IdentifierImpl[] = [];
     const inits: Expression[] = [];
     const result = this.parseFormals(formals, inits);
@@ -1886,23 +1554,22 @@ export class SchemeParser extends Messenger {
     return true;
   }
 
+  // parseFormals - parses formal parameters AFTER the opening paren has been consumed
+  // Caller must have already consumed the '(' before calling this method
   private parseFormals(
     formals: IdentifierImpl[],
     inits: Expression[]
   ): { success: boolean; nOptional: number; hasRest: boolean; nKey: number } {
     const tok = { value: Token.tokenVoid };
-    if (!this.getToken(allowOpenParen, tok)) {
-      return { success: false, nOptional: 0, hasRest: false, nKey: 0 };
-    }
-
     let nOptional = 0;
     let hasRest = false;
     let nKey = 0;
     let inOptional = false;
     let inKey = false;
+    // Start without allowOpenParen - only add it after #!optional or #!key (like upstream)
+    let allowed = allowIdentifier | allowCloseParen | allowHashOptional | allowHashKey | allowHashRest;
 
     for (;;) {
-      let allowed = allowIdentifier | allowCloseParen | allowHashOptional | allowHashKey | allowHashRest;
       if (!this.getToken(allowed, tok)) {
         return { success: false, nOptional, hasRest, nKey };
       }
@@ -1913,19 +1580,28 @@ export class SchemeParser extends Messenger {
 
       switch (tok.value) {
         case Token.tokenHashOptional:
+          // After #!optional, allow (name default) forms
+          allowed |= allowOpenParen;
+          allowed &= ~allowHashOptional;  // Can't have another #!optional
           inOptional = true;
           inKey = false;
           break;
         case Token.tokenHashKey:
+          // After #!key, allow (name default) forms
+          allowed = allowOpenParen | allowCloseParen | allowIdentifier;
           inKey = true;
           inOptional = false;
           break;
         case Token.tokenHashRest:
-          if (!this.getToken(allowIdentifier, tok)) {
+          // After #!rest, only allow one identifier
+          allowed = allowIdentifier;
+          if (!this.getToken(allowed, tok)) {
             return { success: false, nOptional, hasRest, nKey };
           }
           formals.push(this.lookup(this.currentToken_));
           hasRest = true;
+          // After rest arg, only allow #!key or close paren
+          allowed = allowHashKey | allowCloseParen;
           break;
         case Token.tokenIdentifier:
           formals.push(this.lookup(this.currentToken_));
@@ -2365,7 +2041,7 @@ export class SchemeParser extends Messenger {
     }
     const foc = this.lookup(this.currentToken_);
     const exprs: Expression[] = [];
-    const keys: IdentifierImpl[] = [];
+    const keys: (Identifier | null)[] = [];
 
     for (;;) {
       const tem = { value: null as Expression | null };
@@ -2386,7 +2062,7 @@ export class SchemeParser extends Messenger {
           // Check for duplicate key
           let found = false;
           for (let i = 0; i < keys.length; i++) {
-            if (keys[i].name() === k.name()) {
+            if (keys[i] && keys[i]!.name() === k.name()) {
               found = true;
               break;
             }
@@ -2929,8 +2605,17 @@ export class SchemeParser extends Messenger {
     if (!this.in_) return false;
     const inSrc = this.in_;
     const chars: Char[] = [];
+    let pendingBackslash = false; // Track if we need to process a backslash
+
     for (;;) {
-      const c = inSrc.tokenChar(this);
+      let c: number;
+      if (pendingBackslash) {
+        c = 0x5C; // backslash
+        pendingBackslash = false;
+      } else {
+        c = inSrc.tokenChar(this);
+      }
+
       switch (c) {
         case eE:
           this.reportMessage(SchemeParserMessages.unterminatedString);
@@ -2942,26 +2627,57 @@ export class SchemeParser extends Messenger {
           tok.value = Token.tokenString;
           return (allowed & allowString) !== 0;
 
-        case 0x5C: { // '\\'
+        case 0x5C: { // '\\' - DSSSL escape sequences
           const esc = inSrc.tokenChar(this);
-          if (esc === eE) {
-            this.reportMessage(SchemeParserMessages.unterminatedString);
-            return false;
-          }
-          // Handle escape sequences
-          switch (esc) {
-            case 0x6E: // 'n'
-              chars.push(0x0A);
-              break;
-            case 0x74: // 't'
-              chars.push(0x09);
-              break;
-            case 0x72: // 'r'
-              chars.push(0x0D);
-              break;
-            default:
-              chars.push(esc);
-              break;
+          if (esc === 0x5C || esc === 0x22) { // '\\' or '"'
+            // Literal backslash or quote
+            chars.push(esc);
+          } else if (esc === eE) {
+            // End of entity - break out of string
+            break;
+          } else {
+            // Character name reference: \name;
+            // Read name until we hit a non-name character (lexCategory >= lexOther)
+            const name: Char[] = [esc];
+            let terminatingChar = eE;
+            while (true) {
+              const nextC = inSrc.tokenChar(this);
+              const lexCat = this.interp_.lexCategory(nextC);
+              if (lexCat >= LexCategory.lexOther) {
+                // End of name - save terminating char
+                terminatingChar = nextC;
+                break;
+              }
+              name.push(nextC);
+            }
+            // Convert name to character
+            const nameStr = makeStringCFromChars(name);
+            const result = this.interp_.convertCharName(nameStr);
+            if (result.found) {
+              chars.push(result.c);
+            } else {
+              this.reportMessage(SchemeParserMessages.unknownCharName, stringCToString(nameStr));
+            }
+            // Handle the terminating character
+            // If it was not semicolon, we need to process it
+            if (terminatingChar !== 0x3B) { // not ';'
+              if (terminatingChar === 0x5C) { // backslash
+                // Another escape sequence - set flag to process in next iteration
+                pendingBackslash = true;
+              } else if (terminatingChar === 0x22) { // quote - end of string
+                this.currentToken_ = makeStringCFromChars(chars);
+                tok.value = Token.tokenString;
+                return (allowed & allowString) !== 0;
+              } else if (terminatingChar === eE) {
+                // End of entity - report error and return
+                this.reportMessage(SchemeParserMessages.unterminatedString);
+                inSrc.endToken(1);
+                return false;
+              } else if (terminatingChar !== eE) {
+                // Regular character - add to string
+                chars.push(terminatingChar);
+              }
+            }
           }
           break;
         }

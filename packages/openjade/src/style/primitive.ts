@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, Char, StringC } from '@openjade-js/opensp';
+import { Location, Char, StringC, String as StringOf } from '@openjade-js/opensp';
 import {
   ELObj,
   PairObj,
@@ -31,6 +31,7 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
+import { AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
 import { InterpreterMessages, IdentifierImpl } from './Interpreter';
 import { PrimitiveObj, EvalContext, VM, InsnPtr } from './Insn';
 import { Interpreter } from './ELObj';
@@ -564,6 +565,131 @@ export class CharLessOrEqualPrimitiveObj extends PrimitiveObjBase {
       return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
     }
     return cv1.ch <= cv2.ch ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char>?
+export class CharGreaterPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharGreaterPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return cv1.ch > cv2.ch ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char>=?
+export class CharGreaterOrEqualPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharGreaterOrEqualPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return cv1.ch >= cv2.ch ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// Helper for case-insensitive comparison
+function charTolower(c: number): number {
+  if (c >= 0x41 && c <= 0x5a) return c + 0x20;  // A-Z -> a-z
+  return c;
+}
+
+// char-ci=?
+export class CharCiEqualPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharCiEqualPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return charTolower(cv1.ch) === charTolower(cv2.ch) ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char-ci<?
+export class CharCiLessPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharCiLessPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return charTolower(cv1.ch) < charTolower(cv2.ch) ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char-ci<=?
+export class CharCiLessOrEqualPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharCiLessOrEqualPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return charTolower(cv1.ch) <= charTolower(cv2.ch) ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char-ci>?
+export class CharCiGreaterPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharCiGreaterPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return charTolower(cv1.ch) > charTolower(cv2.ch) ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// char-ci>=?
+export class CharCiGreaterOrEqualPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(CharCiGreaterOrEqualPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const cv1 = args[0].charValue();
+    if (!cv1.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 0, args[0]);
+    }
+    const cv2 = args[1].charValue();
+    if (!cv2.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAChar, 1, args[1]);
+    }
+    return charTolower(cv1.ch) >= charTolower(cv2.ch) ? interp.makeTrue() : interp.makeFalse();
   }
 }
 
@@ -1961,13 +2087,72 @@ export class EmptyNodeListPrimitiveObj extends PrimitiveObjBase {
 
 // ============ Sosofo Operations ============
 
+// sosofo-append
+export class SosofoAppendPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, true);  // 0 required, 0 optional, rest = true
+  constructor() { super(SosofoAppendPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // If no arguments, return empty sosofo
+    if (argc === 0) {
+      return new EmptySosofoObj();
+    }
+    // If one argument, return it if it's a sosofo
+    if (argc === 1) {
+      const sosofo = args[0].asSosofo();
+      if (!sosofo) {
+        interp.setNextLocation(loc);
+        interp.message(ArgErrorMessages.notASosofo, interp.makeInteger(0), args[0]);
+        return interp.makeError();
+      }
+      return sosofo;
+    }
+    // Create append sosofo for multiple arguments
+    const result = new AppendSosofoObj();
+    for (let i = 0; i < argc; i++) {
+      const sosofo = args[i].asSosofo();
+      if (!sosofo) {
+        interp.setNextLocation(loc);
+        interp.message(ArgErrorMessages.notASosofo, interp.makeInteger(i), args[i]);
+        return interp.makeError();
+      }
+      result.append(sosofo);
+    }
+    return result;
+  }
+}
+
 // empty-sosofo
 export class EmptySosofoPrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(0, 0, false);
   constructor() { super(EmptySosofoPrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
-    // TODO: Create EmptySosofoObj
-    return interp.makeUnspecified();
+    return new EmptySosofoObj();
+  }
+}
+
+// ============ Misc ============
+
+// external-procedure - lookup an external procedure by name
+export class ExternalProcedurePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(ExternalProcedurePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+    // Create StringC from the string data - matches upstream: StringC tem(s, n);
+    // Convert Uint32Array to number[] for StringOf constructor
+    const chars: Char[] = [];
+    for (let i = 0; i < sd.length; i++) {
+      chars.push(sd.data[i]);
+    }
+    const tem = new StringOf<Char>(chars, sd.length);
+    const func = interp.lookupExternalProc(tem);
+    if (func) {
+      return func;
+    }
+    return interp.makeFalse();
   }
 }
 
@@ -2022,6 +2207,13 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['char=?', () => new IsCharEqualPrimitiveObj()],
   ['char<?', () => new CharLessPrimitiveObj()],
   ['char<=?', () => new CharLessOrEqualPrimitiveObj()],
+  ['char>?', () => new CharGreaterPrimitiveObj()],
+  ['char>=?', () => new CharGreaterOrEqualPrimitiveObj()],
+  ['char-ci=?', () => new CharCiEqualPrimitiveObj()],
+  ['char-ci<?', () => new CharCiLessPrimitiveObj()],
+  ['char-ci<=?', () => new CharCiLessOrEqualPrimitiveObj()],
+  ['char-ci>?', () => new CharCiGreaterPrimitiveObj()],
+  ['char-ci>=?', () => new CharCiGreaterOrEqualPrimitiveObj()],
   ['char-upcase', () => new CharUpcasePrimitiveObj()],
   ['char-downcase', () => new CharDowncasePrimitiveObj()],
   ['string', () => new StringPrimitiveObj()],
@@ -2094,5 +2286,7 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['glyph-id?', () => new IsGlyphIdPrimitiveObj()],
   ['language?', () => new IsLanguagePrimitiveObj()],
   ['empty-sosofo', () => new EmptySosofoPrimitiveObj()],
-  ['error', () => new ErrorPrimitiveObj()]
+  ['sosofo-append', () => new SosofoAppendPrimitiveObj()],
+  ['error', () => new ErrorPrimitiveObj()],
+  ['external-procedure', () => new ExternalProcedurePrimitiveObj()]
 ]);

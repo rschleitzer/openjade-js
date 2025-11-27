@@ -38,7 +38,8 @@ import {
   InsnPtr,
   BoxObj,
   ProcessingMode as ProcessingModeInterface,
-  CheckSosofoInsn
+  CheckSosofoInsn,
+  ApplyPrimitiveObj
 } from './Insn';
 // Note: Collector import removed - JS has native GC, we don't need custom memory management
 import {
@@ -48,9 +49,12 @@ import {
   Address
 } from './FOTBuilder';
 import { NodePtr, GroveString, AccessResult } from '../grove/Node';
+import { Environment } from './Expression';
 import { Pattern, MatchContext } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
-import { FlowObj, SosofoObj } from './SosofoObj';
+import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
+import { FormattingInstructionFlowObj, UnknownFlowObj } from './FlowObj';
+import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
 
 // Default character for unmapped SDATA entities
 const defaultChar: Char = 0xfffd;
@@ -193,7 +197,7 @@ export class Unit {
       if (this.insn_ === null && this.def_) {
         this.insn_ = Expression.optimizeCompile(this.def_, interp, new Environment(), 0, null);
       }
-      if (force || (this.def_ && this.def_.canEval(0))) {
+      if (force || (this.def_ && this.def_.canEval(false))) {
         const vm = new VM(interp);
         const v = vm.eval(this.insn_);
         const q = v.quantityValue();
@@ -296,36 +300,47 @@ export class Unit {
   }
 }
 
-// Forward declaration for Expression
+// Forward declaration for Expression - matches Expression.ts
 export interface Expression {
   location(): Location;
   constantValue(): ELObj | null;
-  canEval(depth: number): boolean;
-  optimize(interp: Interpreter, env: Environment, owner: { expr: Expression }): void;
-  compile(interp: Interpreter, env: Environment, depth: number, next: InsnPtr): InsnPtr;
-  keyword?(): IdentifierImpl | null; // Optional - only some expressions have this
+  canEval(maybeCall: boolean): boolean;
+  optimize(interp: Interpreter, env: Environment, owner: { value: Expression | null }): void;
+  compile(interp: Interpreter, env: Environment, stackPos: number, next: InsnPtr): InsnPtr;
+  keyword?(): Identifier | null; // Optional - only some expressions have this
 }
 
 export namespace Expression {
   export function optimizeCompile(
-    expr: Expression | { expr: Expression },
+    expr: Expression | { value: Expression | null },
     interp: Interpreter,
     env: Environment,
     depth: number,
     next: InsnPtr
   ): InsnPtr {
     // Handle Owner<Expression> pattern
-    const e = 'expr' in expr ? expr.expr : expr;
-    const owner = { expr: e };
+    if ('value' in expr) {
+      const owner = expr as { value: Expression | null };
+      if (owner.value) {
+        owner.value.optimize(interp, env, owner);
+        if (owner.value) {
+          return owner.value.compile(interp, env, depth, next);
+        }
+      }
+      return next;
+    }
+    const e = expr as Expression;
+    const owner = { value: e as Expression | null };
     e.optimize(interp, env, owner);
-    return owner.expr.compile(interp, env, depth, next);
+    if (owner.value) {
+      return owner.value.compile(interp, env, depth, next);
+    }
+    return next;
   }
 }
 
-// Environment for evaluation
-export class Environment {
-  // Placeholder for environment implementation
-}
+// Re-export Environment from Expression.ts
+export { Environment };
 
 // Lexical categories for parsing
 export enum LexCategory {
@@ -454,9 +469,9 @@ export class Action {
   }
 
   compile(interp: Interpreter, ruleType: RuleType): void {
-    const owner = { expr: this.expr_ };
+    const owner = { value: this.expr_ as Expression | null };
     this.expr_.optimize(interp, new Environment(), owner);
-    this.expr_ = owner.expr;
+    this.expr_ = owner.value!;
     const tem = this.expr_.constantValue();
     if (tem) {
       if (ruleType === RuleType.constructionRule) {
@@ -909,14 +924,14 @@ export class IdentifierImpl implements Identifier {
       this.beingComputed_ = true;
       if (this.insn_ === null) {
         this.insn_ = Expression.optimizeCompile(
-          { expr: this.def_ },
+          { value: this.def_ },
           interp,
           new Environment(),
           0,
           null
         );
       }
-      if (force || this.def_.canEval(0)) {
+      if (force || this.def_.canEval(false)) {
         const vm = new VM(interp);
         const v = vm.eval(this.insn_);
         interp.makePermanent(v);
@@ -1453,7 +1468,7 @@ export class Interpreter {
 
   // Installation methods (to be filled in)
   private installSyntacticKeys(): void {
-    // Install syntactic keywords
+    // Install syntactic keywords - matches upstream Interpreter.cxx
     const keys: [string, SyntacticKey][] = [
       ['quote', SyntacticKey.keyQuote],
       ['lambda', SyntacticKey.keyLambda],
@@ -1478,9 +1493,19 @@ export class Interpreter {
       ['element', SyntacticKey.keyElement],
       ['default', SyntacticKey.keyDefault],
       ['root', SyntacticKey.keyRoot],
+      ['id', SyntacticKey.keyId],
+      ['mode', SyntacticKey.keyMode],
+      ['declare-initial-value', SyntacticKey.keyDeclareInitialValue],
+      ['declare-characteristic', SyntacticKey.keyDeclareCharacteristic],
+      ['declare-flow-object-class', SyntacticKey.keyDeclareFlowObjectClass],
+      ['declare-default-language', SyntacticKey.keyDeclareDefaultLanguage],
+      ['declare-char-property', SyntacticKey.keyDeclareCharProperty],
+      ['define-language', SyntacticKey.keyDefineLanguage],
+      ['add-char-properties', SyntacticKey.keyAddCharProperties],
       ['use', SyntacticKey.keyUse],
       ['label', SyntacticKey.keyLabel],
-      ['content-map', SyntacticKey.keyContentMap]
+      ['content-map', SyntacticKey.keyContentMap],
+      ['data', SyntacticKey.keyData]
     ];
 
     for (const [name, key] of keys) {
@@ -1527,7 +1552,38 @@ export class Interpreter {
   }
 
   private installPrimitives(): void {
-    // Install primitive procedures - will be done in primitive.ts
+    // Install all primitive procedures from primitive.ts
+    for (const [name, factory] of primitives) {
+      this.installPrimitive(name, factory());
+    }
+    // Install special primitives not in the primitives map
+    const apply = new ApplyPrimitiveObj();
+    this.makePermanent(apply);
+    this.lookup(Interpreter.makeStringC('apply')).setValue(apply);
+  }
+
+  private installPrimitive(name: string, value: PrimitiveObj): void {
+    this.makePermanent(value);
+    const ident = this.lookup(Interpreter.makeStringC(name));
+    ident.setValue(value);
+    value.setIdentifier(ident);
+  }
+
+  // Install extension flow object class
+  installExtensionFlowObjectClass(ident: IdentifierImpl, pubid: StringC, loc: Location): void {
+    const pubidStr = stringCToString(pubid);
+    let flowObj: FlowObj | null = null;
+
+    // Check for known flow object classes
+    if (pubidStr === 'UNREGISTERED::James Clark//Flow Object Class::formatting-instruction') {
+      flowObj = new FormattingInstructionFlowObj();
+    } else {
+      // Create unknown flow object for unrecognized classes
+      flowObj = new UnknownFlowObj(pubidStr);
+    }
+
+    this.makePermanent(flowObj);
+    ident.setFlowObj(flowObj, this.currentPartIndex(), loc);
   }
 
   private installUnits(): void {
@@ -1555,7 +1611,112 @@ export class Interpreter {
   }
 
   private installCharNames(): void {
-    // Install named characters - would include charNames.h content
+    // Install named characters from charNames.h
+    // Unicode code point to character name mappings
+    const charNames: [number, string][] = [
+      [0x000a, 'line-feed'],
+      [0x000d, 'carriage-return'],
+      [0x0020, 'space'],
+      [0x0021, 'exclamation-mark'],
+      [0x0022, 'quotation-mark'],
+      [0x0023, 'number-sign'],
+      [0x0024, 'dollar-sign'],
+      [0x0025, 'percent-sign'],
+      [0x0026, 'ampersand'],
+      [0x0027, 'apostrophe'],
+      [0x0028, 'left-parenthesis'],
+      [0x0029, 'right-parenthesis'],
+      [0x002a, 'asterisk'],
+      [0x002b, 'plus-sign'],
+      [0x002c, 'comma'],
+      [0x002d, 'hyphen-minus'],
+      [0x002e, 'full-stop'],
+      [0x002f, 'solidus'],
+      [0x0030, 'digit-zero'],
+      [0x0031, 'digit-one'],
+      [0x0032, 'digit-two'],
+      [0x0033, 'digit-three'],
+      [0x0034, 'digit-four'],
+      [0x0035, 'digit-five'],
+      [0x0036, 'digit-six'],
+      [0x0037, 'digit-seven'],
+      [0x0038, 'digit-eight'],
+      [0x0039, 'digit-nine'],
+      [0x003a, 'colon'],
+      [0x003b, 'semicolon'],
+      [0x003c, 'less-than-sign'],
+      [0x003d, 'equals-sign'],
+      [0x003e, 'greater-than-sign'],
+      [0x003f, 'question-mark'],
+      [0x0040, 'commercial-at'],
+      [0x0041, 'latin-capital-letter-a'],
+      [0x0042, 'latin-capital-letter-b'],
+      [0x0043, 'latin-capital-letter-c'],
+      [0x0044, 'latin-capital-letter-d'],
+      [0x0045, 'latin-capital-letter-e'],
+      [0x0046, 'latin-capital-letter-f'],
+      [0x0047, 'latin-capital-letter-g'],
+      [0x0048, 'latin-capital-letter-h'],
+      [0x0049, 'latin-capital-letter-i'],
+      [0x004a, 'latin-capital-letter-j'],
+      [0x004b, 'latin-capital-letter-k'],
+      [0x004c, 'latin-capital-letter-l'],
+      [0x004d, 'latin-capital-letter-m'],
+      [0x004e, 'latin-capital-letter-n'],
+      [0x004f, 'latin-capital-letter-o'],
+      [0x0050, 'latin-capital-letter-p'],
+      [0x0051, 'latin-capital-letter-q'],
+      [0x0052, 'latin-capital-letter-r'],
+      [0x0053, 'latin-capital-letter-s'],
+      [0x0054, 'latin-capital-letter-t'],
+      [0x0055, 'latin-capital-letter-u'],
+      [0x0056, 'latin-capital-letter-v'],
+      [0x0057, 'latin-capital-letter-w'],
+      [0x0058, 'latin-capital-letter-x'],
+      [0x0059, 'latin-capital-letter-y'],
+      [0x005a, 'latin-capital-letter-z'],
+      [0x005b, 'left-square-bracket'],
+      [0x005c, 'reverse-solidus'],
+      [0x005d, 'right-square-bracket'],
+      [0x005e, 'circumflex-accent'],
+      [0x005f, 'low-line'],
+      [0x0060, 'grave-accent'],
+      [0x0061, 'latin-small-letter-a'],
+      [0x0062, 'latin-small-letter-b'],
+      [0x0063, 'latin-small-letter-c'],
+      [0x0064, 'latin-small-letter-d'],
+      [0x0065, 'latin-small-letter-e'],
+      [0x0066, 'latin-small-letter-f'],
+      [0x0067, 'latin-small-letter-g'],
+      [0x0068, 'latin-small-letter-h'],
+      [0x0069, 'latin-small-letter-i'],
+      [0x006a, 'latin-small-letter-j'],
+      [0x006b, 'latin-small-letter-k'],
+      [0x006c, 'latin-small-letter-l'],
+      [0x006d, 'latin-small-letter-m'],
+      [0x006e, 'latin-small-letter-n'],
+      [0x006f, 'latin-small-letter-o'],
+      [0x0070, 'latin-small-letter-p'],
+      [0x0071, 'latin-small-letter-q'],
+      [0x0072, 'latin-small-letter-r'],
+      [0x0073, 'latin-small-letter-s'],
+      [0x0074, 'latin-small-letter-t'],
+      [0x0075, 'latin-small-letter-u'],
+      [0x0076, 'latin-small-letter-v'],
+      [0x0077, 'latin-small-letter-w'],
+      [0x0078, 'latin-small-letter-x'],
+      [0x0079, 'latin-small-letter-y'],
+      [0x007a, 'latin-small-letter-z'],
+      [0x007b, 'left-curly-bracket'],
+      [0x007c, 'vertical-line'],
+      [0x007d, 'right-curly-bracket'],
+      [0x007e, 'tilde'],
+      [0x00a0, 'no-break-space'],
+    ];
+
+    for (const [code, name] of charNames) {
+      this.namedCharTable_.set(name, { c: code, defPart: 0 });
+    }
   }
 
   private installSdata(): void {
@@ -1603,20 +1764,20 @@ export class Interpreter {
       const ic = ident.inheritedC();
       if (!ic) continue;
 
-      const owner = { expr };
+      const owner = { value: expr as Expression | null };
       expr.optimize(this, new Environment(), owner);
-      const val = owner.expr.constantValue();
+      const val = owner.value?.constantValue();
 
       if (val) {
-        const tem = ic.make(val, owner.expr.location(), this);
+        const tem = ic.make(val, owner.value!.location(), this);
         if (tem) {
           ics.push(tem);
         }
       } else {
         ics.push(new VarInheritedC(
           ic,
-          owner.expr.compile(this, new Environment(), 0, null),
-          owner.expr.location()
+          owner.value!.compile(this, new Environment(), 0, null),
+          owner.value!.location()
         ));
       }
     }
@@ -1732,15 +1893,15 @@ export class Interpreter {
   }
 
   addCharProperty(prop: IdentifierImpl, defval: Expression): void {
-    const owner = { expr: defval };
+    const owner = { value: defval as Expression | null };
     defval.optimize(this, new Environment(), owner);
-    if (!owner.expr.constantValue()) {
-      this.setNextLocation(owner.expr.location());
+    if (!owner.value?.constantValue()) {
+      this.setNextLocation(owner.value!.location());
       this.message(InterpreterMessages.varCharPropertyExprUnsupported);
       return;
     }
-    this.makePermanent(owner.expr.constantValue()!);
-    const val: ELObjPart = { obj: owner.expr.constantValue(), defPart: this.partIndex_ };
+    this.makePermanent(owner.value.constantValue()!);
+    const val: ELObjPart = { obj: owner.value.constantValue(), defPart: this.partIndex_ };
     const propKey = stringCToString(prop.name());
     const cp = this.charProperties_.get(propKey);
 
@@ -1750,7 +1911,7 @@ export class Interpreter {
       } else if (this.partIndex_ === cp.def.defPart &&
                  cp.def.obj && val.obj &&
                  !ELObj.eqv(val.obj, cp.def.obj)) {
-        this.setNextLocation(owner.expr.location());
+        this.setNextLocation(owner.value.location());
         this.message(
           InterpreterMessages.duplicateCharPropertyDecl,
           propKey,
@@ -1761,20 +1922,20 @@ export class Interpreter {
       this.charProperties_.set(propKey, {
         map: new Map(),
         def: val,
-        loc: owner.expr.location()
+        loc: owner.value.location()
       });
     }
   }
 
   setCharProperty(prop: IdentifierImpl, c: Char, val: Expression): void {
-    const owner = { expr: val };
+    const owner = { value: val };
     val.optimize(this, new Environment(), owner);
-    if (!owner.expr.constantValue()) {
-      this.setNextLocation(owner.expr.location());
+    if (!owner.value.constantValue()) {
+      this.setNextLocation(owner.value.location());
       this.message(InterpreterMessages.varCharPropertyExprUnsupported);
       return;
     }
-    this.makePermanent(owner.expr.constantValue()!);
+    this.makePermanent(owner.value.constantValue()!);
 
     const propKey = stringCToString(prop.name());
     let cp = this.charProperties_.get(propKey);
@@ -1782,12 +1943,12 @@ export class Interpreter {
       cp = {
         map: new Map(),
         def: { obj: null, defPart: 0xFFFFFFFF },
-        loc: owner.expr.location()
+        loc: owner.value.location()
       };
       this.charProperties_.set(propKey, cp);
     }
 
-    const obj: ELObjPart = { obj: owner.expr.constantValue(), defPart: this.partIndex_ };
+    const obj: ELObjPart = { obj: owner.value.constantValue(), defPart: this.partIndex_ };
     const existing = cp.map.get(c);
 
     if (existing?.obj) {
@@ -1795,7 +1956,7 @@ export class Interpreter {
         cp.map.set(c, obj);
       } else if (this.partIndex_ === existing.defPart &&
                  !ELObj.eqv(obj.obj!, existing.obj)) {
-        this.setNextLocation(owner.expr.location());
+        this.setNextLocation(owner.value.location());
         this.message(
           InterpreterMessages.duplicateAddCharProperty,
           propKey,

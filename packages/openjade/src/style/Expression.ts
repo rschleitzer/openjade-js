@@ -9,10 +9,72 @@ import {
   SyntacticKey,
   KeywordObj,
   Insn as ELObjInsn,
-  InsnPtr as ELObjInsnPtr
+  InsnPtr as ELObjInsnPtr,
+  Signature
 } from './ELObj';
 import { FlowObj, SequenceFlowObj, CompoundFlowObj } from './SosofoObj';
 import type { Interpreter } from './Interpreter';
+import {
+  ProcessingMode,
+  StyleSpec,
+  InheritedC,
+  FlowObj as InsnFlowObj,
+  CompoundFlowObj as InsnCompoundFlowObj,
+  createErrorInsn,
+  createConstantInsn,
+  createResolveQuantitiesInsn,
+  createTestInsn,
+  createAndInsn,
+  createOrInsn,
+  createCondFailInsn,
+  createCaseFailInsn,
+  createCaseInsn,
+  createPopInsn,
+  createApplyInsn,
+  createTailApplyInsn,
+  createFrameRefInsn,
+  createClosureRefInsn,
+  createStackRefInsn,
+  createCheckInitInsn,
+  createUnboxInsn,
+  createTopRefInsn,
+  createPopBindingsInsn,
+  createBoxInsn,
+  createBoxArgInsn,
+  createBoxStackInsn,
+  createSetKeyArgInsn,
+  createTestNullInsn,
+  createReturnInsn,
+  createClosureInsn,
+  createVarargsInsn,
+  createSetBoxInsn,
+  createSetImmediateInsn,
+  createVectorInsn,
+  createListToVectorInsn,
+  createConsInsn,
+  createAppendInsn,
+  createStackSetBoxInsn,
+  createStackSetInsn,
+  createClosureSetBoxInsn,
+  createPushModeInsn,
+  createPopModeInsn,
+  createVarStyleInsn,
+  createMaybeOverrideStyleInsn,
+  createCheckStyleInsn,
+  createSetStyleInsn,
+  createSetNonInheritedCInsn,
+  createSetPseudoNonInheritedCInsn,
+  createSetNonInheritedCsSosofoInsn,
+  createSetImplicitCharInsn,
+  createCopyFlowObjInsn,
+  createSetContentInsn,
+  createSetDefaultContentInsn,
+  createMakeDefaultContentInsn,
+  createLabelSosofoInsn,
+  createContentMapSosofoInsn,
+  createCheckSosofoInsn,
+  createSosofoAppendInsn
+} from './Insn';
 
 // Helper to convert StringC to JS string
 function stringCToString(sc: StringC): string {
@@ -42,24 +104,11 @@ export interface VM {
   // VM interface - will be defined in VM.ts
 }
 
-// Forward declaration for ProcessingMode
-export interface ProcessingMode {
-  defined(): boolean;
-  name(): string;
-}
-
 // CompoundFlowObj re-exported from SosofoObj
 export { CompoundFlowObj } from './SosofoObj';
 
-// Forward declaration for InheritedC
-export interface InheritedC {
-  make(val: ELObj, loc: Location, interp: Interpreter): InheritedC | null;
-}
-
-// Forward declaration for StyleSpec
-export interface StyleSpec {
-  // Style specification
-}
+// Re-export types from Insn
+export { ProcessingMode, InheritedC, StyleSpec } from './Insn';
 
 // Packed boolean type
 export type PackedBoolean = boolean;
@@ -265,14 +314,7 @@ export class Environment {
   }
 }
 
-// Signature - function signature
-export interface Signature {
-  nRequiredArgs: number;
-  nOptionalArgs: number;
-  restArg: boolean;
-  nKeyArgs: number;
-  keys: (Identifier | null)[];
-}
+// Signature is imported from ELObj
 
 // Helper to copy an Environment
 function copyEnvironment(env: Environment): Environment {
@@ -437,15 +479,13 @@ export class CallExpression extends Expression {
   private args_: Owner<Expression>[] = [];
 
   constructor(
-    op: Owner<Expression>,
-    args: Owner<Expression>[],
+    op: Expression | null,
+    args: Expression[],
     loc: Location
   ) {
     super(loc);
-    this.op_.value = op.value;
-    op.value = null;
-    this.args_ = args.map(a => ({ value: a.value }));
-    args.forEach(a => (a.value = null));
+    this.op_.value = op;
+    this.args_ = args.map(a => ({ value: a }));
   }
 
   canEval(maybeCall: boolean): boolean {
@@ -656,18 +696,15 @@ export class IfExpression extends Expression {
   private alternate_: Owner<Expression> = { value: null };
 
   constructor(
-    test: Owner<Expression>,
-    consequent: Owner<Expression>,
-    alternate: Owner<Expression>,
+    test: Expression | null,
+    consequent: Expression | null,
+    alternate: Expression | null,
     loc: Location
   ) {
     super(loc);
-    this.test_.value = test.value;
-    test.value = null;
-    this.consequent_.value = consequent.value;
-    consequent.value = null;
-    this.alternate_.value = alternate.value;
-    alternate.value = null;
+    this.test_.value = test;
+    this.consequent_.value = consequent;
+    this.alternate_.value = alternate;
   }
 
   canEval(maybeCall: boolean): boolean {
@@ -741,15 +778,13 @@ export class OrExpression extends Expression {
   private test2_: Owner<Expression> = { value: null };
 
   constructor(
-    test1: Owner<Expression>,
-    test2: Owner<Expression>,
+    test1: Expression | null,
+    test2: Expression | null,
     loc: Location
   ) {
     super(loc);
-    this.test1_.value = test1.value;
-    test1.value = null;
-    this.test2_.value = test2.value;
-    test2.value = null;
+    this.test1_.value = test1;
+    this.test2_.value = test2;
   }
 
   canEval(maybeCall: boolean): boolean {
@@ -825,6 +860,12 @@ export interface Case {
   expr: Owner<Expression>;
 }
 
+// Input format for Case constructor parameter
+export interface CaseInput {
+  datums: ELObj[];
+  expr: Expression;
+}
+
 // CaseExpression - case expression
 export class CaseExpression extends Expression {
   private key_: Owner<Expression> = { value: null };
@@ -833,17 +874,15 @@ export class CaseExpression extends Expression {
   private else_: Owner<Expression> = { value: null };
 
   constructor(
-    key: Owner<Expression>,
-    cases: Case[],
-    elseClause: Owner<Expression>,
+    key: Expression | null,
+    cases: CaseInput[],
+    elseClause: Expression | null,
     loc: Location
   ) {
     super(loc);
-    this.key_.value = key.value;
-    key.value = null;
-    this.cases_ = cases;
-    this.else_.value = elseClause.value;
-    elseClause.value = null;
+    this.key_.value = key;
+    this.cases_ = cases.map(c => ({ datums: c.datums, expr: { value: c.expr } }));
+    this.else_.value = elseClause;
   }
 
   compile(
@@ -952,24 +991,23 @@ export class LambdaExpression extends Expression {
 
   constructor(
     formals: (Identifier | null)[],
-    inits: Owner<Expression>[],
+    inits: Expression[],
     nOptional: number,
-    hasRest: boolean,
+    hasRest: boolean | number,
     nKey: number,
-    body: Owner<Expression>,
+    body: Expression | null,
     loc: Location
   ) {
     super(loc);
     this.formals_ = [...formals];
-    this.inits_ = inits.map(i => ({ value: i.value }));
-    inits.forEach(i => (i.value = null));
-    this.body_.value = body.value;
-    body.value = null;
+    this.inits_ = inits.map(i => ({ value: i }));
+    this.body_.value = body;
 
+    const hasRestBool = typeof hasRest === 'boolean' ? hasRest : hasRest !== 0;
     this.sig_ = {
-      nRequiredArgs: formals.length - nOptional - nKey - (hasRest ? 1 : 0),
+      nRequiredArgs: formals.length - nOptional - nKey - (hasRestBool ? 1 : 0),
       nOptionalArgs: nOptional,
-      restArg: hasRest,
+      restArg: hasRestBool,
       nKeyArgs: nKey,
       keys: formals.slice(formals.length - nKey)
     };
@@ -1180,16 +1218,14 @@ export class LetExpression extends Expression {
 
   constructor(
     vars: (Identifier | null)[],
-    inits: Owner<Expression>[],
-    body: Owner<Expression>,
+    inits: Expression[],
+    body: Expression | null,
     loc: Location
   ) {
     super(loc);
     this.vars_ = [...vars];
-    this.inits_ = inits.map(i => ({ value: i.value }));
-    inits.forEach(i => (i.value = null));
-    this.body_.value = body.value;
-    body.value = null;
+    this.inits_ = inits.map(i => ({ value: i }));
+    this.body_.value = body;
   }
 
   canEval(maybeCall: boolean): boolean {
@@ -1265,8 +1301,8 @@ export class LetExpression extends Expression {
 export class LetStarExpression extends LetExpression {
   constructor(
     vars: (Identifier | null)[],
-    inits: Owner<Expression>[],
-    body: Owner<Expression>,
+    inits: Expression[],
+    body: Expression | null,
     loc: Location
   ) {
     super(vars, inits, body, loc);
@@ -1340,16 +1376,14 @@ export class LetrecExpression extends Expression {
 
   constructor(
     vars: (Identifier | null)[],
-    inits: Owner<Expression>[],
-    body: Owner<Expression>,
+    inits: Expression[],
+    body: Expression | null,
     loc: Location
   ) {
     super(loc);
     this.vars_ = [...vars];
-    this.inits_ = inits.map(i => ({ value: i.value }));
-    inits.forEach(i => (i.value = null));
-    this.body_.value = body.value;
-    body.value = null;
+    this.inits_ = inits.map(i => ({ value: i }));
+    this.body_.value = body;
   }
 
   canEval(maybeCall: boolean): boolean {
@@ -1456,14 +1490,13 @@ export class QuasiquoteExpression extends Expression {
   private type_: QuasiquoteType;
 
   constructor(
-    members: Owner<Expression>[],
+    members: Expression[],
     spliced: PackedBoolean[],
     type: QuasiquoteType,
     loc: Location
   ) {
     super(loc);
-    this.members_ = members.map(m => ({ value: m.value }));
-    members.forEach(m => (m.value = null));
+    this.members_ = members.map(m => ({ value: m }));
     this.spliced_ = [...spliced];
     this.type_ = type;
   }
@@ -1577,13 +1610,12 @@ export class QuasiquoteExpression extends Expression {
 export class SequenceExpression extends Expression {
   private sequence_: Owner<Expression>[] = [];
 
-  constructor(sequence: Owner<Expression>[], loc: Location) {
+  constructor(sequence: Expression[], loc: Location) {
     super(loc);
     if (sequence.length === 0) {
       throw new Error('ASSERT: sequence.size() > 0');
     }
-    this.sequence_ = sequence.map(s => ({ value: s.value }));
-    sequence.forEach(s => (s.value = null));
+    this.sequence_ = sequence.map(s => ({ value: s }));
   }
 
   compile(
@@ -1649,13 +1681,12 @@ export class AssignmentExpression extends Expression {
 
   constructor(
     varIdent: Identifier,
-    value: Owner<Expression>,
+    value: Expression | null,
     loc: Location
   ) {
     super(loc);
     this.var_ = varIdent;
-    this.value_.value = value.value;
-    value.value = null;
+    this.value_.value = value;
   }
 
   compile(
@@ -1725,13 +1756,12 @@ export class WithModeExpression extends Expression {
 
   constructor(
     mode: ProcessingMode,
-    expr: Owner<Expression>,
+    expr: Expression | null,
     loc: Location
   ) {
     super(loc);
     this.mode_ = mode;
-    this.expr_.value = expr.value;
-    expr.value = null;
+    this.expr_.value = expr;
   }
 
   compile(
@@ -1766,13 +1796,12 @@ export class StyleExpression extends Expression {
 
   constructor(
     keys: (Identifier | null)[],
-    exprs: Owner<Expression>[],
+    exprs: Expression[],
     loc: Location
   ) {
     super(loc);
     this.keys_ = [...keys];
-    this.exprs_ = exprs.map(e => ({ value: e.value }));
-    exprs.forEach(e => (e.value = null));
+    this.exprs_ = exprs.map(e => ({ value: e }));
   }
 
   compile(
@@ -1943,7 +1972,7 @@ export class MakeExpression extends StyleExpression {
   constructor(
     foc: Identifier,
     keys: (Identifier | null)[],
-    exprs: Owner<Expression>[],
+    exprs: Expression[],
     loc: Location
   ) {
     super(keys, exprs, loc);
@@ -2192,473 +2221,7 @@ export const InterpreterMessages = {
   atomicContent: 'atomicContent'
 } as const;
 
-// Instruction creation functions - placeholders until Insn.ts is ported
-// These will be replaced with actual implementations
-
-function createErrorInsn(): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createConstantInsn(obj: ELObj | null, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createResolveQuantitiesInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createTestInsn(consequent: InsnPtr, alternative: InsnPtr): InsnPtr {
-  return {
-    execute: () => consequent,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createAndInsn(nextTest: InsnPtr, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createOrInsn(nextTest: InsnPtr, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCondFailInsn(_loc: Location): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCaseFailInsn(_loc: Location): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCaseInsn(_obj: ELObj, match: InsnPtr, fail: InsnPtr): InsnPtr {
-  return {
-    execute: () => match,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createPopInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createApplyInsn(_nArgs: number, _loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createTailApplyInsn(_callerArgs: number, _nArgs: number, _loc: Location): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createFrameRefInsn(_index: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createClosureRefInsn(_index: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createStackRefInsn(_index: number, _frameIndex: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCheckInitInsn(_ident: Identifier, _loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createUnboxInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createTopRefInsn(_ident: Identifier, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createPopBindingsInsn(n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: (nOut: { value: number }, nextOut: { insn: InsnPtr }) => {
-      nOut.value = n;
-      nextOut.insn = next;
-      return true;
-    }
-  };
-}
-
-function createBoxInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createBoxArgInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createBoxStackInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetKeyArgInsn(_offset: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createTestNullInsn(_offset: number, ifNull: InsnPtr, _ifNotNull: InsnPtr): InsnPtr {
-  return {
-    execute: () => ifNull,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createReturnInsn(totalArgs: number): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: (nArgs: { value: number }) => {
-      nArgs.value = totalArgs;
-      return true;
-    },
-    isPopBindings: () => false
-  };
-}
-
-function createClosureInsn(_sig: Signature, _code: InsnPtr, _displayLength: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createVarargsInsn(_sig: Signature, _entryPoints: InsnPtr[], _loc: Location): InsnPtr {
-  return {
-    execute: () => null,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetBoxInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetImmediateInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createVectorInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createListToVectorInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createConsInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createAppendInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createStackSetBoxInsn(
-  _index: number,
-  _frameIndex: number,
-  _loc: Location,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createStackSetInsn(_index: number, _frameIndex: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createClosureSetBoxInsn(_index: number, _loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createPushModeInsn(_mode: ProcessingMode, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createPopModeInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createVarStyleInsn(
-  _styleSpec: StyleSpec,
-  _displayLength: number,
-  _hasUse: boolean,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createMaybeOverrideStyleInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCheckStyleInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetStyleInsn(next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetNonInheritedCInsn(
-  _ident: Identifier,
-  _loc: Location,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetPseudoNonInheritedCInsn(
-  _ident: Identifier,
-  _loc: Location,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetNonInheritedCsSosofoInsn(
-  _code: InsnPtr,
-  _displayLength: number,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetImplicitCharInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCopyFlowObjInsn(_flowObj: FlowObj, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetContentInsn(_flowObj: CompoundFlowObj, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSetDefaultContentInsn(
-  _flowObj: CompoundFlowObj,
-  _loc: Location,
-  next: InsnPtr
-): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createMakeDefaultContentInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createLabelSosofoInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createContentMapSosofoInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createCheckSosofoInsn(_loc: Location, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
-
-function createSosofoAppendInsn(_n: number, next: InsnPtr): InsnPtr {
-  return {
-    execute: () => next,
-    isReturn: () => false,
-    isPopBindings: () => false
-  };
-}
+// Helper functions for StyleExpression and MakeExpression
 
 function createVarInheritedC(
   _inheritedC: InheritedC,

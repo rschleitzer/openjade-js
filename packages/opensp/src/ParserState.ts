@@ -2846,23 +2846,8 @@ export class ParserState extends ContentState implements ParserStateInterface {
 
         case TokenEnum.tokenDsc:
           // End of declaration subset (DSC = ] )
+          // FIXME what's the right location?
           if (!this.referenceDsEntity(this.currentLocation())) {
-            // After DSC (]), we need to consume optional whitespace and MDC (>)
-            // to complete the DOCTYPE declaration
-            {
-              // Skip whitespace
-              let nextToken = this.getToken(Mode.mdMode);
-              while (nextToken === TokenEnum.tokenS) {
-                nextToken = this.getToken(Mode.mdMode);
-              }
-              // Consume MDC (>)
-              if (nextToken !== TokenEnum.tokenMdc) {
-                // TODO: Add expectedMdc message to ParserMessages
-                // this.message(ParserMessages.expectedMdc);
-                // Try to recover by ungetting the token
-                this.currentInput()?.ungetToken();
-              }
-            }
             if (inDtd) {
               this.parseDoctypeDeclEnd(false);
             } else {
@@ -11834,11 +11819,6 @@ export class ParserState extends ContentState implements ParserStateInterface {
     const buffer = this.nameBuffer();
     this.getCurrentTokenSubst(this.syntax().generalSubstTable(), buffer);
     const rnResult: { value: number } = { value: 0 };
-    // DEBUG: show the name being looked up
-    let debugName = '';
-    for (let i = 0; i < buffer.size(); i++) {
-      debugName += globalThis.String.fromCharCode(buffer.get(i));
-    }
     if (!this.syntax().lookupReservedName(buffer, rnResult)) {
       this.message(ParserMessages.noSuchReservedName, new StringMessageArg(buffer));
       return false;

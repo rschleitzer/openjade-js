@@ -1060,7 +1060,7 @@ export class FormattingInstructionFlowObj extends FlowObj {
     const keyRef = { value: SyntacticKey.notKey };
     if (ident.syntacticKey(keyRef) && keyRef.value === SyntacticKey.keyData) {
       const strData = obj.stringData();
-      if (strData) {
+      if (strData.result) {
         this.instruction_ = String.fromCharCode(...strData.data.slice(0, strData.length));
       }
     }
@@ -1071,6 +1071,31 @@ export class FormattingInstructionFlowObj extends FlowObj {
     copy.style_ = this.style_;
     copy.instruction_ = this.instruction_;
     return copy;
+  }
+}
+
+// UnknownFlowObj - placeholder for undeclared or unimplemented flow object classes
+export class UnknownFlowObj extends FlowObj {
+  private name_: string = '';
+
+  constructor(name?: string) {
+    super();
+    if (name) this.name_ = name;
+  }
+
+  processInner(_context: ProcessContext): void {
+    // Unknown flow objects are ignored
+    console.error(`UnknownFlowObj: ignoring unknown flow object class '${this.name_}'`);
+  }
+
+  copy(_interp: Interpreter): FlowObj {
+    const copy = new UnknownFlowObj(this.name_);
+    copy.style_ = this.style_;
+    return copy;
+  }
+
+  override setNonInheritedC(_nic: any, _obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    // Silently ignore characteristics on unknown flow objects
   }
 }
 

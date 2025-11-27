@@ -16,7 +16,8 @@ import {
   OutputCharStream,
   createExtendEntityManager,
   ExtendEntityManager,
-  SOCatalogManager
+  SOCatalogManager,
+  String as StringOf
 } from '@openjade-js/opensp';
 import { DssslApp } from '../style/DssslApp';
 import { FOTBuilder } from '../style/FOTBuilder';
@@ -25,15 +26,11 @@ import { TransformFOTBuilder, FileOutputStream } from '../style/TransformFOTBuil
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
-  const arr: number[] = [];
+  const arr: Char[] = [];
   for (let i = 0; i < s.length; i++) {
     arr.push(s.charCodeAt(i));
   }
-  return {
-    ptr_: arr,
-    length_: arr.length,
-    size: () => arr.length
-  } as StringC;
+  return new StringOf<Char>(arr, arr.length);
 }
 
 // Helper to convert StringC to string

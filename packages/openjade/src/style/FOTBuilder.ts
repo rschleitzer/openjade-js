@@ -434,6 +434,7 @@ export abstract class FOTBuilder {
   // Default for compound flow objects
   start(): void {}
   end(): void {}
+  flush(): void {}
 
   // Default for atomic flow objects
   atomic(): void {

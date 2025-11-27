@@ -392,6 +392,11 @@ export class TransformFOTBuilder extends FOTBuilder {
     const last = this.preserveSdataStack_[this.preserveSdataStack_.length - 1];
     this.preserveSdata_ = last ?? false;
   }
+
+  // Flush output buffer when done
+  flush(): void {
+    this.os_.flush();
+  }
 }
 
 // Factory function to create Transform FOT Builder

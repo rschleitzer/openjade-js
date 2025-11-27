@@ -15,7 +15,8 @@ import {
   CharsetInfo,
   UnivCharsetDesc,
   EntityManager,
-  Ptr
+  Ptr,
+  String as StringOf
 } from '@openjade-js/opensp';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
@@ -42,15 +43,11 @@ function stringCToString(sc: StringC): string {
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
-  const arr: number[] = [];
+  const arr: Char[] = [];
   for (let i = 0; i < s.length; i++) {
     arr.push(s.charCodeAt(i));
   }
-  return {
-    ptr_: arr,
-    length_: arr.length,
-    size: () => arr.length
-  } as StringC;
+  return new StringOf<Char>(arr, arr.length);
 }
 
 // DssslApp - DSSSL application base class
@@ -264,7 +261,9 @@ export abstract class DssslApp extends Messenger implements GroveManager {
 
     const exts: { value: FOTBuilderExtension[] | null } = { value: null };
     const fotb = this.makeFOTBuilder(exts);
-    if (!fotb) return;
+    if (!fotb) {
+      return;
+    }
 
     const se = new StyleEngine(
       this,
@@ -299,6 +298,7 @@ export abstract class DssslApp extends Messenger implements GroveManager {
 
     // Flush output
     fotb.end();
+    fotb.flush();
   }
 
   // Load an entity (for sgml-parse, etc.)

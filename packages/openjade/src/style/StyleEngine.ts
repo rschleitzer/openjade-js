@@ -25,10 +25,14 @@ export interface FOTBuilderExtension {
   // Extension properties
 }
 
+// Default builtin filename
+const DEFAULT_SCHEME_BUILTINS = 'builtins.dsl';
+
 // StyleEngine orchestrates DSSSL stylesheet processing
 export class StyleEngine {
   private interpreter_: Interpreter;
   private cmdline_: StringC;
+  private groveManager_: GroveManager;
 
   constructor(
     mgr: Messenger,
@@ -49,6 +53,33 @@ export class StyleEngine {
       extensionTable
     );
     this.cmdline_ = Interpreter.makeStringC('');
+    this.groveManager_ = groveManager;
+
+    // Load builtins like upstream does
+    this.installBuiltins();
+  }
+
+  // Install built-in Scheme definitions from builtins.dsl
+  private installBuiltins(): void {
+    const sysid = Interpreter.makeStringC(DEFAULT_SCHEME_BUILTINS);
+    const src: { value: StringC } = { value: Interpreter.makeStringC('') };
+    this.groveManager_.mapSysid(sysid);
+    if (this.groveManager_.readEntity(sysid, src)) {
+      // Convert StringC to JS string
+      let builtinsStr = '';
+      if (src.value.ptr_) {
+        for (let i = 0; i < src.value.length_; i++) {
+          builtinsStr += String.fromCharCode(src.value.ptr_[i]);
+        }
+      }
+      // Parse the builtins as pure Scheme code
+      const builtinsSource = Interpreter.makeStringC(builtinsStr);
+      const origin = InputSourceOrigin.make();
+      const inSrc = new InternalInputSource(builtinsSource, origin);
+      const scm = new SchemeParser(this.interpreter_, inSrc);
+      scm.parse();
+      this.interpreter_.endPart();
+    }
   }
 
   // Define a variable from command line
@@ -126,8 +157,46 @@ export class StyleEngine {
 
   // Load and parse a DSSSL stylesheet from a string
   loadStylesheet(dsssl: string): void {
+    // Check if this is an SGML-wrapped DSSSL file (has <!doctype or CDATA sections)
+    // If so, extract the Scheme code from CDATA sections
+    let schemeCode = dsssl;
+
+
+    if (dsssl.toLowerCase().includes('<!doctype') || dsssl.includes('<![cdata[')) {
+      // Extract all CDATA sections
+      const cdataRegex = /<!\[cdata\[([\s\S]*?)\]\]>/gi;
+      const matches = dsssl.matchAll(cdataRegex);
+      const cdataContent: string[] = [];
+
+      for (const match of matches) {
+        if (match[1]) {
+          cdataContent.push(match[1]);
+        }
+      }
+
+      if (cdataContent.length > 0) {
+        schemeCode = cdataContent.join('\n');
+      } else {
+        // No CDATA found - might be using marked sections differently
+        // Try to extract content between style-specification-body tags
+        const bodyRegex = /<style-specification-body[^>]*>([\s\S]*?)<\/style-specification-body>/gi;
+        const bodyMatches = dsssl.matchAll(bodyRegex);
+        const bodyContent: string[] = [];
+
+        for (const match of bodyMatches) {
+          if (match[1]) {
+            bodyContent.push(match[1]);
+          }
+        }
+
+        if (bodyContent.length > 0) {
+          schemeCode = bodyContent.join('\n');
+        }
+      }
+    }
+
     // Convert JS string to StringC
-    const styleSource = Interpreter.makeStringC(dsssl);
+    const styleSource = Interpreter.makeStringC(schemeCode);
 
     // Parse the stylesheet
     const origin = InputSourceOrigin.make();
@@ -138,6 +207,9 @@ export class StyleEngine {
 
     // Compile the interpreter
     this.interpreter_.compile();
+
+    // Debug: check if root rule was parsed
+    const initMode = this.interpreter_.initialProcessingMode();
   }
 
   // Helper to append two StringC values

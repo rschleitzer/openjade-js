@@ -88,12 +88,13 @@ export class ProcessContext {
   // Process a node tree
   process(node: NodePtr): void {
     const interp = this.interpreter();
+    const initMode = interp.initialProcessingMode() as ProcessingMode;
     const style = interp.initialStyle();
     if (style) {
       this.currentStyleStack().push(style as StyleObj, this.vm_, this.currentFOTBuilder());
       this.currentFOTBuilder().startSequence();
     }
-    this.processNode(node, interp.initialProcessingMode() as ProcessingMode);
+    this.processNode(node, initMode);
     if (style) {
       this.currentFOTBuilder().endSequence();
       this.currentStyleStack().pop();
@@ -129,7 +130,9 @@ export class ProcessContext {
 
   // Process a single node
   processNode(nodePtr: NodePtr, processingMode: ProcessingMode | null, chunk: boolean = true): void {
-    if (!processingMode) return;
+    if (!processingMode) {
+      return;
+    }
 
     // Check if node is a character chunk
     const charChunk = nodePtr.charChunk(this.sdataMapper_);

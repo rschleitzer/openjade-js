@@ -16,7 +16,7 @@ import {
   Interpreter
 } from './ELObj';
 import { Collector, CollectorObject } from './Collector';
-import { SosofoObj, AppendSosofoObj } from './SosofoObj';
+import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj } from './SosofoObj';
 import { StyleObj } from './Style';
 import { NodePtr } from '../grove/Node';
 
@@ -1867,7 +1867,7 @@ export class SetNonInheritedCsSosofoInsn extends InsnBase {
     // to the garbage collector.
     const tem = vm.sp - this.displayLength_ - 1;
     const flowObj = vm.stackGet(tem) as FlowObj;
-    // vm.stackSet(tem, new SetNonInheritedCsSosofoObj(flowObj, this.code_, display, vm.currentNode));
+    vm.stackSet(tem, new SetNonInheritedCsSosofoObj(flowObj as any, this.code_, display, vm.currentNode) as unknown as ELObj);
     vm.sp = tem + 1;
     return this.next_;
   }

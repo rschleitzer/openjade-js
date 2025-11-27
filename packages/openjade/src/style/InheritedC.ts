@@ -248,7 +248,7 @@ export class StringInheritedC extends InheritedC {
 
   make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const strData = obj.stringData();
-    if (strData) {
+    if (strData.result) {
       const str = String.fromCharCode(...strData.data.slice(0, strData.length));
       return new StringInheritedC(this.identifier(), this.index(), str);
     }
@@ -309,7 +309,7 @@ export class FontFamilyNameC extends StringInheritedC {
 
   override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const strData = obj.stringData();
-    if (strData) {
+    if (strData.result) {
       const str = String.fromCharCode(...strData.data.slice(0, strData.length));
       return new FontFamilyNameC(this.identifier(), this.index(), str);
     }

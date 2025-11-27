@@ -7,7 +7,7 @@ import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 import { StyleObj } from './Style';
-import { InsnPtr } from './Insn';
+import { InsnPtr, VM } from './Insn';
 import type { Interpreter, ProcessingMode } from './Interpreter';
 
 // Forward declarations
@@ -20,6 +20,9 @@ export interface ProcessContext {
   processChildrenTrim(mode: ProcessingMode | null): void;
   nextMatch(style: StyleObj | null): void;
   currentNode(): NodePtr | null;
+  vm(): VM;
+  startFlowObj(): void;
+  endFlowObj(): void;
   // Table support
   startTable(): void;
   endTable(): void;
@@ -390,7 +393,12 @@ export class SetNonInheritedCsSosofoObj extends SosofoObj {
   }
 
   process(context: ProcessContext): void {
-    this.flowObj_.process(context);
+    context.startFlowObj();
+    const obj = this.resolve(context);
+    if (obj) {
+      (obj as FlowObj).processInner(context);
+    }
+    context.endFlowObj();
   }
 
   override traceSubObjects(collector: Collector): void {
@@ -425,8 +433,21 @@ export class SetNonInheritedCsSosofoObj extends SosofoObj {
     return this.flowObj_.isRule();
   }
 
-  private resolve(_context: ProcessContext): ELObj | null {
-    return null;
+  private resolve(context: ProcessContext): ELObj | null {
+    const vm = context.vm();
+    const savedNode = vm.currentNode;
+    vm.currentNode = this.node_;
+
+    // Evaluate the code with display and a copy of the flow object
+    const flowObjCopy = this.flowObj_.copy(vm.interp as any);
+    const obj = vm.eval(this.code_, this.display_, flowObjCopy as unknown as ELObj);
+
+    vm.currentNode = savedNode;
+
+    if (vm.interp.isError(obj)) {
+      return null;
+    }
+    return obj;
   }
 }
 
