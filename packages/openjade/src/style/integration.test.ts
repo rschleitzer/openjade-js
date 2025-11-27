@@ -1,6 +1,3 @@
-// Copyright (c) 1996 James Clark
-// See the file copying.txt for copying permission.
-
 // Integration test for DSSSL StyleEngine
 // This demonstrates that the stylesheet parsing and compilation works
 
