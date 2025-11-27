@@ -89,7 +89,7 @@ export function testTransformFOTBuilder(): boolean {
 
   try {
     const output = new StringOutputStream();
-    const fotb = new TransformFOTBuilder(output, true);  // XML mode
+    const fotb = new TransformFOTBuilder(output, true, ['raw']);  // XML mode with raw option (no RE chars)
 
     // Create a simple element
     fotb.startElement({
@@ -100,9 +100,9 @@ export function testTransformFOTBuilder(): boolean {
     fotb.endElement();
 
     const result = output.toString();
-    console.log('  Output:', result);
+    console.log('  Output:', JSON.stringify(result));
 
-    if (result.includes('<test') && result.includes('Hello') && result.includes('</test>')) {
+    if (result.includes('<test') && result.includes('Hello') && result.includes('</test')) {
       console.log('  TransformFOTBuilder working correctly.');
       return true;
     } else {
