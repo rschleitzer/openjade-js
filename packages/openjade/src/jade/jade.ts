@@ -25,6 +25,7 @@ import { FOTBuilderExtension } from '../style/StyleEngine';
 import { TransformFOTBuilder, FileOutputStream } from '../style/TransformFOTBuilder';
 import { SgmlFOTBuilder } from '../style/SgmlFOTBuilder';
 import { makeRtfFOTBuilder } from '../style/RtfFOTBuilder';
+import { makeTeXFOTBuilder } from '../style/TeXFOTBuilder';
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
@@ -161,10 +162,17 @@ class JadeApp extends DssslApp {
         return rtfBuilder;
       }
 
-      case OutputType.texType:
-        // TeX output - not yet implemented
-        console.error('TeX output not yet implemented');
-        return null;
+      case OutputType.texType: {
+        // TeX output
+        const texOutputStream = new FileOutputStream(this.outputFilename_);
+        const texBuilder = makeTeXFOTBuilder(
+          (s: string) => texOutputStream.write(s),
+          () => texOutputStream.flush(),
+          [],
+          exts
+        );
+        return texBuilder;
+      }
 
       default:
         console.error('Unknown output type');
