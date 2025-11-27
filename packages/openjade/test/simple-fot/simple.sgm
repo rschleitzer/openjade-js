@@ -1,0 +1,4 @@
+<!doctype doc [
+<!element doc o o (#pcdata)>
+]>
+<doc>This is a test.</doc>

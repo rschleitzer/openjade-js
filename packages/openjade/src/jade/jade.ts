@@ -23,6 +23,7 @@ import { DssslApp } from '../style/DssslApp';
 import { FOTBuilder } from '../style/FOTBuilder';
 import { FOTBuilderExtension } from '../style/StyleEngine';
 import { TransformFOTBuilder, FileOutputStream } from '../style/TransformFOTBuilder';
+import { SgmlFOTBuilder } from '../style/SgmlFOTBuilder';
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
@@ -137,10 +138,14 @@ class JadeApp extends DssslApp {
         );
       }
 
-      case OutputType.fotType:
-        // FOT output - not yet implemented
-        console.error('FOT output not yet implemented');
-        return null;
+      case OutputType.fotType: {
+        // FOT output - use SgmlFOTBuilder to output flow object tree as SGML
+        const fotOutputStream = new FileOutputStream(this.outputFilename_);
+        const fotBuilder = new SgmlFOTBuilder((s: string) => fotOutputStream.write(s));
+        // Store reference so we can call finish() later
+        (fotBuilder as any)._outputStream = fotOutputStream;
+        return fotBuilder;
+      }
 
       case OutputType.rtfType:
         // RTF output - not yet implemented

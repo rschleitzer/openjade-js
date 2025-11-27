@@ -920,3 +920,279 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
     return this;
   }
 }
+
+// SerialFOTBuilder - provides a serial view of multi-port objects
+// This uses SaveFOTBuilder to serialize multi-port flow object content
+export class SerialFOTBuilder extends FOTBuilder {
+  protected save_: SaveFOTBuilder[] = [];
+  protected multiModeStack_: MultiMode[][] = [];
+
+  // Non-serial versions that delegate to serial methods
+  override startSimplePageSequence(_headerFooter: (FOTBuilder | null)[]): void {
+    this.startSimplePageSequenceSerial();
+  }
+
+  override endSimplePageSequenceHeaderFooter(): void {
+    // handled by serial methods
+  }
+
+  override endSimplePageSequence(): void {
+    this.endSimplePageSequenceSerial();
+  }
+
+  startTablePart(nic: TablePartNIC, header: { ref: FOTBuilder | null }, footer: { ref: FOTBuilder | null }): void {
+    const headerSave = new ConcreteSaveFOTBuilder();
+    const footerSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(headerSave);
+    this.save_.push(footerSave);
+    header.ref = headerSave;
+    footer.ref = footerSave;
+    this.startTablePartSerial(nic);
+  }
+
+  override endTablePart(): void {
+    const footer = this.save_.pop()!;
+    const header = this.save_.pop()!;
+    this.startTablePartHeader();
+    header.emit(this);
+    this.endTablePartHeader();
+    this.startTablePartFooter();
+    footer.emit(this);
+    this.endTablePartFooter();
+    this.endTablePartSerial();
+  }
+
+  override startFraction(numerator: { ref: FOTBuilder | null }, denominator: { ref: FOTBuilder | null }): void {
+    const numSave = new ConcreteSaveFOTBuilder();
+    const denSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(numSave);
+    this.save_.push(denSave);
+    numerator.ref = numSave;
+    denominator.ref = denSave;
+    this.startFractionSerial();
+  }
+
+  override endFraction(): void {
+    const denom = this.save_.pop()!;
+    const numer = this.save_.pop()!;
+    this.startFractionNumerator();
+    numer.emit(this);
+    this.endFractionNumerator();
+    this.startFractionDenominator();
+    denom.emit(this);
+    this.endFractionDenominator();
+    this.endFractionSerial();
+  }
+
+  override startScript(
+    preSup: { ref: FOTBuilder | null },
+    preSub: { ref: FOTBuilder | null },
+    postSup: { ref: FOTBuilder | null },
+    postSub: { ref: FOTBuilder | null },
+    midSup: { ref: FOTBuilder | null },
+    midSub: { ref: FOTBuilder | null }
+  ): void {
+    const saves: ConcreteSaveFOTBuilder[] = [];
+    for (let i = 0; i < 6; i++) {
+      const s = new ConcreteSaveFOTBuilder();
+      saves.push(s);
+      this.save_.push(s);
+    }
+    preSup.ref = saves[0];
+    preSub.ref = saves[1];
+    postSup.ref = saves[2];
+    postSub.ref = saves[3];
+    midSup.ref = saves[4];
+    midSub.ref = saves[5];
+    this.startScriptSerial();
+  }
+
+  override endScript(): void {
+    const midSub = this.save_.pop()!;
+    const midSup = this.save_.pop()!;
+    const postSub = this.save_.pop()!;
+    const postSup = this.save_.pop()!;
+    const preSub = this.save_.pop()!;
+    const preSup = this.save_.pop()!;
+    this.startScriptPreSup();
+    preSup.emit(this);
+    this.endScriptPreSup();
+    this.startScriptPreSub();
+    preSub.emit(this);
+    this.endScriptPreSub();
+    this.startScriptPostSup();
+    postSup.emit(this);
+    this.endScriptPostSup();
+    this.startScriptPostSub();
+    postSub.emit(this);
+    this.endScriptPostSub();
+    this.startScriptMidSup();
+    midSup.emit(this);
+    this.endScriptMidSup();
+    this.startScriptMidSub();
+    midSub.emit(this);
+    this.endScriptMidSub();
+    this.endScriptSerial();
+  }
+
+  override startMark(overMark: { ref: FOTBuilder | null }, underMark: { ref: FOTBuilder | null }): void {
+    const overSave = new ConcreteSaveFOTBuilder();
+    const underSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(overSave);
+    this.save_.push(underSave);
+    overMark.ref = overSave;
+    underMark.ref = underSave;
+    this.startMarkSerial();
+  }
+
+  override endMark(): void {
+    const under = this.save_.pop()!;
+    const over = this.save_.pop()!;
+    this.startMarkOver();
+    over.emit(this);
+    this.endMarkOver();
+    this.startMarkUnder();
+    under.emit(this);
+    this.endMarkUnder();
+    this.endMarkSerial();
+  }
+
+  override startFence(open: { ref: FOTBuilder | null }, close: { ref: FOTBuilder | null }): void {
+    const openSave = new ConcreteSaveFOTBuilder();
+    const closeSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(openSave);
+    this.save_.push(closeSave);
+    open.ref = openSave;
+    close.ref = closeSave;
+    this.startFenceSerial();
+  }
+
+  override endFence(): void {
+    const close = this.save_.pop()!;
+    const open = this.save_.pop()!;
+    this.startFenceOpen();
+    open.emit(this);
+    this.endFenceOpen();
+    this.startFenceClose();
+    close.emit(this);
+    this.endFenceClose();
+    this.endFenceSerial();
+  }
+
+  override startRadical(degree: { ref: FOTBuilder | null }): void {
+    const degreeSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(degreeSave);
+    degree.ref = degreeSave;
+    this.startRadicalSerial();
+  }
+
+  override endRadical(): void {
+    const degree = this.save_.pop()!;
+    this.startRadicalDegree();
+    degree.emit(this);
+    this.endRadicalDegree();
+    this.endRadicalSerial();
+  }
+
+  override startMathOperator(
+    oper: { ref: FOTBuilder | null },
+    lowerLimit: { ref: FOTBuilder | null },
+    upperLimit: { ref: FOTBuilder | null }
+  ): void {
+    const operSave = new ConcreteSaveFOTBuilder();
+    const lowerSave = new ConcreteSaveFOTBuilder();
+    const upperSave = new ConcreteSaveFOTBuilder();
+    this.save_.push(operSave);
+    this.save_.push(lowerSave);
+    this.save_.push(upperSave);
+    oper.ref = operSave;
+    lowerLimit.ref = lowerSave;
+    upperLimit.ref = upperSave;
+    this.startMathOperatorSerial();
+  }
+
+  override endMathOperator(): void {
+    const upper = this.save_.pop()!;
+    const lower = this.save_.pop()!;
+    const oper = this.save_.pop()!;
+    this.startMathOperatorOperator();
+    oper.emit(this);
+    this.endMathOperatorOperator();
+    this.startMathOperatorLowerLimit();
+    lower.emit(this);
+    this.endMathOperatorLowerLimit();
+    this.startMathOperatorUpperLimit();
+    upper.emit(this);
+    this.endMathOperatorUpperLimit();
+    this.endMathOperatorSerial();
+  }
+
+  // Serial methods to be overridden by subclasses
+  startSimplePageSequenceSerial(): void {}
+  endSimplePageSequenceSerial(): void {}
+  startSimplePageSequenceHeaderFooterSerial(_flags: number): void {}
+  endSimplePageSequenceHeaderFooterSerial(_flags: number): void {}
+  endAllSimplePageSequenceHeaderFooter(): void {}
+
+  startFractionSerial(): void {}
+  endFractionSerial(): void {}
+  startFractionNumerator(): void {}
+  endFractionNumerator(): void {}
+  startFractionDenominator(): void {}
+  endFractionDenominator(): void {}
+
+  startScriptSerial(): void {}
+  endScriptSerial(): void {}
+  startScriptPreSup(): void {}
+  endScriptPreSup(): void {}
+  startScriptPreSub(): void {}
+  endScriptPreSub(): void {}
+  startScriptPostSup(): void {}
+  endScriptPostSup(): void {}
+  startScriptPostSub(): void {}
+  endScriptPostSub(): void {}
+  startScriptMidSup(): void {}
+  endScriptMidSup(): void {}
+  startScriptMidSub(): void {}
+  endScriptMidSub(): void {}
+
+  startMarkSerial(): void {}
+  endMarkSerial(): void {}
+  startMarkOver(): void {}
+  endMarkOver(): void {}
+  startMarkUnder(): void {}
+  endMarkUnder(): void {}
+
+  startFenceSerial(): void {}
+  endFenceSerial(): void {}
+  startFenceOpen(): void {}
+  endFenceOpen(): void {}
+  startFenceClose(): void {}
+  endFenceClose(): void {}
+
+  startRadicalSerial(): void {}
+  endRadicalSerial(): void {}
+  startRadicalDegree(): void {}
+  endRadicalDegree(): void {}
+
+  startMathOperatorSerial(): void {}
+  endMathOperatorSerial(): void {}
+  startMathOperatorOperator(): void {}
+  endMathOperatorOperator(): void {}
+  startMathOperatorLowerLimit(): void {}
+  endMathOperatorLowerLimit(): void {}
+  startMathOperatorUpperLimit(): void {}
+  endMathOperatorUpperLimit(): void {}
+
+  startTablePartSerial(_nic: TablePartNIC): void {}
+  endTablePartSerial(): void {}
+  startTablePartHeader(): void {}
+  endTablePartHeader(): void {}
+  startTablePartFooter(): void {}
+  endTablePartFooter(): void {}
+
+  startMultiModeSerial(_mode: MultiMode | null): void {}
+  endMultiModeSerial(): void {}
+  startMultiModeMode(_mode: MultiMode): void {}
+  endMultiModeMode(): void {}
+}

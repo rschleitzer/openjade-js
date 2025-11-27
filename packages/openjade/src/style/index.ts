@@ -59,3 +59,6 @@ export {
 
 // Export Expression module
 export * from './Expression';
+
+// Export SgmlFOTBuilder
+export { SgmlFOTBuilder, makeSgmlFOTBuilder } from './SgmlFOTBuilder';
