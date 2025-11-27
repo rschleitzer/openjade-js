@@ -1175,14 +1175,23 @@ export abstract class FunctionObj extends ELObj {
   }
 }
 
-// Abstract SOSOFO object
+// Abstract SOSOFO object - stub for type compatibility
+// Real implementation is in SosofoObj.ts
 export abstract class SosofoObj extends ELObj {
   override asSosofo(): SosofoObj { return this; }
+  abstract process(context: any): void;
+  tableBorderStyle(_style: { obj: StyleObj | null }): boolean { return false; }
+  ruleStyle(_context: any, _style: { obj: StyleObj | null }): boolean { return false; }
+  isRule(): boolean { return false; }
+  characterStyle(_context: any, _style: { obj: StyleObj | null }, _nic: any): boolean { return false; }
+  isCharacter(): boolean { return false; }
 }
 
-// Append SOSOFO object
+// Append SOSOFO object - stub for type compatibility
 export class AppendSosofoObj extends SosofoObj {
   override asAppendSosofo(): AppendSosofoObj { return this; }
+  process(_context: any): void { }
+  append(_obj: SosofoObj): void { }
 }
 
 // Abstract color object

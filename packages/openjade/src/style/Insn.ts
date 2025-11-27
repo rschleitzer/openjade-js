@@ -34,10 +34,12 @@ export class EvalContext {
 }
 
 // Forward declarations - these interfaces will be implemented or imported elsewhere
+// Note: The actual implementation is in Interpreter.ts (ProcessingMode class)
 export interface ProcessingMode {
   defined(): boolean;
   name(): StringC;
-  findMatch(node: NodePtr, interp: Interpreter, specificity: any): any | null;
+  // findMatch takes a node, context, messenger and specificity
+  findMatch(node: NodePtr, context: any, mgr: any, specificity: any): any | null;
 }
 
 export interface FlowObj extends ELObj {

@@ -9,7 +9,7 @@ import { VM, InsnPtr } from './Insn';
 import { StyleObj, StyleStack, VarStyleObj } from './Style';
 import { FOTBuilder, SaveFOTBuilder, ConcreteSaveFOTBuilder, CharacterNIC } from './FOTBuilder';
 import { SosofoObj, FlowObj } from './SosofoObj';
-import { Interpreter, ProcessingMode, ProcessingModeRule, ProcessingModeSpecificity as PMSpecificity } from './Interpreter';
+import { Interpreter, ProcessingMode, ProcessingModeRule, ProcessingModeSpecificity, ProcessingModeMatchContext } from './Interpreter';
 
 // Re-import ProcessingMode from Insn to use as compatible type
 import { ProcessingMode as InsnProcessingMode } from './Insn';
@@ -19,6 +19,7 @@ export class ProcessContext {
   private vm_: VM;
   private ignoreFotb_: IgnoreFOTBuilder;
   private sdataMapper_: SdataMapper;
+  private matchContext_: ProcessingModeMatchContext;
   private connectionStack_: Connection[] = [];
   private connectableStack_: Connectable[] = [];
   private connectableStackLevel_: number = 0;
@@ -34,6 +35,7 @@ export class ProcessContext {
     this.vm_ = new VM(interp);
     this.ignoreFotb_ = new IgnoreFOTBuilder();
     this.sdataMapper_ = new SdataMapper();
+    this.matchContext_ = new ProcessingModeMatchContext();
     this.matchSpecificity_ = new ProcessingModeSpecificity();
     // Initialize connection stack with root connection
     this.connectionStack_.push(new Connection(fotb));
@@ -156,7 +158,8 @@ export class ProcessContext {
     for (;;) {
       const rule = processingMode.findMatch(
         nodePtr,
-        this.interpreter(),
+        this.matchContext_,
+        null,  // messenger
         this.matchSpecificity_
       );
 
@@ -177,10 +180,12 @@ export class ProcessContext {
           this.currentFOTBuilder().startSequence();
         }
 
-        if (action.sosofo) {
-          action.sosofo.process(this);
-        } else if (action.insn) {
-          const obj = this.vm_.eval(action.insn);
+        const actionResult: { insn: InsnPtr; sosofo: SosofoObj | null } = { insn: null, sosofo: null };
+        action.get(actionResult);
+        if (actionResult.sosofo) {
+          actionResult.sosofo.process(this);
+        } else if (actionResult.insn) {
+          const obj = this.vm_.eval(actionResult.insn);
           if (this.interpreter().isError(obj)) {
             if (processingMode.name().length_ === 0) {
               this.processChildren(processingMode);
@@ -195,8 +200,10 @@ export class ProcessContext {
 
       // Style rule
       const action = rule.action();
-      if (action.insn) {
-        const obj = this.vm_.eval(action.insn);
+      const styleActionResult: { insn: InsnPtr; sosofo: SosofoObj | null } = { insn: null, sosofo: null };
+      action.get(styleActionResult);
+      if (styleActionResult.insn) {
+        const obj = this.vm_.eval(styleActionResult.insn);
         if (!this.interpreter().isError(obj)) {
           if (!hadStyle) {
             this.currentStyleStack().pushStart();
@@ -234,16 +241,19 @@ export class ProcessContext {
 
     const rule = this.vm_.processingMode?.findMatch(
       this.vm_.currentNode,
-      this.interpreter(),
+      this.matchContext_,
+      null,  // messenger
       this.matchSpecificity_
     );
 
     if (rule) {
       const action = rule.action();
-      if (action.sosofo) {
-        action.sosofo.process(this);
-      } else if (action.insn) {
-        const obj = this.vm_.eval(action.insn);
+      const nextActionResult: { insn: InsnPtr; sosofo: SosofoObj | null } = { insn: null, sosofo: null };
+      action.get(nextActionResult);
+      if (nextActionResult.sosofo) {
+        nextActionResult.sosofo.process(this);
+      } else if (nextActionResult.insn) {
+        const obj = this.vm_.eval(nextActionResult.insn);
         if (this.interpreter().isError(obj)) {
           this.processChildren(this.vm_.processingMode as ProcessingMode | null);
         } else {
@@ -720,22 +730,8 @@ export class ProcessContext {
   }
 }
 
-// Processing mode specificity for rule matching
-class ProcessingModeSpecificity {
-  private priority_: number = 0;
-  private isStyle_: boolean = false;
-
-  isStyle(): boolean {
-    return this.isStyle_;
-  }
-
-  clone(): ProcessingModeSpecificity {
-    const s = new ProcessingModeSpecificity();
-    s.priority_ = this.priority_;
-    s.isStyle_ = this.isStyle_;
-    return s;
-  }
-}
+// ProcessingModeSpecificity is imported from Interpreter.ts
+// It contains toInitial_, ruleType_, nextRuleIndex_ fields
 
 // Node stack entry for loop detection
 interface NodeStackEntry {

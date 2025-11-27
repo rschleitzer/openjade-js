@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, Char, StringC, String as StringOf, XcharMap, Messenger, Message, MessageType1, MessageType2, MessageType3 } from '@openjade-js/opensp';
+import { Location, Char, StringC, String as StringOf, XcharMap, Messenger, Message, MessageType, MessageType1, MessageType2, MessageType3 } from '@openjade-js/opensp';
 import {
   ELObj,
   NilObj,
@@ -37,7 +37,8 @@ import {
   PrimitiveObj,
   InsnPtr,
   BoxObj,
-  ProcessingMode as ProcessingModeInterface
+  ProcessingMode as ProcessingModeInterface,
+  CheckSosofoInsn
 } from './Insn';
 // Note: Collector import removed - JS has native GC, we don't need custom memory management
 import {
@@ -46,8 +47,8 @@ import {
   LengthSpec as FOTLengthSpec,
   Address
 } from './FOTBuilder';
-import { NodePtr, GroveString } from '../grove/Node';
-import { Pattern } from './Pattern';
+import { NodePtr, GroveString, AccessResult } from '../grove/Node';
+import { Pattern, MatchContext } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj } from './SosofoObj';
 
@@ -108,6 +109,15 @@ function stringCSlice(sc: StringC, start: number, end?: number): StringC {
 
 function stringCToLowerCase(sc: StringC): string {
   return stringCToString(sc).toLowerCase();
+}
+
+function groveStringToString(gs: GroveString): string {
+  if (!gs || gs.size() === 0) return '';
+  let result = '';
+  for (let i = 0; i < gs.size(); i++) {
+    result += String.fromCharCode(gs.get(i));
+  }
+  return result;
 }
 
 // Character part for named character mapping
@@ -382,6 +392,8 @@ export const InterpreterMessages = {
   duplicateCharPropertyDecl: 'duplicateCharPropertyDecl',
   duplicateAddCharProperty: 'duplicateAddCharProperty',
   defLangDeclRequiresLanguage: 'defLangDeclRequiresLanguage',
+  duplicateRootRule: 'duplicateRootRule',
+  ambiguousMatch: 'ambiguousMatch',
   // From Insn.ts
   stackTrace: 'stackTrace',
   stackTraceEllipsis: 'stackTraceEllipsis'
@@ -390,27 +402,207 @@ export const InterpreterMessages = {
 // Re-export SyntacticKey from Identifier.ts for convenience
 export { SyntacticKey } from './Identifier';
 
+// Backward compatibility aliases
+export { Rule as ProcessingModeRule };
+export { Specificity as ProcessingModeSpecificity };
+export { MatchContext as ProcessingModeMatchContext };
+
 // Grove manager interface
 export interface GroveManager {
   mapSysid(sysid: StringC): void;
   readEntity(sysid: StringC, src: { value: StringC }): boolean;
 }
 
-// Processing mode rule action
-export interface ProcessingModeRuleAction {
-  sosofo: SosofoObj | null;
-  insn: InsnPtr;
+// Rule type enum
+export enum RuleType {
+  styleRule = 0,
+  constructionRule = 1
+}
+export const nRuleType = 2;
+
+// Processing mode specificity
+export class Specificity {
+  toInitial_: boolean = false;  // 1 if the match fell through from a named processing mode to initial
+  ruleType_: RuleType = RuleType.styleRule;
+  nextRuleIndex_: number = 0;
+
+  isStyle(): boolean {
+    return this.ruleType_ === RuleType.styleRule;
+  }
+
+  clone(): Specificity {
+    const s = new Specificity();
+    s.toInitial_ = this.toInitial_;
+    s.ruleType_ = this.ruleType_;
+    s.nextRuleIndex_ = this.nextRuleIndex_;
+    return s;
+  }
 }
 
-// Processing mode rule (for rule matching)
-export interface ProcessingModeRule {
-  action(): ProcessingModeRuleAction;
+// Processing mode action
+export class Action {
+  private defLoc_: Location;
+  private expr_: Expression;
+  private insn_: InsnPtr = null;
+  private sosofo_: SosofoObj | null = null;
+  private partIndex_: number;
+
+  constructor(partIndex: number, expr: Expression, loc: Location) {
+    this.partIndex_ = partIndex;
+    this.expr_ = expr;
+    this.defLoc_ = loc;
+  }
+
+  compile(interp: Interpreter, ruleType: RuleType): void {
+    const owner = { expr: this.expr_ };
+    this.expr_.optimize(interp, new Environment(), owner);
+    this.expr_ = owner.expr;
+    const tem = this.expr_.constantValue();
+    if (tem) {
+      if (ruleType === RuleType.constructionRule) {
+        this.sosofo_ = tem.asSosofo();
+        if (this.sosofo_) {
+          return;
+        }
+      }
+    }
+    let check: InsnPtr = null;
+    if (ruleType === RuleType.constructionRule) {
+      check = new CheckSosofoInsn(this.defLoc_, check);
+    }
+    this.insn_ = this.expr_.compile(interp, new Environment(), 0, check);
+  }
+
+  get(result: { insn: InsnPtr; sosofo: SosofoObj | null }): void {
+    result.insn = this.insn_;
+    result.sosofo = this.sosofo_;
+  }
+
+  location(): Location {
+    return this.defLoc_;
+  }
+
+  partIndex(): number {
+    return this.partIndex_;
+  }
 }
 
-// Processing mode specificity (for rule matching)
-export interface ProcessingModeSpecificity {
-  isStyle(): boolean;
-  clone(): ProcessingModeSpecificity;
+// Processing mode rule
+export class Rule {
+  protected action_: Action | null = null;
+
+  constructor(action?: Action) {
+    this.action_ = action ?? null;
+  }
+
+  action(): Action {
+    return this.action_!;
+  }
+
+  compareSpecificity(r: Rule): number {
+    const i1 = this.action().partIndex();
+    const i2 = r.action().partIndex();
+    if (i1 === i2) return 0;
+    return i1 < i2 ? -1 : 1;
+  }
+
+  location(): Location {
+    return this.action_!.location();
+  }
+
+  swap(r: Rule): void {
+    const temp = this.action_;
+    this.action_ = r.action_;
+    r.action_ = temp;
+  }
+}
+
+// Element rule - combines Rule and Pattern
+export class ElementRule extends Rule {
+  private pattern_: Pattern;
+
+  constructor(action: Action, pattern: Pattern) {
+    super(action);
+    this.pattern_ = new Pattern();
+    pattern.swap(this.pattern_);
+  }
+
+  override compareSpecificity(r: Rule): number {
+    const result = super.compareSpecificity(r);
+    if (result) return result;
+    return Pattern.compareSpecificity(this.pattern_, (r as ElementRule).pattern_);
+  }
+
+  mustHaveGi(gi: { value: StringC }): boolean {
+    return this.pattern_.mustHaveGi(gi);
+  }
+
+  trivial(): boolean {
+    return this.pattern_.trivial();
+  }
+
+  matches(node: NodePtr, context: MatchContext): boolean {
+    return this.pattern_.matches(node, context);
+  }
+}
+
+// Element rules - named table entry
+export class ElementRules {
+  private name_: StringC;
+  rules: (ElementRule | null)[][] = [[], []];  // [nRuleType]
+
+  constructor(name: StringC) {
+    this.name_ = name;
+  }
+
+  name(): StringC {
+    return this.name_;
+  }
+}
+
+// Grove rules - cached element rule lookups
+export class GroveRules {
+  built: boolean = false;
+  elementTable: Map<string, ElementRules> = new Map();
+  otherRules: (ElementRule | null)[][] = [[], []];  // [nRuleType]
+
+  build(lists: ElementRule[][], node: NodePtr, _mgr: Messenger | null): void {
+    this.built = true;
+    for (let ruleType = 0; ruleType < nRuleType; ruleType++) {
+      for (const rule of lists[ruleType]) {
+        const gi: { value: StringC } = { value: stringToStringC('') };
+        if (rule.mustHaveGi(gi)) {
+          Interpreter.normalizeGeneralName(node, gi.value);
+          const giKey = stringCToString(gi.value);
+          let p = this.elementTable.get(giKey);
+          if (!p) {
+            p = new ElementRules(gi.value);
+            this.elementTable.set(giKey, p);
+          }
+          p.rules[ruleType].push(rule);
+        } else {
+          this.otherRules[ruleType].push(rule);
+        }
+      }
+    }
+    for (let ruleType = 0; ruleType < nRuleType; ruleType++) {
+      for (const [, p] of this.elementTable) {
+        // Append otherRules to element-specific rules
+        for (const r of this.otherRules[ruleType]) {
+          p.rules[ruleType].push(r);
+        }
+        GroveRules.sortRules(p.rules[ruleType]);
+      }
+      GroveRules.sortRules(this.otherRules[ruleType]);
+    }
+  }
+
+  static sortRules(v: (ElementRule | null)[]): void {
+    v.sort((a, b) => {
+      if (!a || !b) return 0;
+      return a.compareSpecificity(b);
+    });
+  }
 }
 
 // Processing mode implementation
@@ -418,7 +610,9 @@ export class ProcessingMode implements ProcessingModeInterface {
   private name_: StringC;
   private defined_: boolean = false;
   private initial_: ProcessingMode | null = null;
-  private rules_: ProcessingModeRule[] = [];
+  private rootRules_: Rule[][] = [[], []];  // [nRuleType]
+  private elementRules_: ElementRule[][] = [[], []];  // [nRuleType]
+  private groveRules_: GroveRules[] = [];
 
   constructor(name?: StringC, initial?: ProcessingMode) {
     this.name_ = name ?? stringToStringC('');
@@ -437,19 +631,177 @@ export class ProcessingMode implements ProcessingModeInterface {
     return this.name_;
   }
 
+  addRule(
+    root: boolean,
+    patterns: Pattern[],
+    expr: Expression,
+    ruleType: RuleType,
+    loc: Location,
+    interp: Interpreter
+  ): void {
+    const action = new Action(interp.currentPartIndex(), expr, loc);
+    for (const pattern of patterns) {
+      this.elementRules_[ruleType].push(new ElementRule(action, pattern));
+    }
+    if (!root) return;
+    const rules = this.rootRules_[ruleType];
+    rules.push(new Rule(action));
+    // Insert in sorted order
+    for (let i = rules.length - 1; i > 0; i--) {
+      const cmp = rules[i - 1].compareSpecificity(rules[i]);
+      if (cmp <= 0) {
+        if (cmp === 0 && ruleType === RuleType.constructionRule) {
+          interp.setNextLocation(loc);
+          interp.message(InterpreterMessages.duplicateRootRule, rules[i - 1].location());
+        }
+        break;
+      }
+      rules[i - 1].swap(rules[i]);
+    }
+  }
+
   // Find matching rule for a node
   findMatch(
-    _node: NodePtr,
-    _interp: Interpreter,
-    _specificity: ProcessingModeSpecificity
-  ): ProcessingModeRule | null {
-    // TODO: Implement pattern matching against rules
-    // For now, return null to indicate no match (process children)
+    node: NodePtr,
+    context: MatchContext,
+    mgr: Messenger | null,
+    specificity: Specificity
+  ): Rule | null {
+    const gi = node.getGi();
+    if (gi) {
+      const giStr: StringC = stringToStringC(groveStringToString(gi));
+      return this.findElementMatch(giStr, node, context, mgr, specificity);
+    }
+    // Check if node has no origin (is a root node)
+    const tem = new NodePtr();
+    const originResult = node.assignOrigin();
+    if (originResult !== AccessResult.accessOK) {
+      return this.findRootMatch(node, context, mgr, specificity);
+    }
     return null;
   }
 
-  compile(_interp: Interpreter): void {
-    // Compile processing mode rules
+  private findElementMatch(
+    gi: StringC,
+    node: NodePtr,
+    context: MatchContext,
+    mgr: Messenger | null,
+    specificity: Specificity
+  ): Rule | null {
+    let vecP: (ElementRule | null)[] | null = null;
+
+    for (;;) {
+      for (;;) {
+        const mode: ProcessingMode = (this.initial_ && specificity.toInitial_) ? this.initial_ : this;
+        if (!vecP) {
+          const gr = mode.groveRules(node, mgr);
+          const giKey = stringCToString(gi);
+          const er = gr.elementTable.get(giKey);
+          vecP = er ? er.rules[specificity.ruleType_] : gr.otherRules[specificity.ruleType_];
+        }
+        const vec = vecP;
+        for (; specificity.nextRuleIndex_ < vec.length; ) {
+          const rule = vec[specificity.nextRuleIndex_];
+          if (rule && (rule.trivial() || rule.matches(node, context))) {
+            this.elementRuleAdvance(node, context, mgr, specificity, vec);
+            return rule;
+          }
+          specificity.nextRuleIndex_++;
+        }
+        if (!this.initial_) break;
+        vecP = null;
+        if (specificity.toInitial_) break;
+        specificity.nextRuleIndex_ = 0;
+        specificity.toInitial_ = true;
+      }
+      if (specificity.ruleType_ === RuleType.constructionRule) break;
+      specificity.ruleType_ = RuleType.constructionRule;
+      specificity.nextRuleIndex_ = 0;
+      specificity.toInitial_ = false;
+    }
+    return null;
+  }
+
+  private findRootMatch(
+    _node: NodePtr,
+    _context: MatchContext,
+    _mgr: Messenger | null,
+    specificity: Specificity
+  ): Rule | null {
+    for (;;) {
+      for (;;) {
+        const mode: ProcessingMode = (this.initial_ && specificity.toInitial_) ? this.initial_ : this;
+        const rules = mode.rootRules_[specificity.ruleType_];
+        if (specificity.nextRuleIndex_ < rules.length) {
+          return rules[specificity.nextRuleIndex_++];
+        }
+        if (!this.initial_ || specificity.toInitial_) break;
+        specificity.nextRuleIndex_ = 0;
+        specificity.toInitial_ = true;
+      }
+      if (specificity.ruleType_ === RuleType.constructionRule) break;
+      specificity.ruleType_ = RuleType.constructionRule;
+      specificity.nextRuleIndex_ = 0;
+      specificity.toInitial_ = false;
+    }
+    return null;
+  }
+
+  private groveRules(node: NodePtr, mgr: Messenger | null): GroveRules {
+    const n = node.groveIndex();
+    if (n >= this.groveRules_.length) {
+      // Extend array
+      while (this.groveRules_.length <= n) {
+        this.groveRules_.push(new GroveRules());
+      }
+    }
+    if (!this.groveRules_[n].built) {
+      this.groveRules_[n].build(this.elementRules_, node, mgr);
+    }
+    return this.groveRules_[n];
+  }
+
+  private elementRuleAdvance(
+    node: NodePtr,
+    context: MatchContext,
+    mgr: Messenger | null,
+    specificity: Specificity,
+    vec: (ElementRule | null)[]
+  ): void {
+    if (specificity.ruleType_ !== RuleType.constructionRule) {
+      specificity.nextRuleIndex_++;
+      return;
+    }
+    const hit = specificity.nextRuleIndex_;
+    do {
+      specificity.nextRuleIndex_++;
+      if (specificity.nextRuleIndex_ >= vec.length) return;
+      const hitRule = vec[hit];
+      const nextRule = vec[specificity.nextRuleIndex_];
+      if (!hitRule || !nextRule) return;
+      if (hitRule.compareSpecificity(nextRule) !== 0) return;
+    } while (!(vec[specificity.nextRuleIndex_]?.trivial() || vec[specificity.nextRuleIndex_]?.matches(node, context)));
+
+    // Ambiguous match warning
+    // Note: In C++ this is mgr.message(InterpreterMessages::ambiguousMatch)
+    // For now, we skip the message as it requires proper MessageType integration
+    do {
+      specificity.nextRuleIndex_++;
+      const hitRule = vec[hit];
+      const nextRule = vec[specificity.nextRuleIndex_];
+      if (!hitRule || !nextRule) return;
+    } while (specificity.nextRuleIndex_ < vec.length && vec[hit]?.compareSpecificity(vec[specificity.nextRuleIndex_]!) === 0);
+  }
+
+  compile(interp: Interpreter): void {
+    for (let i = 0; i < nRuleType; i++) {
+      for (const rule of this.rootRules_[i]) {
+        rule.action().compile(interp, i as RuleType);
+      }
+      for (const rule of this.elementRules_[i]) {
+        rule.action().compile(interp, i as RuleType);
+      }
+    }
   }
 }
 
@@ -1071,6 +1423,14 @@ export class Interpreter {
   // String conversion utility
   static makeStringC(s: string | null): StringC {
     return stringToStringC(s ?? '');
+  }
+
+  // Normalize a general name using grove's normalization (usually case-folding)
+  static normalizeGeneralName(_node: NodePtr, _gi: StringC): void {
+    // In SGML, general names (element/attribute names) are typically normalized
+    // to uppercase. In XML, they're case-sensitive.
+    // For now, we don't transform - the grove should handle this.
+    // This matches the C++ behavior where it calls node->generalName() to normalize.
   }
 
   // Lexical category lookup
