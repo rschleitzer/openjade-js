@@ -178,9 +178,11 @@ class StrOutputCharStream {
 // Output stream wrapper for the main output
 class OutputCharStream {
   private callback_: (s: string) => void;
+  private flushCallback_: (() => void) | null;
 
-  constructor(callback: (s: string) => void) {
+  constructor(callback: (s: string) => void, flushCallback?: () => void) {
     this.callback_ = callback;
+    this.flushCallback_ = flushCallback || null;
   }
 
   write(s: string): void {
@@ -197,6 +199,12 @@ class OutputCharStream {
 
   writeNum(n: number): void {
     this.callback_(n.toString());
+  }
+
+  flush(): void {
+    if (this.flushCallback_) {
+      this.flushCallback_();
+    }
   }
 }
 
@@ -248,9 +256,9 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   private pendingElementLevels_: number[] = [];
   private nPendingElementsNonEmpty_: number = 0;
 
-  constructor(outputCallback: (s: string) => void) {
+  constructor(outputCallback: (s: string) => void, flushCallback?: () => void) {
     super();
-    this.os_ = new OutputCharStream(outputCallback);
+    this.os_ = new OutputCharStream(outputCallback, flushCallback);
     this.curOs_ = this.os_;
     this.ics_ = new StrOutputCharStream();
     this.hfs_ = new StrOutputCharStream();
@@ -268,6 +276,8 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
 
   override flush(): void {
     this.finish();
+    // Flush the underlying output stream
+    this.os_.flush();
   }
 
   private os(): OutputCharStream {

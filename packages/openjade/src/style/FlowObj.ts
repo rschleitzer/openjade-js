@@ -2,7 +2,7 @@
 // See the file copying.txt for copying permission.
 
 import { Location, StringC, Char } from '@openjade-js/opensp';
-import { ELObj, SymbolObj } from './ELObj';
+import { ELObj, SymbolObj, QuantityType, StringObj } from './ELObj';
 import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';
 import {
@@ -25,7 +25,10 @@ import {
   MultiMode,
   Symbol,
   LengthSpec,
-  DisplaySpace
+  DisplaySpace,
+  GridNIC,
+  GridCellNIC,
+  HF
 } from './FOTBuilder';
 import { StyleObj } from './Style';
 import { FlowObj, CompoundFlowObj, SosofoObj, ProcessContext } from './SosofoObj';
@@ -99,6 +102,27 @@ function setDisplayNIC(
     }
   }
   return false;
+}
+
+// Sequence flow object - the most basic compound flow object
+export class SequenceFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startSequence();
+    super.processInner(context);
+    fotb.endSequence();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new SequenceFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
 }
 
 // Display group flow object
@@ -1036,6 +1060,579 @@ export class TableCellFlowObj extends CompoundFlowObj {
   }
 }
 
+// Sideline flow object
+export class SidelineFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startSideline();
+    super.processInner(context);
+    fotb.endSideline();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new SidelineFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Score flow object - for underlines, overlines, strikethrough
+export class ScoreFlowObj extends CompoundFlowObj {
+  private type_: { kind: 'symbol'; value: Symbol } | { kind: 'length'; value: LengthSpec } | { kind: 'char'; value: Char } | null = null;
+
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    if (this.type_) {
+      switch (this.type_.kind) {
+        case 'symbol':
+          fotb.startScoreSymbol(this.type_.value);
+          break;
+        case 'length':
+          fotb.startScoreLengthSpec(this.type_.value);
+          break;
+        case 'char':
+          fotb.startScoreChar(this.type_.value);
+          break;
+      }
+    } else {
+      fotb.startSequence();
+    }
+    super.processInner(context);
+    if (this.type_) {
+      fotb.endScore();
+    } else {
+      fotb.endSequence();
+    }
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    const keyRef = { value: SyntacticKey.notKey };
+    return ident.syntacticKey(keyRef) && keyRef.value === SyntacticKey.keyType;
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    // Try char value first
+    const charVal = obj.charValue();
+    if (charVal.result) {
+      this.type_ = { kind: 'char', value: charVal.ch };
+      return;
+    }
+    // Try as length
+    const quantVal = obj.quantityValue();
+    if (quantVal.type !== QuantityType.noQuantity && quantVal.dim === 1) {
+      const n = quantVal.type === QuantityType.longQuantity ? quantVal.longVal : Math.floor(quantVal.doubleVal);
+      this.type_ = { kind: 'length', value: new LengthSpec(n) };
+      return;
+    }
+    // Try as symbol (before/through/after)
+    const sym = obj.asSymbol();
+    if (sym) {
+      const nameStr = sym.name().toStyleString();
+      if (nameStr === 'before') {
+        this.type_ = { kind: 'symbol', value: Symbol.symbolBefore };
+      } else if (nameStr === 'through') {
+        this.type_ = { kind: 'symbol', value: Symbol.symbolThrough };
+      } else if (nameStr === 'after') {
+        this.type_ = { kind: 'symbol', value: Symbol.symbolAfter };
+      }
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new ScoreFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    copy.type_ = this.type_;
+    return copy;
+  }
+}
+
+// Table border flow object - provides style for table borders
+export class TableBorderFlowObj extends FlowObj {
+  constructor() {
+    super();
+  }
+
+  process(_context: ProcessContext): void {
+    // Table border flow object does nothing in process
+  }
+
+  processInner(_context: ProcessContext): void {
+    // Table border flow object does nothing in processInner
+  }
+
+  override tableBorderStyle(style: { obj: StyleObj | null }): boolean {
+    style.obj = this.style_;
+    return true;
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new TableBorderFlowObj();
+    copy.style_ = this.style_;
+    return copy;
+  }
+}
+
+// Simple page sequence flow object
+export class SimplePageSequenceFlowObj extends CompoundFlowObj {
+  private static readonly nParts = 6;
+  private static readonly nPageTypeBits = 2;
+  private hf_: (SosofoObj | null)[];
+
+  constructor() {
+    super();
+    this.hasSubObjects_ = true;
+    this.hf_ = new Array(SimplePageSequenceFlowObj.nParts).fill(null);
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const hfFotb: (FOTBuilder | null)[] = new Array(HF.nHF).fill(null);
+    fotb.startSimplePageSequence(hfFotb);
+    // TODO: Implement full header/footer processing with page types
+    // For now, just end header/footer and process main content
+    fotb.endSimplePageSequenceHeaderFooter();
+    super.processInner(context);
+    fotb.endSimplePageSequence();
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyLeftHeader:
+        case SyntacticKey.keyCenterHeader:
+        case SyntacticKey.keyRightHeader:
+        case SyntacticKey.keyLeftFooter:
+        case SyntacticKey.keyCenterFooter:
+        case SyntacticKey.keyRightFooter:
+          return true;
+        default:
+          break;
+      }
+    }
+    return false;
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    const sosofo = obj.asSosofo();
+    if (!sosofo) return;
+    const nPageTypeBits = SimplePageSequenceFlowObj.nPageTypeBits;
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyLeftHeader:
+          this.hf_[(HF.leftHF | HF.headerHF) >> nPageTypeBits] = sosofo;
+          break;
+        case SyntacticKey.keyCenterHeader:
+          this.hf_[(HF.centerHF | HF.headerHF) >> nPageTypeBits] = sosofo;
+          break;
+        case SyntacticKey.keyRightHeader:
+          this.hf_[(HF.rightHF | HF.headerHF) >> nPageTypeBits] = sosofo;
+          break;
+        case SyntacticKey.keyLeftFooter:
+          this.hf_[(HF.leftHF | HF.footerHF) >> nPageTypeBits] = sosofo;
+          break;
+        case SyntacticKey.keyCenterFooter:
+          this.hf_[(HF.centerHF | HF.footerHF) >> nPageTypeBits] = sosofo;
+          break;
+        case SyntacticKey.keyRightFooter:
+          this.hf_[(HF.rightHF | HF.footerHF) >> nPageTypeBits] = sosofo;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new SimplePageSequenceFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    copy.hf_ = [...this.hf_];
+    return copy;
+  }
+}
+
+// Math sequence flow object
+export class MathSequenceFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startMathSequence();
+    super.processInner(context);
+    fotb.endMathSequence();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new MathSequenceFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Fraction flow object
+export class FractionFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const numerator = { ref: null as FOTBuilder | null };
+    const denominator = { ref: null as FOTBuilder | null };
+    fotb.startFraction(numerator, denominator);
+    // TODO: handle fractionBarStyle
+    fotb.fractionBar();
+    // Process content with ports for numerator/denominator
+    super.processInner(context);
+    fotb.endFraction();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new FractionFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Unmath flow object - for non-math content within math
+export class UnmathFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startUnmath();
+    super.processInner(context);
+    fotb.endUnmath();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new UnmathFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Superscript flow object
+export class SuperscriptFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startSuperscript();
+    super.processInner(context);
+    fotb.endSuperscript();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new SuperscriptFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Subscript flow object
+export class SubscriptFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startSubscript();
+    super.processInner(context);
+    fotb.endSubscript();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new SubscriptFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Script flow object - for complex scripts with pre/post/mid super/subscripts
+export class ScriptFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const preSup = { ref: null as FOTBuilder | null };
+    const preSub = { ref: null as FOTBuilder | null };
+    const postSup = { ref: null as FOTBuilder | null };
+    const postSub = { ref: null as FOTBuilder | null };
+    const midSup = { ref: null as FOTBuilder | null };
+    const midSub = { ref: null as FOTBuilder | null };
+    fotb.startScript(preSup, preSub, postSup, postSub, midSup, midSub);
+    // TODO: proper port handling
+    super.processInner(context);
+    fotb.endScript();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new ScriptFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Mark flow object - for over/under marks
+export class MarkFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const overMark = { ref: null as FOTBuilder | null };
+    const underMark = { ref: null as FOTBuilder | null };
+    fotb.startMark(overMark, underMark);
+    // TODO: proper port handling
+    super.processInner(context);
+    fotb.endMark();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new MarkFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Fence flow object - for delimiters (parentheses, brackets, etc.)
+export class FenceFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const open = { ref: null as FOTBuilder | null };
+    const close = { ref: null as FOTBuilder | null };
+    fotb.startFence(open, close);
+    // TODO: proper port handling
+    super.processInner(context);
+    fotb.endFence();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new FenceFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Radical flow object - for square roots and nth roots
+export class RadicalFlowObj extends CompoundFlowObj {
+  private radical_: SosofoObj | null = null;
+
+  constructor() {
+    super();
+    this.hasSubObjects_ = true;
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const degree = { ref: null as FOTBuilder | null };
+    fotb.startRadical(degree);
+    // TODO: handle radical_ characteristic
+    fotb.radicalRadicalDefaulted();
+    // TODO: proper port handling for degree
+    super.processInner(context);
+    fotb.endRadical();
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    const keyRef = { value: SyntacticKey.notKey };
+    return ident.syntacticKey(keyRef) && keyRef.value === SyntacticKey.keyRadical;
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef) && keyRef.value === SyntacticKey.keyRadical) {
+      this.radical_ = obj.asSosofo();
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new RadicalFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    copy.radical_ = this.radical_;
+    return copy;
+  }
+}
+
+// Math operator flow object - for integrals, summations, etc.
+export class MathOperatorFlowObj extends CompoundFlowObj {
+  constructor() {
+    super();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    const oper = { ref: null as FOTBuilder | null };
+    const lowerLimit = { ref: null as FOTBuilder | null };
+    const upperLimit = { ref: null as FOTBuilder | null };
+    fotb.startMathOperator(oper, lowerLimit, upperLimit);
+    // TODO: proper port handling
+    super.processInner(context);
+    fotb.endMathOperator();
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new MathOperatorFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    return copy;
+  }
+}
+
+// Grid flow object
+export class GridFlowObj extends CompoundFlowObj {
+  private nic_: GridNIC;
+
+  constructor() {
+    super();
+    this.nic_ = new GridNIC();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startGrid(this.nic_);
+    super.processInner(context);
+    fotb.endGrid();
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyGridNColumns:
+        case SyntacticKey.keyGridNRows:
+          return true;
+        default:
+          break;
+      }
+    }
+    return false;
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    const quantVal = obj.quantityValue();
+    if (quantVal.type !== QuantityType.longQuantity) return;
+    const n = quantVal.longVal;
+    if (n <= 0) return;
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyGridNColumns:
+          this.nic_.nColumns = n;
+          break;
+        case SyntacticKey.keyGridNRows:
+          this.nic_.nRows = n;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new GridFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    Object.assign(copy.nic_, this.nic_);
+    return copy;
+  }
+}
+
+// Grid cell flow object
+export class GridCellFlowObj extends CompoundFlowObj {
+  private nic_: GridCellNIC;
+
+  constructor() {
+    super();
+    this.nic_ = new GridCellNIC();
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startGridCell(this.nic_);
+    super.processInner(context);
+    fotb.endGridCell();
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyColumnNumber:
+        case SyntacticKey.keyRowNumber:
+          return true;
+        default:
+          break;
+      }
+    }
+    return false;
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    const quantVal = obj.quantityValue();
+    if (quantVal.type !== QuantityType.longQuantity) return;
+    const n = quantVal.longVal;
+    if (n <= 0) return;
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyColumnNumber:
+          this.nic_.columnNumber = n;
+          break;
+        case SyntacticKey.keyRowNumber:
+          this.nic_.rowNumber = n;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new GridCellFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    Object.assign(copy.nic_, this.nic_);
+    return copy;
+  }
+}
+
 // Formatting instruction flow object (for backend-specific instructions)
 export class FormattingInstructionFlowObj extends FlowObj {
   private instruction_: string = '';
@@ -1102,34 +1699,34 @@ export class UnknownFlowObj extends FlowObj {
 // Flow object factory - creates flow objects by name
 export function createFlowObj(name: string): FlowObj | null {
   switch (name) {
+    case 'sequence':
+      return new SequenceFlowObj();
     case 'display-group':
       return new DisplayGroupFlowObj();
     case 'paragraph':
       return new ParagraphFlowObj();
     case 'paragraph-break':
       return new ParagraphBreakFlowObj();
+    case 'line-field':
+      return new LineFieldFlowObj();
+    case 'score':
+      return new ScoreFlowObj();
     case 'external-graphic':
       return new ExternalGraphicFlowObj();
     case 'rule':
       return new RuleFlowObj();
-    case 'alignment-point':
-      return new AlignmentPointFlowObj();
-    case 'line-field':
-      return new LineFieldFlowObj();
-    case 'link':
-      return new LinkFlowObj();
-    case 'scroll':
-      return new ScrollFlowObj();
-    case 'marginalia':
-      return new MarginaliaFlowObj();
-    case 'multi-mode':
-      return new MultiModeFlowObj();
-    case 'box':
-      return new BoxFlowObj();
     case 'leader':
       return new LeaderFlowObj();
     case 'character':
       return new CharacterFlowObj();
+    case 'box':
+      return new BoxFlowObj();
+    case 'alignment-point':
+      return new AlignmentPointFlowObj();
+    case 'sideline':
+      return new SidelineFlowObj();
+    case 'simple-page-sequence':
+      return new SimplePageSequenceFlowObj();
     case 'table':
       return new TableFlowObj();
     case 'table-part':
@@ -1140,6 +1737,40 @@ export function createFlowObj(name: string): FlowObj | null {
       return new TableRowFlowObj();
     case 'table-cell':
       return new TableCellFlowObj();
+    case 'table-border':
+      return new TableBorderFlowObj();
+    case 'link':
+      return new LinkFlowObj();
+    case 'scroll':
+      return new ScrollFlowObj();
+    case 'marginalia':
+      return new MarginaliaFlowObj();
+    case 'multi-mode':
+      return new MultiModeFlowObj();
+    case 'math-sequence':
+      return new MathSequenceFlowObj();
+    case 'fraction':
+      return new FractionFlowObj();
+    case 'unmath':
+      return new UnmathFlowObj();
+    case 'superscript':
+      return new SuperscriptFlowObj();
+    case 'subscript':
+      return new SubscriptFlowObj();
+    case 'script':
+      return new ScriptFlowObj();
+    case 'mark':
+      return new MarkFlowObj();
+    case 'fence':
+      return new FenceFlowObj();
+    case 'radical':
+      return new RadicalFlowObj();
+    case 'math-operator':
+      return new MathOperatorFlowObj();
+    case 'grid':
+      return new GridFlowObj();
+    case 'grid-cell':
+      return new GridCellFlowObj();
     case 'formatting-instruction':
       return new FormattingInstructionFlowObj();
     default:

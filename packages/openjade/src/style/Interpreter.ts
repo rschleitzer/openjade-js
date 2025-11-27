@@ -53,7 +53,7 @@ import { Environment } from './Expression';
 import { Pattern, MatchContext } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
-import { FormattingInstructionFlowObj, UnknownFlowObj } from './FlowObj';
+import { FormattingInstructionFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
 import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
 
 // Default character for unmapped SDATA entities
@@ -1725,6 +1725,57 @@ export class Interpreter {
 
   private installFlowObjs(): void {
     // Install flow object classes
+    const flowObjNames = [
+      'sequence',
+      'display-group',
+      'paragraph',
+      'paragraph-break',
+      'line-field',
+      'score',
+      'external-graphic',
+      'rule',
+      'leader',
+      'character',
+      'box',
+      'alignment-point',
+      'sideline',
+      // simple-page
+      'simple-page-sequence',
+      // tables
+      'table',
+      'table-part',
+      'table-column',
+      'table-row',
+      'table-cell',
+      'table-border',
+      // online
+      'link',
+      'scroll',
+      'marginalia',
+      'multi-mode',
+      // math
+      'math-sequence',
+      'fraction',
+      'unmath',
+      'superscript',
+      'subscript',
+      'script',
+      'mark',
+      'fence',
+      'radical',
+      'math-operator',
+      'grid',
+      'grid-cell'
+    ];
+
+    for (const name of flowObjNames) {
+      const flowObj = createFlowObj(name);
+      if (flowObj) {
+        const ident = this.lookup(Interpreter.makeStringC(name));
+        ident.setFlowObj(flowObj);
+        this.makePermanent(flowObj);
+      }
+    }
   }
 
   private installInheritedCs(): void {

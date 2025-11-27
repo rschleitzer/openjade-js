@@ -101,8 +101,33 @@ export abstract class DssslApp extends Messenger implements GroveManager {
   }
 
   readEntity(sysid: StringC, contents: { value: StringC }): boolean {
-    // Read entity contents
-    if (!this.entityManager_) return false;
+    // Read entity contents using Node's fs module directly
+    // TODO: This is a workaround - should use EntityManager properly
+    const sysidStr = stringCToString(sysid);
+
+    // Try reading the file directly
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs');
+      const data = fs.readFileSync(sysidStr, 'utf8') as string;
+      const chars: Char[] = [];
+      for (let i = 0; i < data.length; i++) {
+        chars.push(data.charCodeAt(i));
+      }
+      contents.value = {
+        ptr_: chars,
+        length_: chars.length,
+        size: () => chars.length
+      } as StringC;
+      return true;
+    } catch (e) {
+      // File not found directly, try via entity manager
+    }
+
+    // Fall back to entity manager
+    if (!this.entityManager_) {
+      return false;
+    }
 
     const inSrc = this.entityManager_.open(
       sysid,
@@ -111,7 +136,9 @@ export abstract class DssslApp extends Messenger implements GroveManager {
       0,
       this
     );
-    if (!inSrc) return false;
+    if (!inSrc) {
+      return false;
+    }
 
     const chars: Char[] = [];
     for (;;) {

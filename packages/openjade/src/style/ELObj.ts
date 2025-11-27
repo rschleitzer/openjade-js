@@ -580,6 +580,7 @@ export class StringObj extends ELObj {
   }
 
   override convertToString(): StringObj { return this; }
+  override asString(): StringObj { return this; }
 
   override stringData(): { result: boolean; data: Uint32Array; length: number } {
     return { result: true, data: this.data_, length: this.data_.length };

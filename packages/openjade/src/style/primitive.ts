@@ -31,7 +31,7 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj } from './SosofoObj';
 import { InterpreterMessages, IdentifierImpl } from './Interpreter';
 import { PrimitiveObj, EvalContext, VM, InsnPtr } from './Insn';
 import { Interpreter } from './ELObj';
@@ -2156,6 +2156,31 @@ export class ExternalProcedurePrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// ============ Literal ============
+
+// literal - creates a literal sosofo from a string
+export class LiteralPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, true);  // Takes at least one string, rest are optional
+  constructor() { super(LiteralPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // Concatenate all string arguments
+    const resultChars: Char[] = [];
+    for (let i = 0; i < argc; i++) {
+      const sd = args[i].stringData();
+      if (!sd.result) {
+        interp.setNextLocation(loc);
+        interp.message('notAString');
+        return interp.makeError();
+      }
+      for (let j = 0; j < sd.length; j++) {
+        resultChars.push(sd.data[j]);
+      }
+    }
+    const strObj = new StringObj(new Uint32Array(resultChars));
+    return new LiteralSosofoObj(strObj);
+  }
+}
+
 // ============ Error ============
 
 // error
@@ -2288,5 +2313,6 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['empty-sosofo', () => new EmptySosofoPrimitiveObj()],
   ['sosofo-append', () => new SosofoAppendPrimitiveObj()],
   ['error', () => new ErrorPrimitiveObj()],
-  ['external-procedure', () => new ExternalProcedurePrimitiveObj()]
+  ['external-procedure', () => new ExternalProcedurePrimitiveObj()],
+  ['literal', () => new LiteralPrimitiveObj()]
 ]);

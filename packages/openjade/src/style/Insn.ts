@@ -1812,7 +1812,7 @@ export class SosofoAppendInsn extends InsnBase {
     const obj = new AppendSosofoObj();
     const tem = vm.sp - this.n_;
     for (let i = 0; i < this.n_; i++) {
-      // obj.append(vm.stackGet(tem + i) as SosofoObj);
+      obj.append(vm.stackGet(tem + i) as SosofoObj);
     }
     vm.sp -= this.n_ - 1;
     vm.setTop(obj);

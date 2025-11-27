@@ -141,9 +141,10 @@ class JadeApp extends DssslApp {
       case OutputType.fotType: {
         // FOT output - use SgmlFOTBuilder to output flow object tree as SGML
         const fotOutputStream = new FileOutputStream(this.outputFilename_);
-        const fotBuilder = new SgmlFOTBuilder((s: string) => fotOutputStream.write(s));
-        // Store reference so we can call finish() later
-        (fotBuilder as any)._outputStream = fotOutputStream;
+        const fotBuilder = new SgmlFOTBuilder(
+          (s: string) => fotOutputStream.write(s),
+          () => fotOutputStream.flush()
+        );
         return fotBuilder;
       }
 
