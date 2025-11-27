@@ -1828,6 +1828,58 @@ export class NodePtr {
     return null;
   }
 
+  // Get character chunk from node with SDATA mapper
+  charChunk(mapper: SdataMapper): { data: Uint32Array; size: number } | null {
+    if (!this.node_) return null;
+    const result = this.node_.charChunk(mapper);
+    if (result.result !== AccessResult.accessOK) return null;
+    const str = result.str;
+    if (str.size() === 0 || !str.data()) return null;
+    return { data: str.data()!, size: str.size() };
+  }
+
+  // Get element index for loop detection
+  elementIndex(): number | null {
+    if (!this.node_) return null;
+    const result = this.node_.elementIndex();
+    if (result.result !== AccessResult.accessOK) return null;
+    return result.index;
+  }
+
+  // Get grove index for loop detection
+  groveIndex(): number {
+    if (!this.node_) return 0;
+    return this.node_.groveIndex();
+  }
+
+  // Get next chunk sibling
+  nextChunkSibling(): NodePtr | null {
+    if (!this.node_) return null;
+    const ptr = new NodePtr();
+    const result = this.node_.nextChunkSibling(ptr);
+    if (result !== AccessResult.accessOK) return null;
+    if (!ptr.node_) return null;
+    return ptr;
+  }
+
+  // Get document element from SGML document node
+  getDocumentElement(): NodePtr | null {
+    if (!this.node_) return null;
+    const ptr = new NodePtr();
+    const result = this.node_.getDocumentElement(ptr);
+    if (result !== AccessResult.accessOK) return null;
+    if (!ptr.node_) return null;
+    return ptr;
+  }
+
+  // Get generic identifier (element name)
+  getGi(): GroveString | null {
+    if (!this.node_) return null;
+    const result = this.node_.getGi();
+    if (result.result !== AccessResult.accessOK) return null;
+    return result.str;
+  }
+
   private addRef(): void {
     if (this.node_) this.node_.addRef();
   }

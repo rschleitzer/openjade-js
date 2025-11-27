@@ -1,14 +1,14 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location } from '@openjade-js/opensp';
+import { Location, StringC } from '@openjade-js/opensp';
 import { ELObj, NodeListObj, SymbolObj } from './ELObj';
 import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 import { StyleObj } from './Style';
 import { InsnPtr } from './Insn';
-import type { Interpreter } from './Interpreter';
+import type { Interpreter, ProcessingMode } from './Interpreter';
 
 // Forward declarations
 export interface ProcessContext {
@@ -20,11 +20,16 @@ export interface ProcessContext {
   processChildrenTrim(mode: ProcessingMode | null): void;
   nextMatch(style: StyleObj | null): void;
   currentNode(): NodePtr | null;
-}
-
-export interface ProcessingMode {
-  // Processing mode interface
-  name(): string;
+  // Table support
+  startTable(): void;
+  endTable(): void;
+  startTablePart(): void;
+  endTablePart(): void;
+  addTableColumn(colIndex: number, span: number, style: StyleObj | null): void;
+  currentTableColumn(): number;
+  noteTableCell(colIndex: number, colSpan: number, rowSpan: number): void;
+  startTableRow(style: StyleObj | null): void;
+  endTableRow(): void;
 }
 
 // Base SOSOFO (Specification of a Sequence of Flow Objects) class
@@ -229,6 +234,10 @@ export abstract class FlowObj extends SosofoObj {
   }
 
   setImplicitChar(_obj: ELObj, _loc: Location, _interp: any): boolean {
+    return false;
+  }
+
+  isCharacter(): boolean {
     return false;
   }
 

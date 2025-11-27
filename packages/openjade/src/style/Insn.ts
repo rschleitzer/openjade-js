@@ -18,6 +18,7 @@ import {
 import { Collector, CollectorObject } from './Collector';
 import { SosofoObj, AppendSosofoObj } from './SosofoObj';
 import { StyleObj } from './Style';
+import { NodePtr } from '../grove/Node';
 
 // BoxObj type and constructor alias for use throughout this file
 type BoxObj = MutableBoxObj;
@@ -35,7 +36,8 @@ export class EvalContext {
 // Forward declarations - these interfaces will be implemented or imported elsewhere
 export interface ProcessingMode {
   defined(): boolean;
-  name(): string;
+  name(): StringC;
+  findMatch(node: NodePtr, interp: Interpreter, specificity: any): any | null;
 }
 
 export interface FlowObj extends ELObj {

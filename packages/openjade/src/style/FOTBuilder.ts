@@ -1,7 +1,7 @@
 // Copyright (c) 1996, 1997 James Clark
 // See the file copying.txt for copying permission.
 
-import { Char } from '@openjade-js/opensp';
+import { Char, StringC } from '@openjade-js/opensp';
 import { GroveString, NodePtr } from '../grove/Node';
 
 // Simple string type for style module - uses native JavaScript strings where possible
@@ -469,9 +469,233 @@ export abstract class FOTBuilder {
   // Page number related
   currentNodePageNumber(_node: NodePtr): void {}
   pageNumber(): void {}
+
+  // Node processing markers (for debugging/tracing)
+  startNode(_node: NodePtr, _processingMode: StringC): void {}
+  endNode(): void {}
 }
 
 // SaveFOTBuilder - for saving FOT to replay later
 export abstract class SaveFOTBuilder extends FOTBuilder {
   abstract emit(_builder: FOTBuilder): void;
+}
+
+// Queued action types for ConcreteSaveFOTBuilder
+enum SavedActionType {
+  characters,
+  charactersFromNode,
+  character,
+  paragraphBreak,
+  externalGraphic,
+  rule,
+  alignmentPoint,
+  formattingInstruction,
+  startSequence,
+  endSequence,
+  startLineField,
+  endLineField,
+  startParagraph,
+  endParagraph,
+  startDisplayGroup,
+  endDisplayGroup,
+  startScroll,
+  endScroll,
+  startLink,
+  endLink,
+  startMarginalia,
+  endMarginalia,
+  startMultiMode,
+  endMultiMode,
+  // ... add more as needed
+}
+
+interface SavedAction {
+  type: SavedActionType;
+  data?: any;
+}
+
+// Concrete SaveFOTBuilder that queues actions for later replay
+export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
+  private actions_: SavedAction[] = [];
+
+  emit(builder: FOTBuilder): void {
+    for (const action of this.actions_) {
+      switch (action.type) {
+        case SavedActionType.characters:
+          builder.characters(action.data.s, action.data.n);
+          break;
+        case SavedActionType.charactersFromNode:
+          builder.charactersFromNode(action.data.node, action.data.s, action.data.n);
+          break;
+        case SavedActionType.startSequence:
+          builder.startSequence();
+          break;
+        case SavedActionType.endSequence:
+          builder.endSequence();
+          break;
+        case SavedActionType.startParagraph:
+          builder.startParagraph(action.data);
+          break;
+        case SavedActionType.endParagraph:
+          builder.endParagraph();
+          break;
+        case SavedActionType.startDisplayGroup:
+          builder.startDisplayGroup(action.data);
+          break;
+        case SavedActionType.endDisplayGroup:
+          builder.endDisplayGroup();
+          break;
+        case SavedActionType.startScroll:
+          builder.startScroll();
+          break;
+        case SavedActionType.endScroll:
+          builder.endScroll();
+          break;
+        case SavedActionType.startLink:
+          builder.startLink(action.data);
+          break;
+        case SavedActionType.endLink:
+          builder.endLink();
+          break;
+        case SavedActionType.startMarginalia:
+          builder.startMarginalia();
+          break;
+        case SavedActionType.endMarginalia:
+          builder.endMarginalia();
+          break;
+        case SavedActionType.startMultiMode:
+          builder.startMultiMode(action.data);
+          break;
+        case SavedActionType.endMultiMode:
+          builder.endMultiMode();
+          break;
+        case SavedActionType.character:
+          builder.character(action.data);
+          break;
+        case SavedActionType.paragraphBreak:
+          builder.paragraphBreak(action.data);
+          break;
+        case SavedActionType.externalGraphic:
+          builder.externalGraphic(action.data);
+          break;
+        case SavedActionType.rule:
+          builder.rule(action.data);
+          break;
+        case SavedActionType.alignmentPoint:
+          builder.alignmentPoint();
+          break;
+        case SavedActionType.formattingInstruction:
+          builder.formattingInstruction(action.data);
+          break;
+        case SavedActionType.startLineField:
+          builder.startLineField(action.data);
+          break;
+        case SavedActionType.endLineField:
+          builder.endLineField();
+          break;
+        // ... handle more actions as needed
+      }
+    }
+    this.actions_ = [];
+  }
+
+  override characters(s: Uint32Array, n: number): void {
+    this.actions_.push({ type: SavedActionType.characters, data: { s: new Uint32Array(s), n } });
+  }
+
+  override charactersFromNode(node: NodePtr, s: Uint32Array, n: number): void {
+    this.actions_.push({ type: SavedActionType.charactersFromNode, data: { node, s: new Uint32Array(s), n } });
+  }
+
+  override character(nic: CharacterNIC): void {
+    this.actions_.push({ type: SavedActionType.character, data: { ...nic } });
+  }
+
+  override paragraphBreak(nic: ParagraphNIC): void {
+    this.actions_.push({ type: SavedActionType.paragraphBreak, data: { ...nic } });
+  }
+
+  override externalGraphic(nic: ExternalGraphicNIC): void {
+    this.actions_.push({ type: SavedActionType.externalGraphic, data: { ...nic } });
+  }
+
+  override rule(nic: RuleNIC): void {
+    this.actions_.push({ type: SavedActionType.rule, data: { ...nic } });
+  }
+
+  override alignmentPoint(): void {
+    this.actions_.push({ type: SavedActionType.alignmentPoint });
+  }
+
+  override formattingInstruction(s: StyleString): void {
+    this.actions_.push({ type: SavedActionType.formattingInstruction, data: s });
+  }
+
+  override startSequence(): void {
+    this.actions_.push({ type: SavedActionType.startSequence });
+  }
+
+  override endSequence(): void {
+    this.actions_.push({ type: SavedActionType.endSequence });
+  }
+
+  override startLineField(nic: LineFieldNIC): void {
+    this.actions_.push({ type: SavedActionType.startLineField, data: { ...nic } });
+  }
+
+  override endLineField(): void {
+    this.actions_.push({ type: SavedActionType.endLineField });
+  }
+
+  override startParagraph(nic: ParagraphNIC): void {
+    this.actions_.push({ type: SavedActionType.startParagraph, data: { ...nic } });
+  }
+
+  override endParagraph(): void {
+    this.actions_.push({ type: SavedActionType.endParagraph });
+  }
+
+  override startDisplayGroup(nic: DisplayGroupNIC): void {
+    this.actions_.push({ type: SavedActionType.startDisplayGroup, data: { ...nic } });
+  }
+
+  override endDisplayGroup(): void {
+    this.actions_.push({ type: SavedActionType.endDisplayGroup });
+  }
+
+  override startScroll(): void {
+    this.actions_.push({ type: SavedActionType.startScroll });
+  }
+
+  override endScroll(): void {
+    this.actions_.push({ type: SavedActionType.endScroll });
+  }
+
+  override startLink(addr: Address): void {
+    this.actions_.push({ type: SavedActionType.startLink, data: addr });
+  }
+
+  override endLink(): void {
+    this.actions_.push({ type: SavedActionType.endLink });
+  }
+
+  override startMarginalia(): void {
+    this.actions_.push({ type: SavedActionType.startMarginalia });
+  }
+
+  override endMarginalia(): void {
+    this.actions_.push({ type: SavedActionType.endMarginalia });
+  }
+
+  override startMultiMode(modes: MultiMode[]): void {
+    this.actions_.push({ type: SavedActionType.startMultiMode, data: [...modes] });
+  }
+
+  override endMultiMode(): void {
+    this.actions_.push({ type: SavedActionType.endMultiMode });
+  }
+
+  override asSaveFOTBuilder(): SaveFOTBuilder | null {
+    return this;
+  }
 }

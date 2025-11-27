@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Char, Location } from '@openjade-js/opensp';
+import { Char, Location, StringC } from '@openjade-js/opensp';
 import { GroveString, NodePtr } from '../grove/Node';
 import { Collector, CollectorObject } from './Collector';
 import {
@@ -13,7 +13,8 @@ import {
   TableLengthSpec,
   DisplaySpace,
   InlineSpace,
-  Address
+  Address,
+  FOTBuilder
 } from './FOTBuilder';
 
 // Import Identifier for local use and re-export for other modules
@@ -62,11 +63,23 @@ export interface VM {
 }
 
 // Forward declaration for Interpreter - equivalent to C++ "class Interpreter;"
+// Forward declaration for ProcessingMode - implemented in Interpreter.ts
+export interface ProcessingModeRef {
+  defined(): boolean;
+  name(): StringC;
+}
+
+// Forward declaration for StyleObj - implemented in Style.ts
+export interface StyleObjRef {
+  // Style object interface
+}
+
 // This interface defines the minimal API needed by other modules.
 // The full implementation is in Interpreter.ts
 export interface Interpreter {
   // Core methods needed by ELObj and other modules
   setNextLocation(loc: Location): void;
+  setNodeLocation(node: NodePtrLike): void;
   message(msgType: string, ...args: unknown[]): void;
   debugMode(): boolean;
   makePermanent(obj: ELObj): void;
@@ -93,6 +106,15 @@ export interface Interpreter {
   addNameChar(name: any, ch: number): void;
   addSeparatorChar(name: any, ch: number): void;
   addSdataEntity(name: any, text: any, ch: number): void;
+  // Processing context methods
+  initialStyle(): StyleObjRef | null;
+  initialProcessingMode(): ProcessingModeRef;
+  charProperty(prop: StringC, c: Char, loc: Location, def: ELObj | null): ELObj;
+}
+
+// Forward type for node pointer
+interface NodePtrLike {
+  toBoolean(): boolean;
 }
 
 export class EvalContext {
@@ -164,6 +186,7 @@ export abstract class ELObj extends CollectorObject {
   asLanguage(): LanguageObj | null { return null; }
   asReal(): number | null { return null; }
   asInteger(): number | null { return null; }
+  asChar(): Char | null { return null; }
 
   // Value extraction methods
   charValue(): { result: boolean; ch: Char } {
@@ -512,6 +535,8 @@ export class CharObj extends ELObj {
   override charValue(): { result: boolean; ch: Char } {
     return { result: true, ch: this.ch_ };
   }
+
+  override asChar(): Char { return this.ch_; }
 
   override print(_interp: Interpreter, out: OutputCharStream): void {
     out.write('#\\');
@@ -1163,6 +1188,8 @@ export class AppendSosofoObj extends SosofoObj {
 // Abstract color object
 export abstract class ColorObj extends ELObj {
   override asColor(): ColorObj { return this; }
+  abstract set(fotb: FOTBuilder): void;
+  abstract setBackground(fotb: FOTBuilder): void;
 }
 
 // Abstract color space object
@@ -1208,6 +1235,25 @@ export class MutableBoxObj extends BoxObj {
 // Abstract language object
 export abstract class LanguageObj extends ELObj {
   override asLanguage(): LanguageObj { return this; }
+}
+
+// Dynamic root for protecting objects during evaluation
+export class ELObjDynamicRoot {
+  private obj_: ELObj | null;
+  private interp_: Interpreter;
+
+  constructor(interp: Interpreter, obj: ELObj | null = null) {
+    this.interp_ = interp;
+    this.obj_ = obj;
+  }
+
+  set(obj: ELObj | null): void {
+    this.obj_ = obj;
+  }
+
+  get(): ELObj | null {
+    return this.obj_;
+  }
 }
 
 // Concrete language object with collation support

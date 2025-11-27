@@ -49,7 +49,7 @@ import {
 import { NodePtr, GroveString } from '../grove/Node';
 import { Pattern } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
-import { FlowObj } from './SosofoObj';
+import { FlowObj, SosofoObj } from './SosofoObj';
 
 // Default character for unmapped SDATA entities
 const defaultChar: Char = 0xfffd;
@@ -396,11 +396,29 @@ export interface GroveManager {
   readEntity(sysid: StringC, src: { value: StringC }): boolean;
 }
 
+// Processing mode rule action
+export interface ProcessingModeRuleAction {
+  sosofo: SosofoObj | null;
+  insn: InsnPtr;
+}
+
+// Processing mode rule (for rule matching)
+export interface ProcessingModeRule {
+  action(): ProcessingModeRuleAction;
+}
+
+// Processing mode specificity (for rule matching)
+export interface ProcessingModeSpecificity {
+  isStyle(): boolean;
+  clone(): ProcessingModeSpecificity;
+}
+
 // Processing mode implementation
 export class ProcessingMode implements ProcessingModeInterface {
   private name_: StringC;
   private defined_: boolean = false;
   private initial_: ProcessingMode | null = null;
+  private rules_: ProcessingModeRule[] = [];
 
   constructor(name?: StringC, initial?: ProcessingMode) {
     this.name_ = name ?? stringToStringC('');
@@ -415,8 +433,19 @@ export class ProcessingMode implements ProcessingModeInterface {
     this.defined_ = true;
   }
 
-  name(): string {
-    return stringCToString(this.name_);
+  name(): StringC {
+    return this.name_;
+  }
+
+  // Find matching rule for a node
+  findMatch(
+    _node: NodePtr,
+    _interp: Interpreter,
+    _specificity: ProcessingModeSpecificity
+  ): ProcessingModeRule | null {
+    // TODO: Implement pattern matching against rules
+    // For now, return null to indicate no match (process children)
+    return null;
   }
 
   compile(_interp: Interpreter): void {

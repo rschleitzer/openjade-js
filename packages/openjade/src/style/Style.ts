@@ -498,6 +498,15 @@ export class StyleStack {
 
   level(): number { return this.level_; }
 
+  // Clone the style stack for use in a new connection
+  clone(): StyleStack {
+    const copy = new StyleStack();
+    copy.level_ = this.level_;
+    copy.inheritedCInfo_ = [...this.inheritedCInfo_];
+    // Note: popList_ is not cloned - new connections start fresh
+    return copy;
+  }
+
   trace(collector: Collector): void {
     for (const info of this.inheritedCInfo_) {
       let current = info;
