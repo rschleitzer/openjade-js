@@ -1,0 +1,1320 @@
+// Copyright (c) 1996, 1997 James Clark
+// See the file COPYING for copying permission.
+
+import {
+  Messenger,
+  ErrorCountEventHandler,
+  MessageFormatter,
+  Sd,
+  Syntax,
+  Dtd,
+  Entity,
+  ExternalDataEntity,
+  ExternalEntity,
+  Notation,
+  ElementTypeFromElementType as ElementType,
+  AttributeDefinitionList,
+  AttributeValue,
+  TokenizedAttributeValue,
+  SubstTable,
+  Location,
+  Origin,
+  StringC,
+  Event,
+  StartElementEvent,
+  EndElementEvent,
+  DataEvent,
+  SdataEntityEvent,
+  NonSgmlCharEvent,
+  ExternalDataEntityEvent,
+  SubdocEntityEvent,
+  PiEvent,
+  EndPrologEvent,
+  AppinfoEvent,
+  SgmlDeclEvent,
+  EntityDefaultedEvent,
+  MessageEvent,
+  TextIter,
+  ModelGroup,
+  ElementToken,
+  PcdataToken,
+  Char,
+  Index
+} from '@openjade-js/opensp';
+
+import {
+  AccessResult,
+  ComponentName,
+  ClassDef,
+  Node,
+  NodeList,
+  NamedNodeList,
+  NamedNodeListType,
+  NodePtr,
+  NodeListPtr,
+  NamedNodeListPtr,
+  GroveString,
+  GroveChar,
+  SdataMapper,
+  NodeVisitor,
+  Severity,
+  OccurIndicator,
+  EntityType,
+  DeclValueType,
+  DefaultValueType,
+  ContentType,
+  Connector
+} from '../grove/Node';
+
+import { LocNode } from '../grove/LocNode';
+import { SdNode } from './SdNode';
+
+// Configuration
+let blockingAccess = true;
+const initialBlockSize = 8192;
+const maxBlocksPerSize = 20;
+
+// Utility function
+function roundUp(n: number): number {
+  const ptrSize = 8; // Assume 64-bit pointers
+  return (n + (ptrSize - 1)) & ~(ptrSize - 1);
+}
+
+function setString(to: GroveString, from: StringC): void {
+  if (from && from.data()) {
+    // Convert StringC data to Uint32Array for GroveString
+    const srcData = from.data();
+    const size = from.size();
+    const dest = new Uint32Array(size);
+    for (let i = 0; i < size; i++) {
+      dest[i] = srcData[i];
+    }
+    to.assign(dest, size);
+  }
+}
+
+// MessageItem for storing parser messages
+class MessageItem {
+  private severity_: Severity.Enum;
+  private text_: StringC;
+  private loc_: Location;
+  private next_: MessageItem | null = null;
+
+  constructor(severity: Severity.Enum, text: StringC, loc: Location) {
+    this.severity_ = severity;
+    this.text_ = text;
+    this.loc_ = loc;
+  }
+
+  severity(): Severity.Enum { return this.severity_; }
+  loc(): Location { return this.loc_; }
+  text(): StringC { return this.text_; }
+  next(): MessageItem | null { return this.next_; }
+  setNext(next: MessageItem | null): void { this.next_ = next; }
+}
+
+// Chunk base class
+abstract class Chunk {
+  origin: ParentChunk | null = null;
+
+  abstract setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult;
+  abstract after(): Chunk | null;
+
+  setNodePtrFirstElement(ptr: NodePtr, node: ElementNode): AccessResult {
+    return this.setNodePtrFirst(ptr, node);
+  }
+
+  setNodePtrFirstData(ptr: NodePtr, node: DataNode): AccessResult {
+    return this.setNodePtrFirst(ptr, node);
+  }
+
+  getFollowing(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null; nNodes: number } {
+    return { result: AccessResult.accessNotInClass, chunk: null, nNodes: 0 };
+  }
+
+  getFirstSibling(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
+    return { result: AccessResult.accessNotInClass, chunk: null };
+  }
+
+  id(): StringC | null {
+    return null;
+  }
+
+  getLocOrigin(): { result: boolean; origin: Origin | null } {
+    return { result: false, origin: null };
+  }
+}
+
+// LocChunk with location index
+class LocChunk extends Chunk {
+  locIndex: Index = 0;
+
+  setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  after(): Chunk | null {
+    return null;
+  }
+}
+
+// ParentChunk with sibling pointer
+class ParentChunk extends LocChunk {
+  nextSibling: Chunk | null = null;
+}
+
+// ElementChunk
+class ElementChunk extends ParentChunk {
+  type: ElementType | null = null;
+  elementIndex: number = 0;
+
+  attributeValue(attIndex: number, grove: GroveImpl): AttributeValue | null {
+    return null;
+  }
+
+  mustOmitEndTag(): boolean {
+    return false;
+  }
+
+  included(): boolean {
+    return false;
+  }
+
+  attDefList(): AttributeDefinitionList | null {
+    return this.type?.attributeDefTemp() ?? null;
+  }
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new ElementNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+
+  override after(): Chunk | null {
+    return this.nextSibling;
+  }
+
+  static key(chunk: ElementChunk): StringC | null {
+    return chunk.id();
+  }
+}
+
+// SgmlDocumentChunk
+class SgmlDocumentChunk extends ParentChunk {
+  prolog: Chunk | null = null;
+  documentElement: Chunk | null = null;
+  epilog: Chunk | null = null;
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new SgmlDocumentNode(node.grove(), this));
+    return AccessResult.accessOK;
+  }
+
+  override after(): Chunk | null {
+    return null; // Document is the root
+  }
+}
+
+// DataChunk - stores character data
+class DataChunk extends LocChunk {
+  size: number = 0;
+  private data_: Uint32Array = new Uint32Array(0);
+
+  setData(data: Uint32Array): void {
+    this.data_ = data;
+  }
+
+  data(): Uint32Array {
+    return this.data_;
+  }
+
+  override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
+    ptr.assign(new DataNode(node.grove(), this, 0));
+    return AccessResult.accessOK;
+  }
+
+  override setNodePtrFirstData(ptr: NodePtr, node: DataNode): AccessResult {
+    if (node.canReuse(ptr)) {
+      (node as DataNode).reuseFor(this, 0);
+      return AccessResult.accessOK;
+    }
+    return this.setNodePtrFirst(ptr, node);
+  }
+
+  override after(): Chunk | null {
+    return this.nextSibling;
+  }
+
+  get nextSibling(): Chunk | null {
+    return (this as any)._nextSibling ?? null;
+  }
+
+  set nextSibling(chunk: Chunk | null) {
+    (this as any)._nextSibling = chunk;
+  }
+
+  static allocSize(nChars: number): number {
+    return roundUp(16 + nChars * 4); // Approximate size
+  }
+}
+
+// GroveImpl - the main grove implementation
+class GroveImpl {
+  private groveIndex_: number;
+  private root_: SgmlDocumentChunk;
+  private origin_: ParentChunk;
+  private pendingData_: DataChunk | null = null;
+  private tailPtr_: { chunk: Chunk | null } | null = null;
+
+  private dtd_: Dtd | null = null;
+  private sd_: Sd | null = null;
+  private prologSyntax_: Syntax | null = null;
+  private instanceSyntax_: Syntax | null = null;
+
+  private hasDefaultEntity_: boolean = false;
+  private haveAppinfo_: boolean = false;
+  private appinfo_: StringC | null = null;
+
+  private complete_: boolean = false;
+  private completeLimit_: any = null;
+  private completeLimitWithLocChunkAfter_: any = null;
+  private currentLocOrigin_: Origin | null = null;
+
+  private refCount_: number = 0;
+  private nEvents_: number = 0;
+  private nElements_: number = 0;
+  private pulseStep_: number = 0;
+  private nChunksSinceLocOrigin_: number = 0;
+  private messageList_: MessageItem | null = null;
+  private messageListTailP_: { item: MessageItem | null } = { item: null };
+
+  // Storage
+  private chunks_: Chunk[] = [];
+
+  constructor(groveIndex: number) {
+    this.groveIndex_ = groveIndex;
+    this.root_ = new SgmlDocumentChunk();
+    this.root_.origin = null;
+    this.root_.locIndex = 0;
+    this.origin_ = this.root_;
+    this.tailPtr_ = { chunk: null };
+  }
+
+  // Reference counting
+  addRef(): void {
+    this.refCount_++;
+  }
+
+  release(): void {
+    if (--this.refCount_ === 0) {
+      // GC handles cleanup
+    }
+  }
+
+  // Accessors
+  groveIndex(): number { return this.groveIndex_; }
+  root(): SgmlDocumentChunk { return this.root_; }
+  governingDtd(): Dtd | null { return this.dtd_; }
+  complete(): boolean { return this.complete_; }
+  completeLimit(): any { return this.completeLimit_; }
+  completeLimitWithLocChunkAfter(): any { return this.completeLimitWithLocChunkAfter_; }
+  currentLocOrigin(): Origin | null { return this.currentLocOrigin_; }
+  hasDefaultEntity(): boolean { return this.hasDefaultEntity_; }
+  messageList(): MessageItem | null { return this.messageList_; }
+
+  generalSubstTable(): SubstTable | null {
+    return this.instanceSyntax_?.generalSubstTable() ?? null;
+  }
+
+  entitySubstTable(): SubstTable | null {
+    return this.instanceSyntax_?.entitySubstTable() ?? null;
+  }
+
+  getAppinfo(): { available: boolean; appinfo: StringC | null } {
+    if (!this.haveAppinfo_) {
+      if (!this.complete_ && this.sd_ === null)
+        return { available: false, appinfo: null };
+      return { available: true, appinfo: null };
+    }
+    return { available: true, appinfo: this.appinfo_ };
+  }
+
+  // Modifiers
+  setAppinfo(appinfo: StringC): void {
+    this.appinfo_ = appinfo;
+    this.haveAppinfo_ = true;
+  }
+
+  setDtd(dtd: Dtd): void {
+    this.dtd_ = dtd;
+    this.hasDefaultEntity_ = dtd.defaultEntity() !== null;
+    this.finishProlog();
+    this.pulse();
+  }
+
+  setSd(sd: Sd, prologSyntax: Syntax, instanceSyntax: Syntax): void {
+    this.sd_ = sd;
+    this.prologSyntax_ = prologSyntax;
+    this.instanceSyntax_ = instanceSyntax;
+  }
+
+  getSd(): { sd: Sd | null; prologSyntax: Syntax | null; instanceSyntax: Syntax | null } {
+    return {
+      sd: this.sd_,
+      prologSyntax: this.prologSyntax_,
+      instanceSyntax: this.instanceSyntax_
+    };
+  }
+
+  setComplete(): void {
+    this.completeLimit_ = null;
+    this.completeLimitWithLocChunkAfter_ = null;
+    this.tailPtr_ = null;
+    this.pendingData_ = null;
+    this.complete_ = true;
+  }
+
+  appendMessage(item: MessageItem): void {
+    if (this.messageList_ === null) {
+      this.messageList_ = item;
+    } else {
+      let current = this.messageList_;
+      while (current.next() !== null) {
+        current = current.next()!;
+      }
+      current.setNext(item);
+    }
+    this.pulse();
+  }
+
+  // Grove building
+  pendingData(): DataChunk | null { return this.pendingData_; }
+
+  push(chunk: ElementChunk, hasId: boolean): void {
+    if (this.pendingData_) {
+      if (this.tailPtr_) {
+        this.tailPtr_.chunk = this.pendingData_;
+        this.tailPtr_ = null;
+      }
+      this.pendingData_ = null;
+    }
+    chunk.elementIndex = this.nElements_++;
+    chunk.origin = this.origin_;
+    this.origin_ = chunk;
+
+    // Set as document element if appropriate
+    if (chunk.origin === this.root_ && this.root_.documentElement === null) {
+      this.root_.documentElement = chunk;
+    } else if (this.tailPtr_) {
+      this.tailPtr_.chunk = chunk;
+      this.tailPtr_ = null;
+    }
+
+    this.maybePulse();
+  }
+
+  pop(): void {
+    if (this.pendingData_) {
+      if (this.tailPtr_) {
+        this.tailPtr_.chunk = this.pendingData_;
+        this.tailPtr_ = null;
+      }
+      this.pendingData_ = null;
+    }
+    this.tailPtr_ = { chunk: this.origin_.nextSibling };
+    this.origin_ = this.origin_.origin!;
+    if (this.origin_ === this.root_) {
+      this.finishDocumentElement();
+    }
+    this.maybePulse();
+  }
+
+  appendSibling(chunk: Chunk): void {
+    if (this.pendingData_) {
+      if (this.tailPtr_) {
+        this.tailPtr_.chunk = this.pendingData_;
+        this.tailPtr_ = null;
+      }
+      this.pendingData_ = null;
+    }
+    chunk.origin = this.origin_;
+    if (this.tailPtr_) {
+      this.tailPtr_.chunk = chunk;
+      this.tailPtr_ = null;
+    }
+    this.pendingData_ = null;
+    this.maybePulse();
+  }
+
+  appendDataSibling(chunk: DataChunk): void {
+    if (this.pendingData_) {
+      if (this.tailPtr_) {
+        this.tailPtr_.chunk = this.pendingData_;
+        this.tailPtr_ = null;
+      }
+    }
+    chunk.origin = this.origin_;
+    this.pendingData_ = chunk;
+    this.maybePulse();
+  }
+
+  setLocOrigin(locOrigin: Origin): void {
+    if (locOrigin !== this.currentLocOrigin_ ||
+        this.nChunksSinceLocOrigin_ >= 100) {
+      this.storeLocOrigin(locOrigin);
+    }
+  }
+
+  haveRootOrigin(): boolean {
+    return this.origin_ === this.root_;
+  }
+
+  maybeMoreSiblings(chunk: ParentChunk): boolean {
+    if (this.complete_) {
+      return chunk.nextSibling !== null;
+    }
+    return this.origin_ === chunk || this.maybeMoreSiblings1(chunk);
+  }
+
+  waitForMoreNodes(): boolean {
+    // In JS we don't have blocking - return false
+    return false;
+  }
+
+  allocChunk<T extends Chunk>(ChunkClass: new () => T): T {
+    this.nChunksSinceLocOrigin_++;
+    const chunk = new ChunkClass();
+    this.chunks_.push(chunk);
+    return chunk;
+  }
+
+  private finishProlog(): void {
+    this.tailPtr_ = null;
+  }
+
+  private finishDocumentElement(): void {
+    if (this.root_.epilog === null) {
+      this.tailPtr_ = { chunk: null };
+    }
+  }
+
+  private pulse(): void {
+    // In JS, this is a no-op (no threading)
+  }
+
+  private maybePulse(): void {
+    this.nEvents_++;
+    // In JS, this is a no-op (no threading)
+  }
+
+  private storeLocOrigin(locOrigin: Origin): void {
+    this.currentLocOrigin_ = locOrigin;
+    this.nChunksSinceLocOrigin_ = 0;
+  }
+
+  private maybeMoreSiblings1(chunk: ParentChunk): boolean {
+    for (let open: ParentChunk | null = this.origin_; open; open = open.origin) {
+      if (open === chunk) return true;
+    }
+    return chunk.nextSibling !== null;
+  }
+}
+
+// BaseNode - abstract base class for all nodes
+abstract class BaseNode extends Node implements LocNode {
+  private grove_: GroveImpl;
+
+  constructor(grove: GroveImpl) {
+    super();
+    this.grove_ = grove;
+  }
+
+  grove(): GroveImpl { return this.grove_; }
+
+  canReuse(ptr: NodePtr): boolean {
+    return ptr.node() === this && this.refCount_ === 1;
+  }
+
+  override groveIndex(): number {
+    return this.grove_.groveIndex();
+  }
+
+  override equals(node: Node): boolean {
+    if (!(node instanceof BaseNode)) return false;
+    return this.same(node);
+  }
+
+  abstract same(node: BaseNode): boolean;
+
+  // LocNode interface
+  getLocation(): { result: AccessResult; location: Location } {
+    return { result: AccessResult.accessNull, location: new Location() };
+  }
+
+  override queryInterface(iid: string): { result: boolean; ptr: any } {
+    if (iid === LocNode.iid) {
+      return { result: true, ptr: this };
+    }
+    return { result: false, ptr: null };
+  }
+
+  override nextSibling(ptr: NodePtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override getOrigin(ptr: NodePtr): AccessResult {
+    return AccessResult.accessNull;
+  }
+
+  override getGroveRoot(ptr: NodePtr): AccessResult {
+    ptr.assign(new SgmlDocumentNode(this.grove_, this.grove_.root()));
+    return AccessResult.accessOK;
+  }
+
+  inChunk(node: DataNode): boolean {
+    return false;
+  }
+
+  inChunkCdata(node: CdataAttributeValueNode): boolean {
+    return false;
+  }
+}
+
+// ChunkNode - base class for chunk-based nodes
+abstract class ChunkNode extends BaseNode {
+  protected chunk_: LocChunk;
+
+  constructor(grove: GroveImpl, chunk: LocChunk) {
+    super(grove);
+    this.chunk_ = chunk;
+  }
+
+  chunk(): LocChunk { return this.chunk_; }
+
+  override same(node: BaseNode): boolean {
+    if (!(node instanceof ChunkNode)) return false;
+    return this.chunk_ === node.chunk_;
+  }
+
+  override hash(): number {
+    // Simple hash based on chunk identity
+    return 0;
+  }
+
+  override getParent(ptr: NodePtr): AccessResult {
+    if (this.chunk_.origin) {
+      return this.chunk_.origin.setNodePtrFirst(ptr, this);
+    }
+    return AccessResult.accessNull;
+  }
+
+  override getOrigin(ptr: NodePtr): AccessResult {
+    return this.getParent(ptr);
+  }
+
+  override getLocation(): { result: AccessResult; location: Location } {
+    // TODO: Implement proper location tracking
+    return { result: AccessResult.accessNull, location: new Location() };
+  }
+
+  override nextChunkSibling(ptr: NodePtr): AccessResult {
+    const p = this.chunk_.after();
+    if (!p) return AccessResult.accessNull;
+    if (p.origin !== this.chunk_.origin) return AccessResult.accessNull;
+    return p.setNodePtrFirst(ptr, this);
+  }
+
+  override firstSibling(ptr: NodePtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override siblingsIndex(): { result: AccessResult; index: number } {
+    return { result: AccessResult.accessNotInClass, index: 0 };
+  }
+}
+
+// SgmlDocumentNode
+class SgmlDocumentNode extends ChunkNode implements SdNode {
+  constructor(grove: GroveImpl, chunk: SgmlDocumentChunk) {
+    super(grove, chunk);
+  }
+
+  private docChunk(): SgmlDocumentChunk {
+    return this.chunk_ as SgmlDocumentChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.sgmlDocument(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.sgmlDocument;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessNull, id: ComponentName.Id.noId };
+  }
+
+  override getDocumentElement(ptr: NodePtr): AccessResult {
+    const chunk = this.docChunk();
+    if (chunk.documentElement) {
+      return chunk.documentElement.setNodePtrFirst(ptr, this);
+    }
+    return AccessResult.accessNull;
+  }
+
+  override getProlog(ptr: NodeListPtr): AccessResult {
+    // TODO: Implement prolog
+    return AccessResult.accessNull;
+  }
+
+  override getEpilog(ptr: NodeListPtr): AccessResult {
+    // TODO: Implement epilog
+    return AccessResult.accessNull;
+  }
+
+  override getSgmlConstants(ptr: NodePtr): AccessResult {
+    ptr.assign(new SgmlConstantsNode(this.grove()));
+    return AccessResult.accessOK;
+  }
+
+  override getApplicationInfo(): { result: AccessResult; str: GroveString } {
+    const appinfo = this.grove().getAppinfo();
+    if (!appinfo.available) {
+      return { result: AccessResult.accessTimeout, str: new GroveString() };
+    }
+    if (appinfo.appinfo === null) {
+      return { result: AccessResult.accessNull, str: new GroveString() };
+    }
+    const str = new GroveString();
+    setString(str, appinfo.appinfo);
+    return { result: AccessResult.accessOK, str };
+  }
+
+  override getGoverningDoctype(ptr: NodePtr): AccessResult {
+    const dtd = this.grove().governingDtd();
+    if (dtd) {
+      ptr.assign(new DocumentTypeNode(this.grove(), dtd));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    // Return document element as the only child
+    const docElement = this.docChunk().documentElement;
+    if (docElement) {
+      const nodePtr = new NodePtr();
+      docElement.setNodePtrFirst(nodePtr, this);
+      ptr.assign(new SiblingNodeList(nodePtr));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNull;
+  }
+
+  // SdNode interface
+  getSd(): {
+    result: AccessResult;
+    sd: Sd | null;
+    prologSyntax: Syntax | null;
+    instanceSyntax: Syntax | null;
+  } {
+    const sdInfo = this.grove().getSd();
+    if (sdInfo.sd === null) {
+      return {
+        result: AccessResult.accessNull,
+        sd: null,
+        prologSyntax: null,
+        instanceSyntax: null
+      };
+    }
+    return {
+      result: AccessResult.accessOK,
+      ...sdInfo
+    };
+  }
+
+  override queryInterface(iid: string): { result: boolean; ptr: any } {
+    if (iid === SdNode.iid) {
+      return { result: true, ptr: this };
+    }
+    return super.queryInterface(iid);
+  }
+}
+
+// ElementNode
+class ElementNode extends ChunkNode {
+  constructor(grove: GroveImpl, chunk: ElementChunk) {
+    super(grove, chunk);
+  }
+
+  private elemChunk(): ElementChunk {
+    return this.chunk_ as ElementChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.element(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.element;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  override getGi(): { result: AccessResult; str: GroveString } {
+    const chunk = this.elemChunk();
+    if (chunk.type) {
+      const str = new GroveString();
+      setString(str, chunk.type.name());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override hasGi(gi: GroveString): boolean {
+    const result = this.getGi();
+    if (result.result !== AccessResult.accessOK) return false;
+    return result.str.equals(gi);
+  }
+
+  override getId(): { result: AccessResult; str: GroveString } {
+    const chunk = this.elemChunk();
+    const id = chunk.id();
+    if (id) {
+      const str = new GroveString();
+      setString(str, id);
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNull, str: new GroveString() };
+  }
+
+  override getMustOmitEndTag(): { result: AccessResult; mustOmit: boolean } {
+    return { result: AccessResult.accessOK, mustOmit: this.elemChunk().mustOmitEndTag() };
+  }
+
+  override getIncluded(): { result: AccessResult; included: boolean } {
+    return { result: AccessResult.accessOK, included: this.elemChunk().included() };
+  }
+
+  override elementIndex(): { result: AccessResult; index: number } {
+    return { result: AccessResult.accessOK, index: this.elemChunk().elementIndex };
+  }
+
+  override firstChild(ptr: NodePtr): AccessResult {
+    const chunk = this.elemChunk();
+    const firstChild = chunk.nextSibling;
+    if (firstChild && firstChild.origin === chunk) {
+      return firstChild.setNodePtrFirst(ptr, this);
+    }
+    return AccessResult.accessNull;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    const firstChildPtr = new NodePtr();
+    const result = this.firstChild(firstChildPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(firstChildPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nextPtr = new NodePtr();
+    const result = this.nextChunkSibling(nextPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nextPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  reuseFor(chunk: ElementChunk): void {
+    this.chunk_ = chunk;
+  }
+
+  static add(grove: GroveImpl, event: StartElementEvent): void {
+    const origin = event.location().origin();
+    if (origin && origin.pointer()) {
+      grove.setLocOrigin(origin.pointer()!);
+    }
+    const chunk = grove.allocChunk(ElementChunk);
+    chunk.type = event.elementType();
+    chunk.locIndex = event.location().index();
+    const hasId = false; // TODO: Check for ID attribute
+    grove.push(chunk, hasId);
+  }
+}
+
+// DataNode
+class DataNode extends ChunkNode {
+  private index_: number;
+
+  constructor(grove: GroveImpl, chunk: DataChunk, index: number) {
+    super(grove, chunk);
+    this.index_ = index;
+  }
+
+  private dataChunk(): DataChunk {
+    return this.chunk_ as DataChunk;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.dataChar(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.dataChar;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idContent };
+  }
+
+  override same(node: BaseNode): boolean {
+    if (!(node instanceof DataNode)) return false;
+    return this.chunk_ === node.chunk_ && this.index_ === node.index_;
+  }
+
+  override charChunk(mapper: SdataMapper): { result: AccessResult; str: GroveString } {
+    const chunk = this.dataChunk();
+    const str = new GroveString(chunk.data(), chunk.size - this.index_, this.index_);
+    return { result: AccessResult.accessOK, str };
+  }
+
+  override nextSibling(ptr: NodePtr): AccessResult {
+    const chunk = this.dataChunk();
+    if (this.index_ + 1 < chunk.size) {
+      ptr.assign(new DataNode(this.grove(), chunk, this.index_ + 1));
+      return AccessResult.accessOK;
+    }
+    return this.nextChunkSibling(ptr);
+  }
+
+  override nextChunkSibling(ptr: NodePtr): AccessResult {
+    const p = this.chunk_.after();
+    if (!p) return AccessResult.accessNull;
+    if (p.origin !== this.chunk_.origin) return AccessResult.accessNull;
+    return p.setNodePtrFirstData(ptr, this);
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nextPtr = new NodePtr();
+    const result = this.nextChunkSibling(nextPtr);
+    if (result === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nextPtr));
+      return AccessResult.accessOK;
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  reuseFor(chunk: DataChunk, index: number): void {
+    this.chunk_ = chunk;
+    this.index_ = index;
+  }
+
+  static add(grove: GroveImpl, event: DataEvent): void {
+    const dataLen = event.dataLength();
+    if (dataLen > 0) {
+      const origin = event.location().origin();
+      if (origin && origin.pointer()) {
+        grove.setLocOrigin(origin.pointer()!);
+      }
+      const chunk = grove.allocChunk(DataChunk);
+      chunk.size = dataLen;
+      chunk.locIndex = event.location().index();
+      // Copy data
+      const eventData = event.data();
+      const data = new Uint32Array(dataLen);
+      for (let i = 0; i < dataLen; i++) {
+        data[i] = eventData[i];
+      }
+      chunk.setData(data);
+      grove.appendDataSibling(chunk);
+    }
+  }
+}
+
+// SgmlConstantsNode
+class SgmlConstantsNode extends BaseNode {
+  constructor(grove: GroveImpl) {
+    super(grove);
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.sgmlConstants(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.sgmlConstants;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idSgmlConstants };
+  }
+
+  override same(node: BaseNode): boolean {
+    return node instanceof SgmlConstantsNode && this.grove() === node.grove();
+  }
+
+  override getOrigin(ptr: NodePtr): AccessResult {
+    ptr.assign(new SgmlDocumentNode(this.grove(), this.grove().root()));
+    return AccessResult.accessOK;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+}
+
+// DocumentTypeNode
+class DocumentTypeNode extends BaseNode {
+  private dtd_: Dtd;
+
+  constructor(grove: GroveImpl, dtd: Dtd) {
+    super(grove);
+    this.dtd_ = dtd;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.documentType(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.documentType;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idDoctypesAndLinktypes };
+  }
+
+  override same(node: BaseNode): boolean {
+    return node instanceof DocumentTypeNode && this.dtd_ === node.dtd_;
+  }
+
+  override getName(): { result: AccessResult; str: GroveString } {
+    const str = new GroveString();
+    setString(str, this.dtd_.name());
+    return { result: AccessResult.accessOK, str };
+  }
+
+  override getGoverning(): { result: AccessResult; governing: boolean } {
+    return { result: AccessResult.accessOK, governing: true };
+  }
+
+  override getOrigin(ptr: NodePtr): AccessResult {
+    ptr.assign(new SgmlDocumentNode(this.grove(), this.grove().root()));
+    return AccessResult.accessOK;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+}
+
+// CdataAttributeValueNode placeholder
+class CdataAttributeValueNode extends BaseNode {
+  constructor(grove: GroveImpl) {
+    super(grove);
+  }
+
+  override same(node: BaseNode): boolean {
+    return false;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.dataChar(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.dataChar;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idValue };
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNotInClass;
+  }
+}
+
+// BaseNodeList
+class BaseNodeList extends NodeList {
+  canReuse(ptr: NodeListPtr): boolean {
+    return ptr.list() === this && this.refCount_ === 1;
+  }
+
+  override first(ptr: NodePtr): AccessResult {
+    return AccessResult.accessNull;
+  }
+
+  override rest(ptr: NodeListPtr): AccessResult {
+    return this.chunkRest(ptr);
+  }
+
+  override chunkRest(ptr: NodeListPtr): AccessResult {
+    return AccessResult.accessNull;
+  }
+}
+
+// SiblingNodeList
+class SiblingNodeList extends BaseNodeList {
+  private first_: NodePtr;
+
+  constructor(first: NodePtr) {
+    super();
+    this.first_ = first;
+  }
+
+  override first(ptr: NodePtr): AccessResult {
+    ptr.assign(this.first_.node());
+    return AccessResult.accessOK;
+  }
+
+  override rest(ptr: NodeListPtr): AccessResult {
+    if (this.canReuse(ptr)) {
+      const ret = this.first_.assignNextSibling();
+      if (ret === AccessResult.accessOK) return ret;
+    } else {
+      const next = new NodePtr();
+      const ret = this.first_.node()!.nextSibling(next);
+      if (ret === AccessResult.accessOK) {
+        ptr.assign(new SiblingNodeList(next));
+        return ret;
+      }
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  override chunkRest(ptr: NodeListPtr): AccessResult {
+    if (this.canReuse(ptr)) {
+      const ret = this.first_.assignNextChunkSibling();
+      if (ret === AccessResult.accessOK) return ret;
+    } else {
+      const next = new NodePtr();
+      const ret = this.first_.node()!.nextChunkSibling(next);
+      if (ret === AccessResult.accessOK) {
+        ptr.assign(new SiblingNodeList(next));
+        return ret;
+      }
+    }
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  override ref(n: number, ptr: NodePtr): AccessResult {
+    if (n === 0) {
+      ptr.assign(this.first_.node());
+      return AccessResult.accessOK;
+    }
+    return this.first_.node()!.followSiblingRef(n - 1, ptr);
+  }
+}
+
+// Event handlers
+class GroveBuilderMessageEventHandler extends ErrorCountEventHandler {
+  protected grove_: GroveImpl;
+  private mgr_: Messenger;
+  private msgFmt_: MessageFormatter;
+
+  constructor(groveIndex: number, mgr: Messenger, msgFmt: MessageFormatter) {
+    super();
+    this.mgr_ = mgr;
+    this.msgFmt_ = msgFmt;
+    this.grove_ = new GroveImpl(groveIndex);
+    this.grove_.addRef();
+  }
+
+  destroy(): void {
+    this.grove_.setComplete();
+    this.grove_.release();
+  }
+
+  makeInitialRoot(root: NodePtr): void {
+    root.assign(new SgmlDocumentNode(this.grove_, this.grove_.root()));
+  }
+
+  setSd(sd: Sd, prologSyntax: Syntax, instanceSyntax: Syntax): void {
+    this.grove_.setSd(sd, prologSyntax, instanceSyntax);
+  }
+
+  override message(event: MessageEvent): void {
+    this.mgr_.dispatchMessage(event.message());
+    // TODO: Format and store message
+    super.message(event);
+  }
+
+  override sgmlDecl(event: SgmlDeclEvent): void {
+    const sd = event.sdPointer();
+    const prologSyntax = event.prologSyntaxPointer();
+    const instanceSyntax = event.instanceSyntaxPointer();
+    if (sd && sd.pointer() && prologSyntax && prologSyntax.pointer() && instanceSyntax && instanceSyntax.pointer()) {
+      this.grove_.setSd(
+        sd.pointer()!,
+        prologSyntax.pointer()!,
+        instanceSyntax.pointer()!
+      );
+    }
+  }
+}
+
+class GroveBuilderEventHandler extends GroveBuilderMessageEventHandler {
+  constructor(groveIndex: number, mgr: Messenger, msgFmt: MessageFormatter) {
+    super(groveIndex, mgr, msgFmt);
+  }
+
+  override appinfo(event: AppinfoEvent): void {
+    const strRef: { value: StringC | null } = { value: null };
+    if (event.literal(strRef) && strRef.value) {
+      this.grove_.setAppinfo(strRef.value);
+    }
+  }
+
+  override endProlog(event: EndPrologEvent): void {
+    const dtd = event.dtdPointer();
+    if (dtd && dtd.pointer()) {
+      this.grove_.setDtd(dtd.pointer()!);
+    }
+  }
+
+  override startElement(event: StartElementEvent): void {
+    ElementNode.add(this.grove_, event);
+  }
+
+  override endElement(event: EndElementEvent): void {
+    this.grove_.pop();
+  }
+
+  override data(event: DataEvent): void {
+    DataNode.add(this.grove_, event);
+  }
+
+  override sdataEntity(event: SdataEntityEvent): void {
+    // TODO: Implement SdataNode.add
+  }
+
+  override nonSgmlChar(event: NonSgmlCharEvent): void {
+    // TODO: Implement NonSgmlNode.add
+  }
+
+  override externalDataEntity(event: ExternalDataEntityEvent): void {
+    // TODO: Implement ExternalDataNode.add
+  }
+
+  override subdocEntity(event: SubdocEntityEvent): void {
+    // TODO: Implement SubdocNode.add
+  }
+
+  override pi(event: PiEvent): void {
+    // TODO: Implement PiNode.add
+  }
+
+  override entityDefaulted(event: EntityDefaultedEvent): void {
+    // TODO: Implement defaulted entity handling
+  }
+}
+
+// GroveBuilder - the main factory class
+export class GroveBuilder {
+  private constructor() {
+    // Private constructor - use static methods
+  }
+
+  static setBlocking(b: boolean): boolean {
+    const prev = blockingAccess;
+    blockingAccess = b;
+    return prev;
+  }
+
+  static make(
+    index: number,
+    mgr: Messenger,
+    msgFmt: MessageFormatter,
+    validateOnly: boolean,
+    root: NodePtr
+  ): ErrorCountEventHandler {
+    let eh: GroveBuilderMessageEventHandler;
+    if (validateOnly) {
+      eh = new GroveBuilderMessageEventHandler(index, mgr, msgFmt);
+    } else {
+      eh = new GroveBuilderEventHandler(index, mgr, msgFmt);
+    }
+    eh.makeInitialRoot(root);
+    return eh;
+  }
+
+  static makeWithSd(
+    index: number,
+    mgr: Messenger,
+    msgFmt: MessageFormatter,
+    validateOnly: boolean,
+    sd: Sd,
+    prologSyntax: Syntax,
+    instanceSyntax: Syntax,
+    root: NodePtr
+  ): ErrorCountEventHandler {
+    let eh: GroveBuilderMessageEventHandler;
+    if (validateOnly) {
+      eh = new GroveBuilderMessageEventHandler(index, mgr, msgFmt);
+    } else {
+      eh = new GroveBuilderEventHandler(index, mgr, msgFmt);
+    }
+    eh.makeInitialRoot(root);
+    eh.setSd(sd, prologSyntax, instanceSyntax);
+    return eh;
+  }
+}
+
+// Export internal classes for use by other modules
+export {
+  GroveImpl,
+  BaseNode,
+  ChunkNode,
+  SgmlDocumentNode,
+  ElementNode,
+  DataNode,
+  SgmlConstantsNode,
+  DocumentTypeNode,
+  BaseNodeList,
+  SiblingNodeList,
+  Chunk,
+  ParentChunk,
+  ElementChunk,
+  DataChunk,
+  SgmlDocumentChunk
+};
