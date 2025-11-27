@@ -53,6 +53,43 @@ export class StringOutputStream implements OutputCharStream {
   }
 }
 
+// File-based output stream
+export class FileOutputStream implements OutputCharStream {
+  private filename_: string;
+  private buffer_: string[] = [];
+  private fs_: typeof import('fs') | null = null;
+
+  constructor(filename: string) {
+    this.filename_ = filename;
+    // Dynamic import of fs to avoid issues in browser environments
+    try {
+      this.fs_ = require('fs');
+    } catch {
+      // fs not available - will fail on flush
+    }
+  }
+
+  write(s: string): void {
+    this.buffer_.push(s);
+  }
+
+  put(c: number): void {
+    this.buffer_.push(String.fromCharCode(c));
+  }
+
+  flush(): void {
+    if (this.fs_ && this.buffer_.length > 0) {
+      const content = this.buffer_.join('');
+      this.fs_.writeFileSync(this.filename_, content, 'utf8');
+      this.buffer_ = [];
+    }
+  }
+
+  close(): void {
+    this.flush();
+  }
+}
+
 // Record end state
 enum ReState {
   stateMiddle = 0,

@@ -63,6 +63,7 @@ export { EntityDecl } from './EntityDecl';
 export { EntityCatalog } from './EntityCatalog';
 export { SOEntityCatalog, SOCatalogManager, CatalogParser, CatalogEntry, CatalogMessages } from './SOEntityCatalog';
 export { EntityManager } from './EntityManager';
+export { ExtendEntityManager, createExtendEntityManager } from './ExtendEntityManager';
 export { Attributed } from './Attributed';
 export { Notation } from './Notation';
 
