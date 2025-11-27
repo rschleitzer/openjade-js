@@ -266,7 +266,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
 
     // Output XML declaration and fot root element
     this.os().write('<?xml version="1.0"?>' + RE);
-    this.os().write('<!DOCTYPE fot PUBLIC "-//James Clark//DTD DSSSL Flow Object Tree//EN" "fot.dtd">' + RE);
     this.os().write('<fot>' + RE);
   }
 
