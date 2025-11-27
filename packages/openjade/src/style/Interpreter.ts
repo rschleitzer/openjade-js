@@ -1515,6 +1515,29 @@ export class Interpreter {
     this.dPartIndex_++;
   }
 
+  // Set character repertoire from public ID
+  // Port of Interpreter.cxx setCharRepertoire()
+  setCharRepertoire(pubid: StringC): void {
+    // Convert StringC to string for comparison
+    let pubidStr = '';
+    if (pubid.ptr_) {
+      for (let i = 0; i < pubid.length_; i++) {
+        pubidStr += String.fromCharCode(pubid.ptr_[i]);
+      }
+    }
+
+    if (pubidStr === 'UNREGISTERED::OpenJade//Character Repertoire::OpenJade') {
+      if (this.strictMode_) {
+        this.installCharNames();
+        this.installSdata();
+        // Set additional name start characters
+        for (let i = 127; i < 0x10000; i++) {
+          this.lexCategory_[i] = LexCategory.lexAddNameStart;
+        }
+      }
+    }
+  }
+
   // Installation methods (to be filled in)
   private installSyntacticKeys(): void {
     // Install syntactic keywords - matches upstream Interpreter.cxx
@@ -2561,6 +2584,55 @@ export class Interpreter {
     const key = typeof name === 'string' ? name : stringCToString(name);
     const textStr = typeof text === 'string' ? text : stringCToString(text);
     this.sdataEntities_.set(key, { text: textStr, ch });
+  }
+
+  // Count child number - counts siblings with same gi before this node
+  // Returns 0-based index
+  childNumber(node: NodePtr): { result: boolean; value: number } {
+    const nd = node.node();
+    if (!nd) return { result: false, value: 0 };
+
+    // Get gi (generic identifier/element name)
+    const giResult = nd.getGi();
+    if (giResult.result !== AccessResult.accessOK) {
+      return { result: false, value: 0 };
+    }
+    const gi = giResult.str;
+
+    // Get parent - if no parent, it's the document element (index 0)
+    const parentPtr = new NodePtr();
+    if (nd.getParent(parentPtr) !== AccessResult.accessOK) {
+      return { result: true, value: 0 };
+    }
+
+    // Get first sibling and count
+    const firstPtr = new NodePtr();
+    if (nd.firstSibling(firstPtr) !== AccessResult.accessOK) {
+      return { result: false, value: 0 };
+    }
+
+    let count = 0;
+    let tem = firstPtr;
+    while (tem.node()) {
+      const temNode = tem.node()!;
+      // Check if we've reached our target node
+      if (temNode === nd) {
+        break;
+      }
+      // Check if sibling has same gi
+      const temGiResult = temNode.getGi();
+      if (temGiResult.result === AccessResult.accessOK && temGiResult.str.equals(gi)) {
+        count++;
+      }
+      // Move to next sibling
+      const nextPtr = new NodePtr();
+      if (temNode.nextChunkSibling(nextPtr) !== AccessResult.accessOK) {
+        break;
+      }
+      tem = nextPtr;
+    }
+
+    return { result: true, value: count };
   }
 }
 

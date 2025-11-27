@@ -1,22 +1,18 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Messenger, StringC, CharsetInfo, InputSource, InternalInputSource, InputSourceOrigin } from '@openjade-js/opensp';
+import { Messenger, StringC, CharsetInfo, InputSource, InternalInputSource, InputSourceOrigin, SgmlParser } from '@openjade-js/opensp';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 import { Interpreter } from './Interpreter';
 import { ProcessContext } from './ProcessContext';
 import { SchemeParser } from './SchemeParser';
+import { DssslSpecEventHandler, Part, DeclarationType } from './DssslSpecEventHandler';
 
 // Forward declaration for GroveManager - must match Interpreter.ts
 export interface GroveManager {
   mapSysid(sysid: StringC): void;
   readEntity(sysid: StringC, src: { value: StringC }): boolean;
-}
-
-// Forward declaration for SgmlParser
-export interface SgmlParser {
-  // SGML parser interface
 }
 
 // Forward declaration for FOTBuilder extensions
@@ -117,26 +113,84 @@ export class StyleEngine {
   }
 
   // Parse a DSSSL specification
+  // Port of StyleEngine.cxx parseSpec()
   parseSpec(
     specParser: SgmlParser,
     charset: CharsetInfo,
     id: StringC,
     mgr: Messenger
   ): void {
-    // In the full implementation, this would:
-    // 1. Use DssslSpecEventHandler to load specification parts
-    // 2. Parse declaration elements (char-repertoire, standard-chars, etc.)
-    // 3. Parse command line definitions
-    // 4. Parse style specification body
-    // 5. Compile the interpreter
+    // Use DssslSpecEventHandler to parse the DSSSL spec as SGML
+    const specHandler = new DssslSpecEventHandler(mgr);
+    const parts: Part[] = [];
+    specHandler.load(specParser, charset, id, parts);
 
-    // For now, simplified implementation:
+    // Process declaration elements in two phases
+    // Phase 0: charRepertoire, standardChars
+    // Phase 1: all other declarations
+    for (let phase = 0; phase < 2; phase++) {
+      for (const part of parts) {
+        // First iterate over doc-level declarations, then part-level
+        const docDecls = part.doc().diter();
+        const partDecls = part.diter();
+
+        for (const decls of [docDecls, partDecls]) {
+          for (const decl of decls) {
+            const declType = decl.type();
+            const isPhase0 = declType === DeclarationType.charRepertoire ||
+                            declType === DeclarationType.standardChars;
+
+            if ((isPhase0 && phase === 0) || (!isPhase0 && phase === 1)) {
+              const inSrc = decl.makeInputSource(specHandler);
+              if (inSrc) {
+                const scm = new SchemeParser(this.interpreter_, inSrc);
+                switch (declType) {
+                  case DeclarationType.charRepertoire:
+                    this.interpreter_.setCharRepertoire(decl.name());
+                    break;
+                  case DeclarationType.standardChars:
+                    scm.parseStandardChars();
+                    break;
+                  case DeclarationType.mapSdataEntity:
+                    scm.parseMapSdataEntity(decl.name(), decl.text());
+                    break;
+                  case DeclarationType.addNameChars:
+                    scm.parseNameChars();
+                    break;
+                  case DeclarationType.addSeparatorChars:
+                    scm.parseSeparatorChars();
+                    break;
+                  default:
+                    // Unsupported declaration - skip
+                    break;
+                }
+              }
+            }
+          }
+        }
+        this.interpreter_.dEndPart();
+      }
+    }
+
     // Parse command line definitions if any
     if (this.cmdline_.length_ > 0) {
       const origin = InputSourceOrigin.make();
       const inSrc = new InternalInputSource(this.cmdline_, origin);
       const scm = new SchemeParser(this.interpreter_, inSrc);
       scm.parse();
+      this.interpreter_.endPart();
+    }
+
+    // Parse style specification body elements from each part
+    for (const part of parts) {
+      const bodyElements = part.iter();
+      for (const bodyElement of bodyElements) {
+        const inSrc = bodyElement.makeInputSource(specHandler);
+        if (inSrc) {
+          const scm = new SchemeParser(this.interpreter_, inSrc);
+          scm.parse();
+        }
+      }
       this.interpreter_.endPart();
     }
 

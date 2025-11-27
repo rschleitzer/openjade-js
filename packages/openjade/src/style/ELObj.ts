@@ -112,6 +112,8 @@ export interface Interpreter {
   charProperty(prop: StringC, c: Char, loc: Location, def: ELObj | null): ELObj;
   // External procedure lookup
   lookupExternalProc(pubid: StringC): FunctionObj | null;
+  // Grove utilities
+  childNumber(node: any): { result: boolean; value: number };
 }
 
 // Forward type for node pointer

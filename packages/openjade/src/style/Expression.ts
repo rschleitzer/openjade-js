@@ -2014,13 +2014,13 @@ export class MakeExpression extends StyleExpression {
     }
 
     flowObj = this.applyConstNonInheritedCs(flowObj, interp, env);
-    const nContent = this.exprs_.length - this.keys_.length;
+    let nContent = this.exprs_.length - this.keys_.length;
     const cFlowObj = flowObj.asCompoundFlowObj();
 
     if (!cFlowObj && nContent > 0) {
       interp.setNextLocation(this.location());
       interp.message(InterpreterMessages.atomicContent, this.foc_.name());
-      // nContent = 0; // Cannot modify in TS, just skip
+      nContent = 0;
     }
 
     rest = this.compileNonInheritedCs(interp, env, stackPos + 1, rest);

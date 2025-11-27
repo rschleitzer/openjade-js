@@ -18,6 +18,9 @@ import {
   LengthSpecObj,
   VectorObj,
   NodeListObj,
+  NodePtrNodeListObj,
+  EmptyNodeListObj,
+  PairNodeListObj,
   FunctionObj,
   Signature,
   GlyphIdObj,
@@ -35,7 +38,7 @@ import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj } from './SosofoObj';
 import { InterpreterMessages, IdentifierImpl } from './Interpreter';
 import { PrimitiveObj, EvalContext, VM, InsnPtr } from './Insn';
 import { Interpreter } from './ELObj';
-import { NodePtr } from '../grove/Node';
+import { NodePtr, NodeListPtr, GroveString, AccessResult, SdataMapper } from '../grove/Node';
 
 // Signature helper
 function sig(nRequired: number, nOptional: number, restArg: boolean): Signature {
@@ -67,7 +70,10 @@ const ArgErrorMessages = {
   notALanguage: 'notALanguage',
   outOfRange: 'outOfRange',
   incompatibleDimensions: 'incompatibleDimensions',
-  divisionByZero: 'divisionByZero'
+  divisionByZero: 'divisionByZero',
+  notASingletonNode: 'notASingletonNode',
+  notAnOptSingletonNode: 'notAnOptSingletonNode',
+  invalidRadix: 'invalidRadix'
 } as const;
 
 // Base class that handles common arg error pattern
@@ -2201,6 +2207,617 @@ export class ErrorPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// ============ Grove Access Primitives ============
+
+// number->string
+export class NumberToStringPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);
+  constructor() { super(NumberToStringPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const rv = args[0].realValue();
+    if (!rv.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notANumber, 0, args[0]);
+    }
+
+    let radix = 10;
+    if (argc > 1) {
+      const rRes = args[1].exactIntegerValue();
+      if (!rRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnExactInteger, 1, args[1]);
+      }
+      switch (rRes.value) {
+        case 2:
+        case 8:
+        case 10:
+        case 16:
+          radix = rRes.value;
+          break;
+        default:
+          interp.setNextLocation(loc);
+          interp.message(ArgErrorMessages.invalidRadix);
+          radix = 10;
+          break;
+      }
+    }
+
+    // Format number to string with radix
+    let str: string;
+    const iv = args[0].exactIntegerValue();
+    if (iv.result) {
+      str = iv.value.toString(radix);
+    } else {
+      if (radix !== 10) {
+        // Non-integer with non-10 radix: convert to integer first
+        str = Math.round(rv.value).toString(radix);
+      } else {
+        str = rv.value.toString();
+      }
+    }
+
+    // Convert to StringObj
+    const chars = new Uint32Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      chars[i] = str.charCodeAt(i);
+    }
+    return new StringObj(chars);
+  }
+}
+
+// Default SdataMapper for grove operations
+const defaultSdataMapper = new SdataMapper();
+
+// Helper function for attribute-string: get attribute string from node
+function nodeAttributeString(
+  node: NodePtr,
+  attrName: Uint32Array,
+  attrNameLen: number,
+  _interp: Interpreter,
+  value: { str: string }
+): boolean {
+  const nd = node.node();
+  if (!nd) return false;
+
+  const attsResult = nd.getAttributes();
+  if (attsResult.result !== AccessResult.accessOK || !attsResult.atts) {
+    return false;
+  }
+
+  // Create GroveString from attr name
+  const name = new GroveString(attrName, attrNameLen);
+
+  const attPtr = new NodePtr();
+  if (attsResult.atts.namedNode(name, attPtr) !== AccessResult.accessOK) {
+    return false;
+  }
+
+  const attNode = attPtr.node();
+  if (!attNode) return false;
+
+  // Check if attribute is implied
+  const impliedResult = attNode.getImplied();
+  if (impliedResult.result === AccessResult.accessOK && impliedResult.implied) {
+    return false;
+  }
+
+  // Try to get tokens (for tokenized attributes)
+  const tokResult = attNode.tokens();
+  if (tokResult.result === AccessResult.accessOK) {
+    const gs = tokResult.str;
+    let str = '';
+    const data = gs.data();
+    if (data) {
+      for (let i = 0; i < gs.size(); i++) {
+        str += String.fromCharCode(data[i]);
+      }
+    }
+    value.str = str;
+    return true;
+  }
+
+  // Fall back to getting child content
+  const firstPtr = new NodePtr();
+  if (attNode.firstChild(firstPtr) === AccessResult.accessOK) {
+    let str = '';
+    let tem = firstPtr;
+    do {
+      const temNode = tem.node();
+      if (!temNode) break;
+      const chunkResult = temNode.charChunk(defaultSdataMapper);
+      if (chunkResult.result === AccessResult.accessOK) {
+        const gs = chunkResult.str;
+        const data = gs.data();
+        if (data) {
+          for (let i = 0; i < gs.size(); i++) {
+            str += String.fromCharCode(data[i]);
+          }
+        }
+      }
+      // Move to next chunk sibling
+      const nextPtr = new NodePtr();
+      if (temNode.nextChunkSibling(nextPtr) !== AccessResult.accessOK) {
+        break;
+      }
+      tem = nextPtr;
+    } while (tem.node());
+    value.str = str;
+    return true;
+  }
+
+  value.str = '';
+  return true;
+}
+
+// attribute-string
+export class AttributeStringPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);
+  constructor() { super(AttributeStringPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnOptSingletonNode, 1, args[1]);
+      }
+      if (!nodeRes.node.node()) {
+        return interp.makeFalse();
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    const value = { str: '' };
+    if (nodeAttributeString(node, sd.data, sd.length, interp, value)) {
+      const chars = new Uint32Array(value.str.length);
+      for (let i = 0; i < value.str.length; i++) {
+        chars[i] = value.str.charCodeAt(i);
+      }
+      return new StringObj(chars);
+    }
+    return interp.makeFalse();
+  }
+}
+
+// child-number
+export class ChildNumberPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(ChildNumberPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Count position among siblings
+    const numRes = interp.childNumber(node);
+    if (!numRes.result) {
+      return interp.makeFalse();
+    }
+    // DSSSL child-number is 1-based
+    return interp.makeInteger(numRes.value + 1);
+  }
+}
+
+// current-node
+export class CurrentNodePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  constructor() { super(CurrentNodePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.currentNode) {
+      return this.noCurrentNodeError(interp, loc);
+    }
+    return new NodePtrNodeListObj(context.currentNode);
+  }
+}
+
+// gi - get generic identifier (element name)
+export class GiPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(GiPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnOptSingletonNode, 0, args[0]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    if (!node.node()) {
+      return interp.makeFalse();
+    }
+
+    const giResult = node.node()!.getGi();
+    if (giResult.result === AccessResult.accessOK) {
+      const gs = giResult.str;
+      const data = gs.data();
+      if (data) {
+        const chars = new Uint32Array(gs.size());
+        for (let i = 0; i < gs.size(); i++) {
+          chars[i] = data[i];
+        }
+        return new StringObj(chars);
+      }
+    }
+    return interp.makeFalse();
+  }
+}
+
+// NodeListPtrNodeListObj - wraps a grove NodeListPtr as an ELObj NodeListObj
+class NodeListPtrNodeListObj extends NodeListObj {
+  private listPtr_: NodeListPtr;
+
+  constructor(listPtr: NodeListPtr) {
+    super();
+    this.listPtr_ = listPtr;
+  }
+
+  override nodeListFirst(_ctx: EvalContext, _interp: Interpreter): NodePtr {
+    const list = this.listPtr_.list();
+    if (!list) return new NodePtr();
+    const nodePtr = new NodePtr();
+    if (list.first(nodePtr) !== AccessResult.accessOK) {
+      return new NodePtr();
+    }
+    return nodePtr;
+  }
+
+  override nodeListRest(_ctx: EvalContext, _interp: Interpreter): NodeListObj {
+    const list = this.listPtr_.list();
+    if (!list) return new EmptyNodeListObj();
+    const restPtr = new NodeListPtr();
+    if (list.rest(restPtr) !== AccessResult.accessOK) {
+      return new EmptyNodeListObj();
+    }
+    if (!restPtr.list()) return new EmptyNodeListObj();
+    return new NodeListPtrNodeListObj(restPtr);
+  }
+
+  override nodeListChunkRest(_ctx: EvalContext, _interp: Interpreter): { list: NodeListObj; chunk: boolean } {
+    const list = this.listPtr_.list();
+    if (!list) return { list: new EmptyNodeListObj(), chunk: false };
+    const restPtr = new NodeListPtr();
+    if (list.chunkRest(restPtr) !== AccessResult.accessOK) {
+      return { list: new EmptyNodeListObj(), chunk: false };
+    }
+    if (!restPtr.list()) return { list: new EmptyNodeListObj(), chunk: false };
+    return { list: new NodeListPtrNodeListObj(restPtr), chunk: true };
+  }
+}
+
+// children - get children of a node as node list
+export class ChildrenPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(ChildrenPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nodeRes = args[0].optSingletonNodeList(context, interp);
+    if (!nodeRes.result) {
+      // Check if it's a node list (for mapping)
+      const nl = args[0].asNodeList();
+      if (nl) {
+        // TODO: Support mapping over node lists
+        return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+      }
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    if (!nodeRes.node.node()) {
+      return args[0];
+    }
+
+    const nd = nodeRes.node.node()!;
+    const childrenListPtr = new NodeListPtr();
+    if (nd.children(childrenListPtr) !== AccessResult.accessOK) {
+      return interp.makeEmptyNodeList();
+    }
+
+    return new NodeListPtrNodeListObj(childrenListPtr);
+  }
+}
+
+// node-list->list - convert node list to Scheme list
+export class NodeListToListPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(NodeListToListPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    // Build a list from the node list
+    let result: ELObj = interp.makeNil();
+    const nodes: ELObj[] = [];
+
+    // Collect all nodes first
+    let current: NodeListObj | null = nl;
+    while (current) {
+      const first = current.nodeListFirst(context, interp);
+      if (!first.node()) break;
+      nodes.push(new NodePtrNodeListObj(first));
+      current = current.nodeListRest(context, interp);
+    }
+
+    // Build list from end to beginning
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      result = interp.makePair(nodes[i], result);
+    }
+
+    return result;
+  }
+}
+
+// id - get ID attribute value of current node
+export class IdPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(IdPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnOptSingletonNode, 0, args[0]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    if (!node.node()) {
+      return interp.makeFalse();
+    }
+
+    // Look for ID attribute
+    const idAttr = new Uint32Array([0x69, 0x64]); // "id"
+    const value = { str: '' };
+    if (nodeAttributeString(node, idAttr, 2, interp, value)) {
+      const chars = new Uint32Array(value.str.length);
+      for (let i = 0; i < value.str.length; i++) {
+        chars[i] = value.str.charCodeAt(i);
+      }
+      return new StringObj(chars);
+    }
+
+    // Try uppercase "ID"
+    const idAttrUpper = new Uint32Array([0x49, 0x44]); // "ID"
+    if (nodeAttributeString(node, idAttrUpper, 2, interp, value)) {
+      const chars = new Uint32Array(value.str.length);
+      for (let i = 0; i < value.str.length; i++) {
+        chars[i] = value.str.charCodeAt(i);
+      }
+      return new StringObj(chars);
+    }
+
+    return interp.makeFalse();
+  }
+}
+
+// select-elements - filter node list to elements with given gi
+export class SelectElementsPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(SelectElementsPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    // Get the gi to match - can be string or list of strings
+    const giList: string[] = [];
+    const sd = args[1].stringData();
+    if (sd.result) {
+      let giStr = '';
+      for (let i = 0; i < sd.length; i++) {
+        giStr += String.fromCharCode(sd.data[i]);
+      }
+      giList.push(giStr);
+    } else {
+      // Try as a list
+      let p = args[1];
+      while (!p.isNil()) {
+        const pair = p.asPair();
+        if (!pair) break;
+        const elemSd = pair.car().stringData();
+        if (elemSd.result) {
+          let giStr = '';
+          for (let i = 0; i < elemSd.length; i++) {
+            giStr += String.fromCharCode(elemSd.data[i]);
+          }
+          giList.push(giStr);
+        }
+        p = pair.cdr();
+      }
+    }
+
+    if (giList.length === 0) {
+      return interp.makeEmptyNodeList();
+    }
+
+    // Filter the node list
+    const matchingNodes: NodePtr[] = [];
+    let current: NodeListObj | null = nl;
+    while (current) {
+      const first = current.nodeListFirst(context, interp);
+      if (!first.node()) break;
+
+      const nd = first.node()!;
+      const giResult = nd.getGi();
+      if (giResult.result === AccessResult.accessOK) {
+        const gs = giResult.str;
+        const data = gs.data();
+        if (data) {
+          let nodeGi = '';
+          for (let i = 0; i < gs.size(); i++) {
+            nodeGi += String.fromCharCode(data[i]);
+          }
+          if (giList.includes(nodeGi) || giList.includes(nodeGi.toUpperCase()) || giList.includes(nodeGi.toLowerCase())) {
+            matchingNodes.push(first);
+          }
+        }
+      }
+
+      current = current.nodeListRest(context, interp);
+    }
+
+    // Build result as a pair node list
+    if (matchingNodes.length === 0) {
+      return interp.makeEmptyNodeList();
+    }
+
+    let result: NodeListObj = new NodePtrNodeListObj(matchingNodes[matchingNodes.length - 1]);
+    for (let i = matchingNodes.length - 2; i >= 0; i--) {
+      result = new PairNodeListObj(new NodePtrNodeListObj(matchingNodes[i]), result);
+    }
+    return result;
+  }
+}
+
+// node-list-filter - filter node list using predicate
+export class NodeListFilterPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(NodeListFilterPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // For now, return empty - full implementation would need procedure call support
+    return interp.makeEmptyNodeList();
+  }
+}
+
+// node-list=? - test if node lists have same first node
+export class IsNodeListEqualPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(IsNodeListEqualPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nl1 = args[0].asNodeList();
+    const nl2 = args[1].asNodeList();
+    if (!nl1 || !nl2) {
+      return interp.makeFalse();
+    }
+
+    const first1 = nl1.nodeListFirst(context, interp);
+    const first2 = nl2.nodeListFirst(context, interp);
+
+    if (!first1.node() && !first2.node()) {
+      return interp.makeTrue();
+    }
+    if (!first1.node() || !first2.node()) {
+      return interp.makeFalse();
+    }
+
+    // Compare by identity
+    return first1.node() === first2.node() ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// node-list-last - get last node from node list
+export class NodeListLastPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(NodeListLastPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    let lastNode: NodePtr | null = null;
+    let current: NodeListObj | null = nl;
+    while (current) {
+      const first = current.nodeListFirst(context, interp);
+      if (!first.node()) break;
+      lastNode = first;
+      current = current.nodeListRest(context, interp);
+    }
+
+    if (lastNode) {
+      return new NodePtrNodeListObj(lastNode);
+    }
+    return interp.makeEmptyNodeList();
+  }
+}
+
+// element-with-id - find element by ID in grove
+export class ElementWithIdPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);
+  constructor() { super(ElementWithIdPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    // Build ID string
+    let targetId = '';
+    for (let i = 0; i < sd.length; i++) {
+      targetId += String.fromCharCode(sd.data[i]);
+    }
+
+    // Get starting node
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return interp.makeEmptyNodeList();
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return interp.makeEmptyNodeList();
+      }
+      node = context.currentNode;
+    }
+
+    // Navigate to grove root and search
+    const rootPtr = new NodePtr();
+    if (node.node()!.getTreeRoot(rootPtr) !== AccessResult.accessOK) {
+      return interp.makeEmptyNodeList();
+    }
+
+    // For now, return empty - full implementation would need ID index
+    return interp.makeEmptyNodeList();
+  }
+}
+
+// map - apply procedure to each element, returning list of results
+export class MapPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, true);  // At least 2 args (proc + list), rest are more lists
+  constructor() { super(MapPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (argc < 2) {
+      interp.setNextLocation(loc);
+      interp.message(ArgErrorMessages.notAList);
+      return interp.makeError();
+    }
+
+    // For now return empty list - full implementation needs procedure calling machinery
+    return interp.makeNil();
+  }
+}
+
 // ============ Map of all primitives ============
 export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['cons', () => new ConsPrimitiveObj()],
@@ -2314,5 +2931,19 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['sosofo-append', () => new SosofoAppendPrimitiveObj()],
   ['error', () => new ErrorPrimitiveObj()],
   ['external-procedure', () => new ExternalProcedurePrimitiveObj()],
-  ['literal', () => new LiteralPrimitiveObj()]
+  ['literal', () => new LiteralPrimitiveObj()],
+  ['number->string', () => new NumberToStringPrimitiveObj()],
+  ['attribute-string', () => new AttributeStringPrimitiveObj()],
+  ['child-number', () => new ChildNumberPrimitiveObj()],
+  ['current-node', () => new CurrentNodePrimitiveObj()],
+  ['gi', () => new GiPrimitiveObj()],
+  ['children', () => new ChildrenPrimitiveObj()],
+  ['node-list->list', () => new NodeListToListPrimitiveObj()],
+  ['id', () => new IdPrimitiveObj()],
+  ['select-elements', () => new SelectElementsPrimitiveObj()],
+  ['node-list-filter', () => new NodeListFilterPrimitiveObj()],
+  ['node-list=?', () => new IsNodeListEqualPrimitiveObj()],
+  ['node-list-last', () => new NodeListLastPrimitiveObj()],
+  ['element-with-id', () => new ElementWithIdPrimitiveObj()],
+  ['map', () => new MapPrimitiveObj()]
 ]);

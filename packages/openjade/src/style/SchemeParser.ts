@@ -1790,9 +1790,6 @@ export class SchemeParser extends Messenger {
         const ident = this.lookup(this.currentToken_);
         const identKey = { value: SyntacticKey.notKey };
         if (ident.syntacticKey(identKey) && identKey.value === SyntacticKey.keyElse) {
-          if (!this.parseBegin({ value: elseClause })) {
-            return false;
-          }
           const elseExpr = { value: null as Expression | null };
           if (!this.parseBegin(elseExpr)) {
             return false;

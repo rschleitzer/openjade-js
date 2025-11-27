@@ -105,10 +105,13 @@ export abstract class DssslApp extends Messenger implements GroveManager {
     // TODO: This is a workaround - should use EntityManager properly
     const sysidStr = stringCToString(sysid);
 
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path');
+
     // Try reading the file directly
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require('fs');
       const data = fs.readFileSync(sysidStr, 'utf8') as string;
       const chars: Char[] = [];
       for (let i = 0; i < data.length; i++) {
@@ -121,7 +124,28 @@ export abstract class DssslApp extends Messenger implements GroveManager {
       } as StringC;
       return true;
     } catch (e) {
-      // File not found directly, try via entity manager
+      // File not found directly, try other paths
+    }
+
+    // For builtins.dsl, try package dsssl directory
+    // Note: __dirname at runtime is dist/style/, so need to go up 2 levels to package root
+    if (sysidStr === 'builtins.dsl') {
+      const builtinsPath = path.join(__dirname, '..', '..', 'dsssl', 'builtins.dsl');
+      try {
+        const data = fs.readFileSync(builtinsPath, 'utf8') as string;
+        const chars: Char[] = [];
+        for (let i = 0; i < data.length; i++) {
+          chars.push(data.charCodeAt(i));
+        }
+        contents.value = {
+          ptr_: chars,
+          length_: chars.length,
+          size: () => chars.length
+        } as StringC;
+        return true;
+      } catch (e) {
+        // Not found in package dsssl directory
+      }
     }
 
     // Fall back to entity manager
@@ -307,16 +331,22 @@ export abstract class DssslApp extends Messenger implements GroveManager {
       se.defineVariable(v);
     }
 
-    // Load the DSSSL stylesheet
-    // Read the stylesheet file
-    const stylesheetContent: { value: StringC } = { value: makeStringC('') };
-    if (!this.readEntity(this.dssslSpecSysid_, stylesheetContent)) {
-      console.error('Could not read DSSSL specification: ' + stringCToString(this.dssslSpecSysid_));
-      return;
+    // Create SGML parser for the DSSSL specification
+    const specParams = new SgmlParser.Params();
+    specParams.sysid = this.dssslSpecSysid_;
+    if (this.entityManager_) {
+      specParams.entityManager = new Ptr(this.entityManager_);
+      // Reset the base ID so spec parser can find files relative to CWD, not the document
+      const em = this.entityManager_ as any;
+      if (em.setCurrentBaseId) {
+        em.setCurrentBaseId(makeStringC(''));
+      }
     }
 
-    // Load and parse the stylesheet
-    se.loadStylesheet(stringCToString(stylesheetContent.value));
+    const specParser = new SgmlParser(specParams);
+
+    // Parse the DSSSL specification
+    se.parseSpec(specParser, this.systemCharset(), this.dssslSpecId_, this);
 
     // Process the document grove
     if (this.rootNode_) {

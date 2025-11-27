@@ -72,6 +72,8 @@ export abstract class EventHandler {
   ignoredMarkup(event: any): void {}
   entityDefaulted(event: any): void {}
   sgmlDeclEntity(event: any): void {}
+  inputClosed(inputSource: any): void {}
+  inputOpened(inputSource: any): void {}
 }
 
 export abstract class Event extends Link {
