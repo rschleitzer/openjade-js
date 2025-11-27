@@ -124,6 +124,22 @@ export class StyleEngine {
     return this.interpreter_;
   }
 
+  // Load and parse a DSSSL stylesheet from a string
+  loadStylesheet(dsssl: string): void {
+    // Convert JS string to StringC
+    const styleSource = Interpreter.makeStringC(dsssl);
+
+    // Parse the stylesheet
+    const origin = InputSourceOrigin.make();
+    const inSrc = new InternalInputSource(styleSource, origin);
+    const scm = new SchemeParser(this.interpreter_, inSrc);
+    scm.parse();
+    this.interpreter_.endPart();
+
+    // Compile the interpreter
+    this.interpreter_.compile();
+  }
+
   // Helper to append two StringC values
   private appendStringC(a: StringC, b: StringC): StringC {
     if (a.length_ === 0) return b;

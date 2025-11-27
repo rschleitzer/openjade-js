@@ -399,6 +399,32 @@ export class Address {
   }
 }
 
+// Grid NIC
+export class GridNIC {
+  nColumns: number = 1;
+  nRows: number = 1;
+}
+
+// Grid cell NIC
+export class GridCellNIC {
+  columnNumber: number = 1;
+  rowNumber: number = 1;
+}
+
+// Header/footer flags for simple page sequence
+export enum HF {
+  firstHF = 0o1,
+  otherHF = 0,
+  frontHF = 0o2,
+  backHF = 0,
+  headerHF = 0o4,
+  footerHF = 0,
+  leftHF = 0,
+  centerHF = 0o10,
+  rightHF = 0o20,
+  nHF = 0o30
+}
+
 // Abstract FOTBuilder class
 export abstract class FOTBuilder {
   asSaveFOTBuilder(): SaveFOTBuilder | null {
@@ -473,6 +499,200 @@ export abstract class FOTBuilder {
   // Node processing markers (for debugging/tracing)
   startNode(_node: NodePtr, _processingMode: StringC): void {}
   endNode(): void {}
+
+  // Score flow objects
+  startScoreChar(_c: Char): void {}
+  startScoreLengthSpec(_ls: LengthSpec): void {}
+  startScoreSymbol(_sym: Symbol): void {}
+  endScore(): void {}
+
+  // Leader flow object
+  startLeader(_nic: LeaderNIC): void {}
+  endLeader(): void {}
+
+  // Sideline flow object
+  startSideline(): void {}
+  endSideline(): void {}
+
+  // Box flow object
+  startBox(_nic: BoxNIC): void {}
+  endBox(): void {}
+
+  // Table flow objects
+  startTable(_nic: TableNIC): void {}
+  endTable(): void {}
+  tableBeforeRowBorder(): void {}
+  tableAfterRowBorder(): void {}
+  tableBeforeColumnBorder(): void {}
+  tableAfterColumnBorder(): void {}
+  startTablePart(_nic: TablePartNIC, _header: { ref: FOTBuilder | null }, _footer: { ref: FOTBuilder | null }): void {}
+  endTablePart(): void {}
+  tableColumn(_nic: TableColumnNIC): void {}
+  startTableRow(): void {}
+  endTableRow(): void {}
+  startTableCell(_nic: TableCellNIC): void {}
+  endTableCell(): void {}
+  tableCellBeforeRowBorder(): void {}
+  tableCellAfterRowBorder(): void {}
+  tableCellBeforeColumnBorder(): void {}
+  tableCellAfterColumnBorder(): void {}
+
+  // Math flow objects
+  startMathSequence(): void {}
+  endMathSequence(): void {}
+  startFraction(_numerator: { ref: FOTBuilder | null }, _denominator: { ref: FOTBuilder | null }): void {}
+  fractionBar(): void {}
+  endFraction(): void {}
+  startUnmath(): void {}
+  endUnmath(): void {}
+  startSuperscript(): void {}
+  endSuperscript(): void {}
+  startSubscript(): void {}
+  endSubscript(): void {}
+  startScript(
+    _preSup: { ref: FOTBuilder | null },
+    _preSub: { ref: FOTBuilder | null },
+    _postSup: { ref: FOTBuilder | null },
+    _postSub: { ref: FOTBuilder | null },
+    _midSup: { ref: FOTBuilder | null },
+    _midSub: { ref: FOTBuilder | null }
+  ): void {}
+  endScript(): void {}
+  startMark(_overMark: { ref: FOTBuilder | null }, _underMark: { ref: FOTBuilder | null }): void {}
+  endMark(): void {}
+  startFence(_open: { ref: FOTBuilder | null }, _close: { ref: FOTBuilder | null }): void {}
+  endFence(): void {}
+  startRadical(_degree: { ref: FOTBuilder | null }): void {}
+  radicalRadical(_nic: CharacterNIC): void {}
+  radicalRadicalDefaulted(): void {}
+  endRadical(): void {}
+  startMathOperator(
+    _oper: { ref: FOTBuilder | null },
+    _lowerLimit: { ref: FOTBuilder | null },
+    _upperLimit: { ref: FOTBuilder | null }
+  ): void {}
+  endMathOperator(): void {}
+
+  // Grid flow objects
+  startGrid(_nic: GridNIC): void {}
+  endGrid(): void {}
+  startGridCell(_nic: GridCellNIC): void {}
+  endGridCell(): void {}
+
+  // Simple page sequence
+  startSimplePageSequence(_headerFooter: (FOTBuilder | null)[]): void {}
+  endSimplePageSequenceHeaderFooter(): void {}
+  endSimplePageSequence(): void {}
+
+  // More inherited characteristic setters
+  setMarginaliaSep(_sep: LengthSpec): void {}
+  setBorderPresent(_present: boolean): void {}
+  setLineThickness(_thickness: Length): void {}
+  setCellBeforeRowMargin(_margin: Length): void {}
+  setCellAfterRowMargin(_margin: Length): void {}
+  setCellBeforeColumnMargin(_margin: Length): void {}
+  setCellAfterColumnMargin(_margin: Length): void {}
+  setLineSep(_sep: Length): void {}
+  setBoxSizeBefore(_size: Length): void {}
+  setBoxSizeAfter(_size: Length): void {}
+  setPositionPointShift(_shift: LengthSpec): void {}
+  setStartMargin(_margin: LengthSpec): void {}
+  setEndMargin(_margin: LengthSpec): void {}
+  setSidelineSep(_sep: LengthSpec): void {}
+  setAsisWrapIndent(_indent: LengthSpec): void {}
+  setLineNumberSep(_sep: LengthSpec): void {}
+  setLastLineJustifyLimit(_limit: LengthSpec): void {}
+  setJustifyGlyphSpaceMaxAdd(_add: LengthSpec): void {}
+  setJustifyGlyphSpaceMaxRemove(_remove: LengthSpec): void {}
+  setTableCornerRadius(_radius: LengthSpec): void {}
+  setBoxCornerRadius(_radius: LengthSpec): void {}
+  setMinPreLineSpacing(_spacing: OptLengthSpec): void {}
+  setMinPostLineSpacing(_spacing: OptLengthSpec): void {}
+  setMinLeading(_leading: OptLengthSpec): void {}
+  setInhibitLineBreaks(_inhibit: boolean): void {}
+  setHyphenate(_hyphenate: boolean): void {}
+  setKern(_kern: boolean): void {}
+  setLigature(_ligature: boolean): void {}
+  setScoreSpaces(_score: boolean): void {}
+  setFloatOutMarginalia(_float: boolean): void {}
+  setFloatOutSidelines(_float: boolean): void {}
+  setFloatOutLineNumbers(_float: boolean): void {}
+  setCellBackground(_bg: boolean): void {}
+  setSpanWeak(_weak: boolean): void {}
+  setIgnoreRecordEnd(_ignore: boolean): void {}
+  setNumberedLines(_numbered: boolean): void {}
+  setHangingPunct(_hanging: boolean): void {}
+  setBoxOpenEnd(_open: boolean): void {}
+  setTruncateLeader(_truncate: boolean): void {}
+  setAlignLeader(_align: boolean): void {}
+  setTablePartOmitMiddleHeader(_omit: boolean): void {}
+  setTablePartOmitMiddleFooter(_omit: boolean): void {}
+  setBorderOmitAtBreak(_omit: boolean): void {}
+  setPrincipalModeSimultaneous(_sim: boolean): void {}
+  setMarginaliaKeepWithPrevious(_keep: boolean): void {}
+  setGridEquidistantRows(_equi: boolean): void {}
+  setGridEquidistantColumns(_equi: boolean): void {}
+  setLineJoin(_join: Symbol): void {}
+  setLineCap(_cap: Symbol): void {}
+  setLineNumberSide(_side: Symbol): void {}
+  setKernMode(_mode: Symbol): void {}
+  setInputWhitespaceTreatment(_treatment: Symbol): void {}
+  setFillingDirection(_dir: Symbol): void {}
+  setLastLineQuadding(_quad: Symbol): void {}
+  setMathDisplayMode(_mode: Symbol): void {}
+  setScriptPreAlign(_align: Symbol): void {}
+  setScriptPostAlign(_align: Symbol): void {}
+  setScriptMidSupAlign(_align: Symbol): void {}
+  setScriptMidSubAlign(_align: Symbol): void {}
+  setNumeratorAlign(_align: Symbol): void {}
+  setDenominatorAlign(_align: Symbol): void {}
+  setGridPositionCellType(_type: Symbol): void {}
+  setGridColumnAlignment(_align: Symbol): void {}
+  setGridRowAlignment(_align: Symbol): void {}
+  setBoxType(_type: Symbol): void {}
+  setGlyphAlignmentMode(_mode: Symbol): void {}
+  setBoxBorderAlignment(_align: Symbol): void {}
+  setCellRowAlignment(_align: Symbol): void {}
+  setBorderAlignment(_align: Symbol): void {}
+  setSidelineSide(_side: Symbol): void {}
+  setHyphenationKeep(_keep: Symbol): void {}
+  setFontStructure(_structure: Symbol): void {}
+  setFontProportionateWidth(_width: Symbol): void {}
+  setCellCrossed(_crossed: Symbol): void {}
+  setMarginaliaSide(_side: Symbol): void {}
+  setLayer(_layer: number): void {}
+  setBackgroundLayer(_layer: number): void {}
+  setBorderPriority(_priority: number): void {}
+  setLineRepeat(_repeat: number): void {}
+  setSpan(_span: number): void {}
+  setMinLeaderRepeat(_repeat: number): void {}
+  setHyphenationRemainCharCount(_count: number): void {}
+  setHyphenationPushCharCount(_count: number): void {}
+  setWidowCount(_count: number): void {}
+  setOrphanCount(_count: number): void {}
+  setExpandTabs(_tabs: number): void {}
+  setHyphenationLadderCount(_count: number): void {}
+  setBackgroundTile(_pubid: PublicId): void {}
+  setLineBreakingMethod(_pubid: PublicId): void {}
+  setLineCompositionMethod(_pubid: PublicId): void {}
+  setImplicitBidiMethod(_pubid: PublicId): void {}
+  setGlyphSubstMethod(_pubid: PublicId): void {}
+  setGlyphReorderMethod(_pubid: PublicId): void {}
+  setHyphenationMethod(_pubid: PublicId): void {}
+  setTableAutoWidthMethod(_pubid: PublicId): void {}
+  setFontName(_pubid: PublicId): void {}
+  setEscapementSpaceBefore(_space: InlineSpace): void {}
+  setEscapementSpaceAfter(_space: InlineSpace): void {}
+  setInlineSpaceSpace(_space: OptInlineSpace): void {}
+  setPageWidth(_width: Length): void {}
+  setPageHeight(_height: Length): void {}
+  setLeftMargin(_margin: Length): void {}
+  setRightMargin(_margin: Length): void {}
+  setTopMargin(_margin: Length): void {}
+  setBottomMargin(_margin: Length): void {}
+  setHeaderMargin(_margin: Length): void {}
+  setFooterMargin(_margin: Length): void {}
+  setGlyphSubstTable(_table: GlyphSubstTable[]): void {}
 }
 
 // SaveFOTBuilder - for saving FOT to replay later
