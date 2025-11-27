@@ -16,6 +16,10 @@ import {
   Address
 } from './FOTBuilder';
 
+// Import Identifier for local use and re-export for other modules
+import { Identifier, SyntacticKey } from './Identifier';
+export { Identifier, SyntacticKey };
+
 // Forward declaration for Insn and InsnPtr
 export interface Insn {
   execute(vm: unknown): Insn | null;
@@ -25,57 +29,70 @@ export interface Insn {
 
 export type InsnPtr = Insn | null;
 
-// Forward declarations (will be defined in other files)
-export class Interpreter {
-  // Placeholder - will be fully implemented in Interpreter.ts
-  private nextLocation_: Location | null = null;
-  private debugMode_: boolean = false;
-  private nilObj_: ELObj | null = null;
-  private falseObj_: ELObj | null = null;
-  private errorObj_: ELObj | null = null;
+// Forward declaration for VM (defined in Insn.ts)
+export interface VM {
+  sp: number;
+  interp: Interpreter;
+  closure: ELObj[] | null;
+  protectClosure: ELObj | null;
+  frame: number;
+  nActualArgs: number;
+  closureLoc: Location;
+  modeStack: any[];
+  processingMode: any;
+  overridingStyle: any;
+  currentNode: any;
+  actualDependencies: any[];
+  stkRef(i: number): ELObj;
+  stkSet(i: number, obj: ELObj): void;
+  stackGet(index: number): ELObj;
+  stackSet(index: number, val: ELObj): void;
+  needStack(n: number): void;
+  push(val: ELObj): void;
+  pop(): ELObj;
+  top(): ELObj;
+  setTop(val: ELObj): void;
+  pushFrame(next: Insn | null, argsPushed: number): void;
+  popFrame(): Insn | null;
+  setClosureArgToCC(): void;
+  arg(i: number, sp?: number): ELObj;
+  returnFromPrimitive(n: number, obj: ELObj | null): void;
+  initStack(): void;
+  eval(insn: Insn | null, display?: ELObj[] | null, arg?: ELObj | null): ELObj;
+}
 
-  setNextLocation(loc: Location): void {
-    this.nextLocation_ = loc;
-  }
-
-  message(_msgType: string, ..._args: unknown[]): void {
-    // Placeholder for message handling
-  }
-
-  debugMode(): boolean {
-    return this.debugMode_;
-  }
-
-  makePermanent(_obj: ELObj): void {
-    // Mark object as permanent (no-op in JS GC)
-  }
-
-  makeNil(): ELObj {
-    if (!this.nilObj_) {
-      this.nilObj_ = new NilObj();
-    }
-    return this.nilObj_;
-  }
-
-  makeFalse(): ELObj {
-    if (!this.falseObj_) {
-      this.falseObj_ = new FalseObj();
-    }
-    return this.falseObj_;
-  }
-
-  makePair(car: ELObj, cdr: ELObj): ELObj {
-    return new PairObj(car, cdr);
-  }
-
-  isError(obj: ELObj): boolean {
-    return obj === this.errorObj_;
-  }
-
-  lookup(_name: string): Identifier | null {
-    // Placeholder - will be implemented in Interpreter.ts
-    return null;
-  }
+// Forward declaration for Interpreter - equivalent to C++ "class Interpreter;"
+// This interface defines the minimal API needed by other modules.
+// The full implementation is in Interpreter.ts
+export interface Interpreter {
+  // Core methods needed by ELObj and other modules
+  setNextLocation(loc: Location): void;
+  message(msgType: string, ...args: unknown[]): void;
+  debugMode(): boolean;
+  makePermanent(obj: ELObj): void;
+  makeReadOnly(obj: ELObj): void;
+  makeNil(): ELObj;
+  makeFalse(): ELObj;
+  makeTrue(): ELObj;
+  makeError(): ELObj;
+  makePair(car: ELObj, cdr: ELObj): PairObj;
+  isError(obj: ELObj): boolean;
+  lookup(name: any): any;
+  // Additional methods used by primitives
+  makeInteger(n: number): ELObj;
+  makeReal(n: number): ELObj;
+  makeChar(ch: number): ELObj;
+  makeSymbol(name: any): ELObj;
+  makeKeyword(name: any): ELObj;
+  makeString(chars: number[] | any): ELObj;
+  makeLength(val: number, dim: number): ELObj;
+  makeUnspecified(): ELObj;
+  makeEmptyNodeList(): ELObj;
+  // Character mapping methods used by SchemeParser
+  addStandardChar(name: any, ch: number): void;
+  addNameChar(name: any, ch: number): void;
+  addSeparatorChar(name: any, ch: number): void;
+  addSdataEntity(name: any, text: any, ch: number): void;
 }
 
 export class EvalContext {
@@ -99,87 +116,6 @@ export interface FlowObj {
   copy(interp: Interpreter): FlowObj;
   setNonInheritedC(ident: Identifier, val: ELObj, loc: Location, interp: Interpreter): void;
   isCharacter(): boolean;
-}
-
-export class Identifier {
-  // Placeholder for identifier
-  private name_: StyleString;
-  private syntacticKey_: number = 0;
-  private hasSyntacticKey_: boolean = false;
-  private inheritedC_: InheritedC | null = null;
-  private flowObj_: FlowObj | null = null;
-  private value_: ELObj | null = null;
-  private evaluated_: boolean = false;
-  private definedPart_: number = 0;
-  private definedLoc_: Location | null = null;
-  private defined_: boolean = false;
-
-  // Syntactic key constants
-  static readonly SyntacticKey = {
-    keyUse: 1,
-    keyLabel: 2,
-    keyContentMap: 3
-  } as const;
-
-  constructor(name: StyleString) {
-    this.name_ = name;
-  }
-
-  name(): StyleString { return this.name_; }
-
-  syntacticKey(sk: { value: number }): boolean {
-    if (this.hasSyntacticKey_) {
-      sk.value = this.syntacticKey_;
-      return true;
-    }
-    return false;
-  }
-
-  setSyntacticKey(sk: number): void {
-    this.syntacticKey_ = sk;
-    this.hasSyntacticKey_ = true;
-  }
-
-  inheritedC(): InheritedC | null {
-    return this.inheritedC_;
-  }
-
-  setInheritedC(ic: InheritedC | null): void {
-    this.inheritedC_ = ic;
-  }
-
-  flowObj(): FlowObj | null {
-    return this.flowObj_;
-  }
-
-  setFlowObj(fo: FlowObj | null): void {
-    this.flowObj_ = fo;
-  }
-
-  defined(part: { value: number }, loc: { value: Location | null }): boolean {
-    part.value = this.definedPart_;
-    loc.value = this.definedLoc_;
-    return this.defined_;
-  }
-
-  setDefined(part: number, loc: Location): void {
-    this.definedPart_ = part;
-    this.definedLoc_ = loc;
-    this.defined_ = true;
-  }
-
-  computeValue(_part: number, _interp: Interpreter): ELObj | null {
-    return this.value_;
-  }
-
-  setValue(val: ELObj): void {
-    this.value_ = val;
-    this.evaluated_ = true;
-  }
-
-  evaluated(): boolean {
-    return this.evaluated_;
-  }
 }
 
 // Output stream interface for printing
@@ -222,9 +158,12 @@ export abstract class ELObj extends CollectorObject {
   asNodeList(): NodeListObj | null { return null; }
   asNamedNodeList(): NamedNodeListObj | null { return null; }
   convertToString(): StringObj | null { return null; }
+  asString(): StringObj | null { return null; }
   asBox(): BoxObj | null { return null; }
   asVector(): VectorObj | null { return null; }
   asLanguage(): LanguageObj | null { return null; }
+  asReal(): number | null { return null; }
+  asInteger(): number | null { return null; }
 
   // Value extraction methods
   charValue(): { result: boolean; ch: Char } {
@@ -415,8 +354,8 @@ export class KeywordObj extends ELObj {
   override print(_interp: Interpreter, out: OutputCharStream): void {
     const name = this.ident_.name();
     out.put(0x3A); // ':'
-    for (let i = 0; i < name.length; i++) {
-      out.put(name.charCodeAt(i));
+    for (let i = 0; i < name.length_; i++) {
+      out.put(name.ptr_ ? name.ptr_[i] : 0);
     }
   }
 
@@ -509,6 +448,7 @@ export class VectorObj extends ELObj {
 
   size(): number { return this.elements_.length; }
   get(index: number): ELObj | undefined { return this.elements_[index]; }
+  ref(index: number): ELObj | undefined { return this.elements_[index]; }
   set(index: number, val: ELObj): void { this.elements_[index] = val; }
   push(val: ELObj): void { this.elements_.push(val); }
 
@@ -684,6 +624,9 @@ export class IntegerObj extends ELObj {
     const intVal = other.exactIntegerValue();
     return intVal.result && intVal.value === this.n_;
   }
+
+  override asInteger(): number { return this.n_; }
+  override asReal(): number { return this.n_; }
 }
 
 // Real (floating-point) object
@@ -715,6 +658,8 @@ export class RealObj extends ELObj {
     const realVal = other.realValue();
     return realVal.result && realVal.value === this.n_;
   }
+
+  override asReal(): number { return this.n_; }
 }
 
 // Length object (in units)
@@ -792,11 +737,24 @@ export class LengthSpec {
 
   private val_: [number, number, number] = [0, 0, 0];
 
-  constructor(val?: number | { unknown: number; factor: number }) {
-    if (typeof val === 'number') {
+  constructor(val?: number | { unknown: number; factor: number } | LengthSpec) {
+    if (val instanceof LengthSpec) {
+      // Copy constructor
+      this.val_ = [...val.val_] as [number, number, number];
+    } else if (typeof val === 'number') {
       this.val_[0] = val;
     } else if (val) {
       this.val_[val.unknown] = val.factor;
+    }
+  }
+
+  clone(): LengthSpec {
+    return new LengthSpec(this);
+  }
+
+  negate(): void {
+    for (let i = 0; i < 3; i++) {
+      this.val_[i] = -this.val_[i];
     }
   }
 
@@ -1173,6 +1131,23 @@ export abstract class FunctionObj extends ELObj {
   makeTailCallInsn(_nArgs: number, _interp: Interpreter, _loc: Location, _nCallerArgs: number): InsnPtr {
     return null;
   }
+
+  // Call the function with arguments on the VM stack
+  // Override in subclasses - base implementation returns null
+  call(_vm: VM, _loc: Location, _next: InsnPtr): InsnPtr {
+    return null;
+  }
+
+  // Tail call the function with arguments on the VM stack
+  // Override in subclasses - base implementation returns null
+  tailCall(_vm: VM, _loc: Location, _nCallerArgs: number): InsnPtr {
+    return null;
+  }
+
+  // Set an argument position to a continuation
+  setArgToCC(_vm: VM): void {
+    // Override in subclasses that support continuations
+  }
 }
 
 // Abstract SOSOFO object
@@ -1203,9 +1178,106 @@ export abstract class StyleObj extends ELObj {
 // Abstract box object
 export abstract class BoxObj extends ELObj {
   override asBox(): BoxObj { return this; }
+  abstract get value(): ELObj | null;
+  abstract set value(obj: ELObj | null);
+}
+
+// Mutable box object - holds a mutable reference to an ELObj
+export class MutableBoxObj extends BoxObj {
+  private value_: ELObj | null;
+
+  constructor(obj?: ELObj | null) {
+    super();
+    this.hasSubObjects_ = true;
+    this.value_ = obj ?? null;
+  }
+
+  override get value(): ELObj | null {
+    return this.value_;
+  }
+
+  override set value(obj: ELObj | null) {
+    this.value_ = obj;
+  }
+
+  override traceSubObjects(collector: Collector): void {
+    if (this.value_) collector.trace(this.value_);
+  }
 }
 
 // Abstract language object
 export abstract class LanguageObj extends ELObj {
   override asLanguage(): LanguageObj { return this; }
+}
+
+// Concrete language object with collation support
+export class LangObj extends LanguageObj {
+  private multiCollatingElements_: Map<string, string> = new Map();
+  private collatingSymbols_: Set<string> = new Set();
+  private levels_: Array<{ forward: boolean; backward: boolean; position: boolean }> = [];
+  private collatingOrder_: string[] = [];
+  private levelWeights_: Map<number, string[]> = new Map();
+  private toupperMap_: Map<number, number> = new Map();
+  private tolowerMap_: Map<number, number> = new Map();
+  private hasDefaultPos_ = false;
+
+  constructor() {
+    super();
+  }
+
+  addMultiCollatingElement(sym: string, str: string): void {
+    this.multiCollatingElements_.set(sym, str);
+  }
+
+  addCollatingSymbol(sym: string): void {
+    this.collatingSymbols_.add(sym);
+  }
+
+  addLevel(sort: { forward: boolean; backward: boolean; position: boolean }): void {
+    this.levels_.push({ ...sort });
+    this.levelWeights_.set(this.levels_.length - 1, []);
+  }
+
+  levels(): number {
+    return this.levels_.length;
+  }
+
+  addCollatingPos(sym: string): boolean {
+    this.collatingOrder_.push(sym);
+    return true;
+  }
+
+  addDefaultPos(): void {
+    this.hasDefaultPos_ = true;
+  }
+
+  addLevelWeight(level: number, weight: string): boolean {
+    const weights = this.levelWeights_.get(level);
+    if (weights) {
+      weights.push(weight);
+      return true;
+    }
+    return false;
+  }
+
+  addToupper(lower: number, upper: number): void {
+    this.toupperMap_.set(lower, upper);
+  }
+
+  addTolower(upper: number, lower: number): void {
+    this.tolowerMap_.set(upper, lower);
+  }
+
+  compile(): boolean {
+    // Validate and compile the language definition
+    return true;
+  }
+
+  toupper(ch: number): number {
+    return this.toupperMap_.get(ch) ?? ch;
+  }
+
+  tolower(ch: number): number {
+    return this.tolowerMap_.get(ch) ?? ch;
+  }
 }

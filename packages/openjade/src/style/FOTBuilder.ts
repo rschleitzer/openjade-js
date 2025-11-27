@@ -465,6 +465,10 @@ export abstract class FOTBuilder {
   setWritingMode(_mode: Symbol): void {}
   setLanguage(_lang: Letter2): void {}
   setCountry(_country: Letter2): void {}
+
+  // Page number related
+  currentNodePageNumber(_node: NodePtr): void {}
+  pageNumber(): void {}
 }
 
 // SaveFOTBuilder - for saving FOT to replay later

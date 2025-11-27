@@ -1,17 +1,37 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, StringC } from '@openjade-js/opensp';
+import { Location, StringC, String as StringOf, Char } from '@openjade-js/opensp';
 import {
   ELObj,
   FunctionObj,
   Identifier,
-  Interpreter,
+  SyntacticKey,
   KeywordObj,
-  FlowObj,
   Insn as ELObjInsn,
   InsnPtr as ELObjInsnPtr
 } from './ELObj';
+import { FlowObj, SequenceFlowObj, CompoundFlowObj } from './SosofoObj';
+import type { Interpreter } from './Interpreter';
+
+// Helper to convert StringC to JS string
+function stringCToString(sc: StringC): string {
+  if (!sc.ptr_ || sc.length_ === 0) return '';
+  let result = '';
+  for (let i = 0; i < sc.length_; i++) {
+    result += String.fromCharCode(sc.ptr_[i]);
+  }
+  return result;
+}
+
+// Helper to convert JS string to StringC
+function stringToStringC(s: string): StringC {
+  const arr: Char[] = [];
+  for (let i = 0; i < s.length; i++) {
+    arr.push(s.charCodeAt(i));
+  }
+  return new StringOf<Char>(arr, arr.length);
+}
 
 // Re-export Insn interface from ELObj
 export type Insn = ELObjInsn;
@@ -28,10 +48,8 @@ export interface ProcessingMode {
   name(): string;
 }
 
-// CompoundFlowObj is a FlowObj that can contain content
-export interface CompoundFlowObj extends FlowObj {
-  // Compound flow object can have content
-}
+// CompoundFlowObj re-exported from SosofoObj
+export { CompoundFlowObj } from './SosofoObj';
 
 // Forward declaration for InheritedC
 export interface InheritedC {
@@ -594,7 +612,7 @@ export class VariableExpression extends Expression {
       );
       return createErrorInsn();
     }
-    const val = this.ident_.computeValue(0, interp);
+    const val = this.ident_.computeValue(false, interp);
     if (!val) {
       return createTopRefInsn(this.ident_, next);
     }
@@ -613,7 +631,7 @@ export class VariableExpression extends Expression {
     const loc: { value: Location | null } = { value: null };
     const part: { value: number } = { value: 0 };
     if (this.ident_.defined(part, loc)) {
-      const obj = this.ident_.computeValue(0, interp);
+      const obj = this.ident_.computeValue(false, interp);
       if (obj && !interp.isError(obj)) {
         interp.makePermanent(obj);
         expr.value = new ConstantExpression(obj, this.location());
@@ -1769,11 +1787,14 @@ export class StyleExpression extends Expression {
 
     for (let i = 0; i < this.keys_.length; i++) {
       const key = this.keys_[i];
-      if (key && key.name().length > 6) {
-        const prefix = key.name().substring(0, 6);
-        if (prefix === 'force!') {
-          const name = key.name().substring(6);
-          forceKeys[i] = interp.lookup(name);
+      if (key) {
+        const nameStr = stringCToString(key.name());
+        if (nameStr.length > 6) {
+          const prefix = nameStr.substring(0, 6);
+          if (prefix === 'force!') {
+            const forceName = nameStr.substring(6);
+            forceKeys[i] = interp.lookup(stringToStringC(forceName));
+          }
         }
       }
     }
@@ -1794,7 +1815,7 @@ export class StyleExpression extends Expression {
         this.exprs_[i].value?.markBoundVars(boundVars, false);
       } else if (
         this.maybeStyleKeyword(this.keys_[i]!) &&
-        !(this.keys_[i]!.syntacticKey(sk) && sk.value === Identifier.SyntacticKey.keyUse) &&
+        !(this.keys_[i]!.syntacticKey(sk) && sk.value === SyntacticKey.keyUse) &&
         this.keys_[i]!.inheritedC()
       ) {
         ics.push(null);
@@ -1837,7 +1858,7 @@ export class StyleExpression extends Expression {
         }
       } else if (!this.maybeStyleKeyword(this.keys_[i]!)) {
         // Skip
-      } else if (this.keys_[i]!.syntacticKey(sk) && sk.value === Identifier.SyntacticKey.keyUse) {
+      } else if (this.keys_[i]!.syntacticKey(sk) && sk.value === SyntacticKey.keyUse) {
         if (!hasUse) {
           hasUse = true;
           useIndex = i;
@@ -1949,7 +1970,7 @@ export class MakeExpression extends StyleExpression {
     for (let i = 0; i < this.keys_.length; i++) {
       let syn: { value: number } = { value: 0 };
       if (!flowObj.hasNonInheritedC(this.keys_[i]!) && this.keys_[i]!.syntacticKey(syn)) {
-        if (syn.value === Identifier.SyntacticKey.keyLabel) {
+        if (syn.value === SyntacticKey.keyLabel) {
           rest = Expression.optimizeCompile(
             this.exprs_[i],
             interp,
@@ -1957,7 +1978,7 @@ export class MakeExpression extends StyleExpression {
             stackPos + 1,
             createLabelSosofoInsn(this.exprs_[i].value!.location(), rest)
           );
-        } else if (syn.value === Identifier.SyntacticKey.keyContentMap) {
+        } else if (syn.value === SyntacticKey.keyContentMap) {
           contentMapExpr = this.exprs_[i];
         }
       }
@@ -2128,8 +2149,8 @@ export class MakeExpression extends StyleExpression {
     let key: { value: number } = { value: 0 };
     if (ident.syntacticKey(key)) {
       switch (key.value) {
-        case Identifier.SyntacticKey.keyLabel:
-        case Identifier.SyntacticKey.keyContentMap:
+        case SyntacticKey.keyLabel:
+        case SyntacticKey.keyContentMap:
           return;
         default:
           break;
@@ -2141,8 +2162,8 @@ export class MakeExpression extends StyleExpression {
     }
 
     interp.setNextLocation(loc);
-    const tem = ident.name() + ':';
-    interp.message(InterpreterMessages.invalidMakeKeyword, tem, this.foc_.name());
+    const tem = stringCToString(ident.name()) + ':';
+    interp.message(InterpreterMessages.invalidMakeKeyword, tem, stringCToString(this.foc_.name()));
   }
 
   protected override maybeStyleKeyword(ident: Identifier): boolean {
@@ -2657,12 +2678,5 @@ function createStyleSpec(
 }
 
 function createSequenceFlowObj(_interp: Interpreter): FlowObj {
-  return {
-    hasNonInheritedC: () => false,
-    hasPseudoNonInheritedC: () => false,
-    asCompoundFlowObj: () => null,
-    copy: () => createSequenceFlowObj(_interp),
-    setNonInheritedC: () => {},
-    isCharacter: () => false
-  };
+  return new SequenceFlowObj();
 }

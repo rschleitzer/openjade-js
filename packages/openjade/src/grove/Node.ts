@@ -1734,6 +1734,100 @@ export class NodePtr {
     return this.node_ !== null;
   }
 
+  // Convenience methods for Pattern.ts compatibility
+  gi(): GroveString | null {
+    if (!this.node_) return null;
+    const result = this.node_.getGi();
+    if (result.result !== AccessResult.accessOK) return null;
+    return result.str;
+  }
+
+  parent(): NodePtr | null {
+    if (!this.node_) return null;
+    const ptr = new NodePtr();
+    const result = this.node_.getParent(ptr);
+    if (result !== AccessResult.accessOK) return null;
+    return ptr;
+  }
+
+  previousSibling(): NodePtr | null {
+    if (!this.node_) return null;
+    // Node doesn't have a direct previousSibling method
+    // We need to go to firstSibling and iterate
+    const firstPtr = new NodePtr();
+    const result = this.node_.firstSibling(firstPtr);
+    if (result !== AccessResult.accessOK) return null;
+
+    // If we're the first sibling, there's no previous
+    if (firstPtr.node_?.equals(this.node_)) return null;
+
+    // Iterate through siblings to find the one before us
+    let prev = firstPtr;
+    let current = new NodePtr();
+    let nextResult = prev.node_!.nextSibling(current);
+
+    while (nextResult === AccessResult.accessOK && current.node_) {
+      if (current.node_.equals(this.node_)) {
+        return prev;
+      }
+      prev = current;
+      current = new NodePtr();
+      nextResult = prev.node_!.nextSibling(current);
+    }
+
+    return null;
+  }
+
+  nextSibling(): NodePtr | null {
+    if (!this.node_) return null;
+    const ptr = new NodePtr();
+    const result = this.node_.nextSibling(ptr);
+    if (result !== AccessResult.accessOK) return null;
+    return ptr;
+  }
+
+  firstChild(): NodePtr | null {
+    if (!this.node_) return null;
+    const ptr = new NodePtr();
+    const result = this.node_.firstChild(ptr);
+    if (result !== AccessResult.accessOK) return null;
+    return ptr;
+  }
+
+  getAttribute(name: GroveString): GroveString | null {
+    if (!this.node_) return null;
+    const attsResult = this.node_.getAttributes();
+    if (attsResult.result !== AccessResult.accessOK || !attsResult.atts) return null;
+
+    const nodePtr = new NodePtr();
+    const result = attsResult.atts.namedNode(name, nodePtr);
+    if (result !== AccessResult.accessOK || !nodePtr.node_) return null;
+
+    // Get the value from the attribute node
+    const valueListPtr = new NodeListPtr();
+    const valueResult = nodePtr.node_.getValue(valueListPtr);
+    if (valueResult !== AccessResult.accessOK || !valueListPtr.list()) return null;
+
+    // Get first node from value list and extract its data
+    const valueNodePtr = new NodePtr();
+    const firstResult = valueListPtr.list()!.first(valueNodePtr);
+    if (firstResult !== AccessResult.accessOK || !valueNodePtr.node_) return null;
+
+    // The value is typically character data, get the tokens/text
+    const tokResult = valueNodePtr.node_.tokens();
+    if (tokResult.result === AccessResult.accessOK) {
+      return tokResult.str;
+    }
+
+    // Fallback: try getText
+    const textResult = valueNodePtr.node_.getText();
+    if (textResult.result === AccessResult.accessOK) {
+      return textResult.str;
+    }
+
+    return null;
+  }
+
   private addRef(): void {
     if (this.node_) this.node_.addRef();
   }

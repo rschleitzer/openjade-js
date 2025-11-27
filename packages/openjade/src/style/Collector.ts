@@ -6,10 +6,12 @@
 // for compatibility with the OpenJade class hierarchy.
 
 export class Collector {
-  private totalObjects_: number = 0;
-  private maxSize_: number;
+  totalObjects_: number = 0;
+  maxSize_: number;
 
-  constructor(maxSize: number) {
+  // In C++, maxSize is set to maxObjSize() which computes the largest object size.
+  // In JS with native GC, this is unused - we preserve it for interface compatibility.
+  constructor(maxSize: number = 256) {
     this.maxSize_ = maxSize;
   }
 
