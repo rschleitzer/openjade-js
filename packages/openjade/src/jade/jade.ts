@@ -26,6 +26,7 @@ import { TransformFOTBuilder, FileOutputStream } from '../style/TransformFOTBuil
 import { SgmlFOTBuilder } from '../style/SgmlFOTBuilder';
 import { makeRtfFOTBuilder } from '../style/RtfFOTBuilder';
 import { makeTeXFOTBuilder } from '../style/TeXFOTBuilder';
+import { makeMifFOTBuilder } from '../style/MifFOTBuilder';
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {
@@ -52,10 +53,11 @@ enum OutputType {
   rtfType = 1,
   texType = 2,
   sgmlType = 3,
-  xmlType = 4
+  xmlType = 4,
+  mifType = 5
 }
 
-const outputTypeNames = ['fot', 'rtf', 'tex', 'sgml', 'xml'];
+const outputTypeNames = ['fot', 'rtf', 'tex', 'sgml', 'xml', 'mif'];
 
 // Units per inch (from upstream: 72000)
 const UNITS_PER_INCH = 72000;
@@ -172,6 +174,18 @@ class JadeApp extends DssslApp {
           exts
         );
         return texBuilder;
+      }
+
+      case OutputType.mifType: {
+        // MIF output
+        const mifOutputStream = new FileOutputStream(this.outputFilename_);
+        const mifBuilder = makeMifFOTBuilder(
+          (s: string) => mifOutputStream.write(s),
+          () => mifOutputStream.flush(),
+          [],
+          exts
+        );
+        return mifBuilder;
       }
 
       default:
