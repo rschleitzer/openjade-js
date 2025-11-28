@@ -354,6 +354,7 @@ export class SchemeParser extends Messenger {
 
   parse(): void {
     let recovering = false;
+    let formCount = 0;
     for (;;) {
       const tok = { value: Token.tokenVoid };
       if (!this.getToken(recovering ? ~0 : allowOpenParen | allowEndOfEntity, tok)) {
@@ -367,6 +368,9 @@ export class SchemeParser extends Messenger {
             (tok.value as Token) !== Token.tokenIdentifier) {
           recovering = true;
         } else {
+          formCount++;
+          if (formCount <= 5) {
+          }
           const ident = this.lookup(this.currentToken_);
           const key: { value: SyntacticKey } = { value: SyntacticKey.notKey };
           if (!ident.syntacticKey(key)) {

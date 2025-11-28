@@ -774,6 +774,33 @@ export class WritingModeC extends SymbolInheritedC {
   }
 }
 
+// Ignored inherited characteristic - accepts any value but does nothing
+export class IgnoredInheritedC extends InheritedC {
+  constructor(ident: Identifier | null, index: number) {
+    super(ident, index);
+  }
+
+  value(vm: VM, _style: VarStyleObj | null, _dependencies: number[]): ELObj | null {
+    return vm.interp.makeFalse();  // Return default value
+  }
+
+  set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    _fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    // Ignored - do nothing
+    value.obj = null;
+  }
+
+  make(obj: ELObj, _loc: Location, _interp: Interpreter): InheritedC | null {
+    // Accept any value, create new ignored characteristic
+    return new IgnoredInheritedC(this.identifier(), this.index());
+  }
+}
+
 // Factory to create inherited characteristics by name
 export function createInheritedC(name: string, index: number, ident: Identifier | null): InheritedC | null {
   switch (name) {

@@ -53,6 +53,13 @@ import { Environment } from './Expression';
 import { Pattern, MatchContext, Element } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
+import {
+  FontSizeC, FontFamilyNameC, FontWeightC, FontPostureC,
+  QuaddingC, DisplayAlignmentC, StartIndentC, EndIndentC,
+  FirstLineStartIndentC, LineSpacingC, FieldWidthC,
+  ColorC, BackgroundColorC, LinesC, WritingModeC,
+  createInheritedC, IgnoredInheritedC
+} from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
 import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
 
@@ -644,6 +651,15 @@ export class ProcessingMode implements ProcessingModeInterface {
 
   setDefined(): void {
     this.defined_ = true;
+  }
+
+  rulesCount(): number {
+    let count = 0;
+    for (let i = 0; i < nRuleType; i++) {
+      count += this.rootRules_[i].length;
+      count += this.elementRules_[i].length;
+    }
+    return count;
   }
 
   name(): StringC {
@@ -1871,7 +1887,62 @@ export class Interpreter {
   }
 
   private installInheritedCs(): void {
-    // Install inherited characteristics
+    // Install inherited characteristics - port of Interpreter::installInheritedCs() from InheritedC.cxx
+    this.installInheritedC('font-size', new FontSizeC(null, this.nInheritedC_++));
+    this.installInheritedC('font-family-name', new FontFamilyNameC(null, this.nInheritedC_++));
+    this.installInheritedC('font-weight', new FontWeightC(null, this.nInheritedC_++));
+    this.installInheritedC('font-posture', new FontPostureC(null, this.nInheritedC_++));
+    this.installInheritedC('quadding', new QuaddingC(null, this.nInheritedC_++));
+    this.installInheritedC('display-alignment', new DisplayAlignmentC(null, this.nInheritedC_++));
+    this.installInheritedC('lines', new LinesC(null, this.nInheritedC_++));
+    this.installInheritedC('start-indent', new StartIndentC(null, this.nInheritedC_++));
+    this.installInheritedC('first-line-start-indent', new FirstLineStartIndentC(null, this.nInheritedC_++));
+    this.installInheritedC('end-indent', new EndIndentC(null, this.nInheritedC_++));
+    this.installInheritedC('line-spacing', new LineSpacingC(null, this.nInheritedC_++));
+    this.installInheritedC('field-width', new FieldWidthC(null, this.nInheritedC_++));
+    this.installInheritedC('color', new ColorC(null, this.nInheritedC_++));
+    this.installInheritedC('background-color', new BackgroundColorC(null, this.nInheritedC_++));
+    this.installInheritedC('writing-mode', new WritingModeC(null, this.nInheritedC_++));
+
+    // Additional characteristics that are commonly used - install using createInheritedC for any available
+    const additionalChars = [
+      'left-margin', 'right-margin', 'top-margin', 'bottom-margin',
+      'header-margin', 'footer-margin', 'page-width', 'page-height',
+      'line-thickness', 'cell-before-row-margin', 'cell-after-row-margin',
+      'cell-before-column-margin', 'cell-after-column-margin',
+      'last-line-end-indent', 'position-point-shift', 'start-margin', 'end-margin',
+      'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
+      'heading-level', 'border-present?'
+    ];
+
+    for (const name of additionalChars) {
+      const ic = createInheritedC(name, this.nInheritedC_, null);
+      if (ic) {
+        this.installInheritedC(name, ic);
+        this.nInheritedC_++;
+      } else {
+        // For unimplemented characteristics, create a simple placeholder
+        // that allows the keyword but ignores the value
+        this.installIgnoredC(name);
+      }
+    }
+  }
+
+  // Install a characteristic that is ignored (value parsed but not used)
+  private installIgnoredC(name: string): void {
+    const ident = this.lookup(Interpreter.makeStringC(name));
+    // Mark the identifier as having an inherited characteristic (even if it's a placeholder)
+    // This allows the keyword to be recognized
+    const placeholder = new IgnoredInheritedC(ident, this.nInheritedC_++);
+    placeholder.setIdentifier(ident);
+    ident.setInheritedC(placeholder);
+  }
+
+  // Install a single inherited characteristic
+  private installInheritedC(name: string, ic: InheritedC): void {
+    const ident = this.lookup(Interpreter.makeStringC(name));
+    ic.setIdentifier(ident);
+    ident.setInheritedC(ic);
   }
 
   private installNodeProperties(): void {

@@ -183,6 +183,9 @@ export class ProcessContext {
         this.matchSpecificity_
       );
 
+      if (this.processNodeCount_ <= 10) {
+      }
+
       if (!rule) {
         if (hadStyle) {
           this.currentStyleStack().pushEnd(this.vm_, this.currentFOTBuilder());
@@ -190,6 +193,9 @@ export class ProcessContext {
         }
         this.processChildren(processingMode);
         break;
+      }
+
+      if (this.processNodeCount_ <= 10) {
       }
 
       if (!this.matchSpecificity_.isStyle()) {
@@ -214,6 +220,7 @@ export class ProcessContext {
             const protect = new ELObjDynamicRoot(this.interpreter(), obj);
             (obj as SosofoObj).process(this);
           }
+        } else {
         }
         break;
       }

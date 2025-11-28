@@ -374,9 +374,9 @@ export class Doc {
         return header;
       }
     }
-    // Create new header
+    // Create new header - insert at front like C++ IList::insert
     const header = new PartHeader(this, id);
-    this.headers_.push(header);
+    this.headers_.unshift(header);
     if (refLoc) {
       header.setRefLoc(refLoc);
     }
@@ -709,7 +709,9 @@ export class DssslSpecEventHandler extends EventHandler {
   }
 
   styleSpecificationStart(event: StartElementEvent): void {
-    if (!this.currentDoc_) return;
+    if (!this.currentDoc_) {
+      return;
+    }
 
     const empty = makeStringC('');
     const idP = this.attributeString(event, 'ID') || empty;

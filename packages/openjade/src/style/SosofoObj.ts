@@ -337,9 +337,10 @@ export class SequenceFlowObj extends CompoundFlowObj {
   }
 
   override processInner(context: ProcessContext): void {
-    if (this.content_) {
-      this.content_.process(context);
-    }
+    const fotb = context.fotBuilder();
+    fotb.startSequence();
+    super.processInner(context);
+    fotb.endSequence();
   }
 
   override copy(_interp: Interpreter): FlowObj {

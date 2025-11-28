@@ -184,7 +184,9 @@ export class StyleEngine {
     // Parse style specification body elements from each part
     for (const part of parts) {
       const bodyElements = part.iter();
+      let bodyCount = 0;
       for (const bodyElement of bodyElements) {
+        bodyCount++;
         const inSrc = bodyElement.makeInputSource(specHandler);
         if (inSrc) {
           const scm = new SchemeParser(this.interpreter_, inSrc);
