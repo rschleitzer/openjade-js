@@ -47,6 +47,16 @@ function sig(nRequired: number, nOptional: number, restArg: boolean): Signature 
   return { nRequiredArgs: nRequired, nOptionalArgs: nOptional, restArg, nKeyArgs: 0, keys: [] };
 }
 
+// Helper to convert stringData result to JavaScript string
+function stringDataToString(sd: { result: boolean; data: Uint32Array | null; length: number }): string {
+  if (!sd.result || !sd.data) return '';
+  let result = '';
+  for (let i = 0; i < sd.length; i++) {
+    result += String.fromCharCode(sd.data[i]);
+  }
+  return result;
+}
+
 // Error messages for argument errors
 const ArgErrorMessages = {
   notAPair: 'notAPair',
@@ -2107,6 +2117,42 @@ export class EmptyNodeListPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// node-list-error - reports an error with a message and node list
+// Following upstream DEFPRIMITIVE(NodeListError) in primitive.cxx
+export class NodeListErrorPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(NodeListErrorPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+    if (!args[1].asNodeList()) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 1, args[1]);
+    }
+    interp.setNextLocation(loc);
+    const msg = stringDataToString(sd);
+    interp.message('errorProc', msg);
+    return interp.makeError();
+  }
+}
+
+// general-name-normalize - normalize a general name using SGML declaration
+// Following upstream DEFPRIMITIVE(GeneralNameNormalize) in primitive.cxx
+export class GeneralNameNormalizePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);
+  constructor() { super(GeneralNameNormalizePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+    // For now, just return the string as-is since we don't have full SGML normalization
+    // A proper implementation would normalize using the grove's SGML declaration
+    return interp.makeString(stringDataToString(sd));
+  }
+}
+
 // node-list-first - returns the first node in a node list as a singleton node-list
 export class NodeListFirstPrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(1, 0, false);
@@ -3962,6 +4008,8 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['node-list?', () => new IsNodeListPrimitiveObj()],
   ['node-list-empty?', () => new IsNodeListEmptyPrimitiveObj()],
   ['empty-node-list', () => new EmptyNodeListPrimitiveObj()],
+  ['node-list-error', () => new NodeListErrorPrimitiveObj()],
+  ['general-name-normalize', () => new GeneralNameNormalizePrimitiveObj()],
   ['node-list-first', () => new NodeListFirstPrimitiveObj()],
   ['node-list-rest', () => new NodeListRestPrimitiveObj()],
   ['node-list-length', () => new NodeListLengthPrimitiveObj()],
