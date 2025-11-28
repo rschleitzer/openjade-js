@@ -62,7 +62,7 @@ import {
   GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC
 } from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
-import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
+import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj, InheritedCPrimitiveObj, ActualCPrimitiveObj } from './primitive';
 
 // Default character for unmapped SDATA entities
 const defaultChar: Char = 0xfffd;
@@ -423,7 +423,8 @@ export const InterpreterMessages = {
   noCurrentProcessingMode: 'noCurrentProcessingMode',
   noCurrentNode: 'noCurrentNode',
   undefinedQuantity: 'undefinedQuantity',
-  noNodePropertyValue: 'noNodePropertyValue'
+  noNodePropertyValue: 'noNodePropertyValue',
+  notInCharacteristicValue: 'notInCharacteristicValue'
 } as const;
 
 // Re-export SyntacticKey from Identifier.ts for convenience
@@ -2262,6 +2263,25 @@ export class Interpreter {
     const ident = this.lookup(Interpreter.makeStringC(name));
     ic.setIdentifier(ident);
     ident.setInheritedC(ic);
+    // Also install inherited-X and actual-X procedures
+    this.installInheritedCProc(ident, ic);
+  }
+
+  // Install inherited-X and actual-X procedures for an inherited characteristic
+  private installInheritedCProc(ident: IdentifierImpl, ic: InheritedC): void {
+    // Create inherited-X procedure
+    const inhName = 'inherited-' + stringCToString(ident.name());
+    const inhIdent = this.lookup(Interpreter.makeStringC(inhName));
+    const inhPrim = new InheritedCPrimitiveObj(ic);
+    inhPrim.setIdentifier(inhIdent);
+    inhIdent.setValue(inhPrim);
+
+    // Create actual-X procedure
+    const actName = 'actual-' + stringCToString(ident.name());
+    const actIdent = this.lookup(Interpreter.makeStringC(actName));
+    const actPrim = new ActualCPrimitiveObj(ic);
+    actPrim.setIdentifier(actIdent);
+    actIdent.setValue(actPrim);
   }
 
   private installNodeProperties(): void {

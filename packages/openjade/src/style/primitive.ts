@@ -35,8 +35,9 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj } from './SosofoObj';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj } from './SosofoObj';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
+import { InheritedC } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
 import { Interpreter } from './ELObj';
 import { NodePtr, NodeListPtr, NamedNodeListPtr, GroveString, AccessResult, SdataMapper, PropertyValue, ComponentName } from '../grove/Node';
@@ -2547,6 +2548,25 @@ export class ProcessChildrenTrimPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// process-node-list - process a node list
+// Following upstream DEFPRIMITIVE(ProcessNodeList) in primitive.cxx
+export class ProcessNodeListPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(ProcessNodeListPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.processingMode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentProcessingMode);
+      return interp.makeError();
+    }
+    const nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+    return new ProcessNodeListSosofoObj(nl, context.processingMode as ProcessingMode);
+  }
+}
+
 // ============ Misc ============
 
 // external-procedure - lookup an external procedure by name
@@ -3784,6 +3804,60 @@ function stringDataEquals(sd: { data: Uint32Array | null; length: number; result
   return true;
 }
 
+// ============ InheritedC Primitives ============
+
+// InheritedCPrimitiveObj - returns the inherited value of a characteristic
+// Following upstream InheritedCPrimitiveObj in InheritedC.cxx
+export class InheritedCPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  private inheritedC_: InheritedC;
+
+  constructor(ic: InheritedC) {
+    super(InheritedCPrimitiveObj.signature_);
+    this.inheritedC_ = ic;
+  }
+
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.styleStack) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.notInCharacteristicValue);
+      return interp.makeError();
+    }
+    const deps: number[] = [];
+    const obj = context.styleStack.inherited(this.inheritedC_, context.specLevel || 0, interp, deps);
+    if (!obj) {
+      return interp.makeError();
+    }
+    return obj;
+  }
+}
+
+// ActualCPrimitiveObj - returns the actual value of a characteristic
+// Following upstream ActualCPrimitiveObj in InheritedC.cxx
+export class ActualCPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  private inheritedC_: InheritedC;
+
+  constructor(ic: InheritedC) {
+    super(ActualCPrimitiveObj.signature_);
+    this.inheritedC_ = ic;
+  }
+
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.styleStack) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.notInCharacteristicValue);
+      return interp.makeError();
+    }
+    const deps: number[] = [];
+    const obj = context.styleStack.actual(this.inheritedC_, loc, interp, deps);
+    if (!obj) {
+      return interp.makeError();
+    }
+    return obj;
+  }
+}
+
 // ============ Map of all primitives ============
 export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['cons', () => new ConsPrimitiveObj()],
@@ -3920,6 +3994,7 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   // Process children and process-children-trim
   ['process-children', () => new ProcessChildrenPrimitiveObj()],
   ['process-children-trim', () => new ProcessChildrenTrimPrimitiveObj()],
+  ['process-node-list', () => new ProcessNodeListPrimitiveObj()],
   // Node navigation primitives
   ['parent', () => new ParentPrimitiveObj()],
   ['ancestor', () => new AncestorPrimitiveObj()],

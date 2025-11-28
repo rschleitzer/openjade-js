@@ -19,7 +19,7 @@ import {
 } from './ELObj';
 import { Collector, CollectorObject } from './Collector';
 import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj } from './SosofoObj';
-import { StyleObj, VarStyleObj, StyleSpec as StyleStyleSpec, InheritedC as StyleInheritedC } from './Style';
+import { StyleObj, VarStyleObj, StyleSpec as StyleStyleSpec, InheritedC as StyleInheritedC, StyleStack } from './Style';
 import { NodePtr } from '../grove/Node';
 
 // BoxObj type and constructor alias for use throughout this file
@@ -33,6 +33,9 @@ export { Interpreter };
 export class EvalContext {
   processingMode: ProcessingMode | null = null;
   currentNode: any = null;
+  styleStack: StyleStack | null = null;
+  specLevel: number = 0;
+  actualDependencies: number[] = [];
 }
 
 // Forward declarations - these interfaces will be implemented or imported elsewhere
