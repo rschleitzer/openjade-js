@@ -1292,6 +1292,30 @@ export class Interpreter {
       'figure-dash': 0x2012,
       'en-dash': 0x2013,
       'em-dash': 0x2014,
+      // Additional common names
+      'bullet': 0x2022,
+      'copyright-sign': 0x00A9,
+      'registered-sign': 0x00AE,
+      'trade-mark-sign': 0x2122,
+      'rightwards-arrow': 0x2192,
+      'leftwards-arrow': 0x2190,
+      'upwards-arrow': 0x2191,
+      'downwards-arrow': 0x2193,
+      'black-square': 0x25A0,
+      'white-square': 0x25A1,
+      'heavy-check-mark': 0x2714,
+      'ballot-box-with-check': 0x2611,
+      'ballot-box-with-x': 0x2612,
+      // Dingbat circled digits
+      'dingbat-negative-circled-sans-serif-digit-one': 0x278A,
+      'dingbat-negative-circled-sans-serif-digit-two': 0x278B,
+      'dingbat-negative-circled-sans-serif-digit-three': 0x278C,
+      'dingbat-negative-circled-sans-serif-digit-four': 0x278D,
+      'dingbat-negative-circled-sans-serif-digit-five': 0x278E,
+      'dingbat-negative-circled-sans-serif-digit-six': 0x278F,
+      'dingbat-negative-circled-sans-serif-digit-seven': 0x2790,
+      'dingbat-negative-circled-sans-serif-digit-eight': 0x2791,
+      'dingbat-negative-circled-sans-serif-digit-nine': 0x2792,
     };
 
     // Check for standard name
@@ -1821,6 +1845,189 @@ export class Interpreter {
       [0x007d, 'right-curly-bracket'],
       [0x007e, 'tilde'],
       [0x00a0, 'no-break-space'],
+      [0x00a1, 'inverted-exclamation-mark'],
+      [0x00a2, 'cent-sign'],
+      [0x00a3, 'pound-sign'],
+      [0x00a4, 'currency-sign'],
+      [0x00a5, 'yen-sign'],
+      [0x00a6, 'broken-bar'],
+      [0x00a7, 'section-sign'],
+      [0x00a8, 'diaeresis'],
+      [0x00a9, 'copyright-sign'],
+      [0x00aa, 'feminine-ordinal-indicator'],
+      [0x00ab, 'left-pointing-double-angle-quotation-mark'],
+      [0x00ac, 'not-sign'],
+      [0x00ad, 'soft-hyphen'],
+      [0x00ae, 'registered-sign'],
+      [0x00af, 'macron'],
+      [0x00b0, 'degree-sign'],
+      [0x00b1, 'plus-minus-sign'],
+      [0x00b2, 'superscript-two'],
+      [0x00b3, 'superscript-three'],
+      [0x00b4, 'acute-accent'],
+      [0x00b5, 'micro-sign'],
+      [0x00b6, 'pilcrow-sign'],
+      [0x00b7, 'middle-dot'],
+      [0x00b8, 'cedilla'],
+      [0x00b9, 'superscript-one'],
+      [0x00ba, 'masculine-ordinal-indicator'],
+      [0x00bb, 'right-pointing-double-angle-quotation-mark'],
+      [0x00bc, 'vulgar-fraction-one-quarter'],
+      [0x00bd, 'vulgar-fraction-one-half'],
+      [0x00be, 'vulgar-fraction-three-quarters'],
+      [0x00bf, 'inverted-question-mark'],
+      [0x00d7, 'multiplication-sign'],
+      [0x00f7, 'division-sign'],
+      // Dashes and quotes
+      [0x2013, 'en-dash'],
+      [0x2014, 'em-dash'],
+      [0x2015, 'horizontal-bar'],
+      [0x2018, 'left-single-quotation-mark'],
+      [0x2019, 'right-single-quotation-mark'],
+      [0x201c, 'left-double-quotation-mark'],
+      [0x201d, 'right-double-quotation-mark'],
+      [0x2020, 'dagger'],
+      [0x2021, 'double-dagger'],
+      [0x2022, 'bullet'],
+      [0x2026, 'horizontal-ellipsis'],
+      [0x2030, 'per-mille-sign'],
+      [0x2032, 'prime'],
+      [0x2033, 'double-prime'],
+      [0x2039, 'single-left-pointing-angle-quotation-mark'],
+      [0x203a, 'single-right-pointing-angle-quotation-mark'],
+      [0x203e, 'overline'],
+      [0x2044, 'fraction-slash'],
+      [0x20a3, 'french-franc-sign'],
+      [0x20a4, 'lira-sign'],
+      [0x20a7, 'peseta-sign'],
+      [0x2122, 'trade-mark-sign'],
+      [0x2126, 'ohm-sign'],
+      // Arrows
+      [0x2190, 'leftwards-arrow'],
+      [0x2191, 'upwards-arrow'],
+      [0x2192, 'rightwards-arrow'],
+      [0x2193, 'downwards-arrow'],
+      [0x2194, 'left-right-arrow'],
+      [0x2195, 'up-down-arrow'],
+      [0x21d0, 'leftwards-double-arrow'],
+      [0x21d1, 'upwards-double-arrow'],
+      [0x21d2, 'rightwards-double-arrow'],
+      [0x21d3, 'downwards-double-arrow'],
+      [0x21d4, 'left-right-double-arrow'],
+      // Math symbols
+      [0x2200, 'for-all'],
+      [0x2202, 'partial-differential'],
+      [0x2203, 'there-exists'],
+      [0x2205, 'empty-set'],
+      [0x2207, 'nabla'],
+      [0x2208, 'element-of'],
+      [0x2209, 'not-an-element-of'],
+      [0x220b, 'contains-as-member'],
+      [0x220f, 'n-ary-product'],
+      [0x2211, 'n-ary-summation'],
+      [0x2212, 'minus-sign'],
+      [0x221a, 'square-root'],
+      [0x221d, 'proportional-to'],
+      [0x221e, 'infinity'],
+      [0x2220, 'angle'],
+      [0x2227, 'logical-and'],
+      [0x2228, 'logical-or'],
+      [0x2229, 'intersection'],
+      [0x222a, 'union'],
+      [0x222b, 'integral'],
+      [0x2234, 'therefore'],
+      [0x223c, 'tilde-operator'],
+      [0x2245, 'approximately-equal-to'],
+      [0x2248, 'almost-equal-to'],
+      [0x2260, 'not-equal-to'],
+      [0x2261, 'identical-to'],
+      [0x2264, 'less-than-or-equal-to'],
+      [0x2265, 'greater-than-or-equal-to'],
+      [0x2282, 'subset-of'],
+      [0x2283, 'superset-of'],
+      [0x2286, 'subset-of-or-equal-to'],
+      [0x2287, 'superset-of-or-equal-to'],
+      [0x2295, 'circled-plus'],
+      [0x2297, 'circled-times'],
+      [0x22a5, 'up-tack'],
+      [0x22c5, 'dot-operator'],
+      // Geometric shapes
+      [0x25a0, 'black-square'],
+      [0x25a1, 'white-square'],
+      [0x25aa, 'black-small-square'],
+      [0x25ab, 'white-small-square'],
+      [0x25b2, 'black-up-pointing-triangle'],
+      [0x25bc, 'black-down-pointing-triangle'],
+      [0x25c6, 'black-diamond'],
+      [0x25ca, 'lozenge'],
+      [0x25cb, 'white-circle'],
+      [0x25cf, 'black-circle'],
+      // Miscellaneous symbols
+      [0x2605, 'black-star'],
+      [0x2606, 'white-star'],
+      [0x260e, 'black-telephone'],
+      [0x2611, 'ballot-box-with-check'],
+      [0x2612, 'ballot-box-with-x'],
+      [0x2660, 'black-spade-suit'],
+      [0x2663, 'black-club-suit'],
+      [0x2665, 'black-heart-suit'],
+      [0x2666, 'black-diamond-suit'],
+      [0x266a, 'eighth-note'],
+      [0x266b, 'beamed-eighth-notes'],
+      // Dingbats
+      [0x2713, 'check-mark'],
+      [0x2714, 'heavy-check-mark'],
+      [0x2715, 'multiplication-x'],
+      [0x2716, 'heavy-multiplication-x'],
+      [0x2717, 'ballot-x'],
+      [0x2718, 'heavy-ballot-x'],
+      [0x271d, 'latin-cross'],
+      [0x2720, 'maltese-cross'],
+      // Circled numbers
+      [0x2460, 'circled-digit-one'],
+      [0x2461, 'circled-digit-two'],
+      [0x2462, 'circled-digit-three'],
+      [0x2463, 'circled-digit-four'],
+      [0x2464, 'circled-digit-five'],
+      [0x2465, 'circled-digit-six'],
+      [0x2466, 'circled-digit-seven'],
+      [0x2467, 'circled-digit-eight'],
+      [0x2468, 'circled-digit-nine'],
+      [0x2469, 'circled-number-ten'],
+      // Dingbat circled digits
+      [0x2776, 'dingbat-negative-circled-digit-one'],
+      [0x2777, 'dingbat-negative-circled-digit-two'],
+      [0x2778, 'dingbat-negative-circled-digit-three'],
+      [0x2779, 'dingbat-negative-circled-digit-four'],
+      [0x277a, 'dingbat-negative-circled-digit-five'],
+      [0x277b, 'dingbat-negative-circled-digit-six'],
+      [0x277c, 'dingbat-negative-circled-digit-seven'],
+      [0x277d, 'dingbat-negative-circled-digit-eight'],
+      [0x277e, 'dingbat-negative-circled-digit-nine'],
+      [0x277f, 'dingbat-negative-circled-number-ten'],
+      [0x2780, 'dingbat-circled-sans-serif-digit-one'],
+      [0x2781, 'dingbat-circled-sans-serif-digit-two'],
+      [0x2782, 'dingbat-circled-sans-serif-digit-three'],
+      [0x2783, 'dingbat-circled-sans-serif-digit-four'],
+      [0x2784, 'dingbat-circled-sans-serif-digit-five'],
+      [0x2785, 'dingbat-circled-sans-serif-digit-six'],
+      [0x2786, 'dingbat-circled-sans-serif-digit-seven'],
+      [0x2787, 'dingbat-circled-sans-serif-digit-eight'],
+      [0x2788, 'dingbat-circled-sans-serif-digit-nine'],
+      [0x2789, 'dingbat-circled-sans-serif-number-ten'],
+      [0x278a, 'dingbat-negative-circled-sans-serif-digit-one'],
+      [0x278b, 'dingbat-negative-circled-sans-serif-digit-two'],
+      [0x278c, 'dingbat-negative-circled-sans-serif-digit-three'],
+      [0x278d, 'dingbat-negative-circled-sans-serif-digit-four'],
+      [0x278e, 'dingbat-negative-circled-sans-serif-digit-five'],
+      [0x278f, 'dingbat-negative-circled-sans-serif-digit-six'],
+      [0x2790, 'dingbat-negative-circled-sans-serif-digit-seven'],
+      [0x2791, 'dingbat-negative-circled-sans-serif-digit-eight'],
+      [0x2792, 'dingbat-negative-circled-sans-serif-digit-nine'],
+      [0x2793, 'dingbat-negative-circled-sans-serif-number-ten'],
+      // Ligatures
+      [0xfb01, 'latin-small-ligature-fi'],
+      [0xfb02, 'latin-small-ligature-fl'],
     ];
 
     for (const [code, name] of charNames) {
@@ -1997,7 +2204,76 @@ export class Interpreter {
   }
 
   private installCharProperties(): void {
-    // Install character properties
+    // Install built-in character properties - from charProps.h
+
+    // input-whitespace? property - characters that are whitespace for input purposes
+    const inputWhitespaceChars: [number, number][] = [
+      [0x0009, 5],   // HT through CR
+      [0x0020, 1],   // Space
+      [0x00A0, 1],   // Non-breaking space
+      [0x2000, 12],  // En quad through zero-width space
+      [0x2028, 2],   // Line separator and paragraph separator
+      [0x3000, 1],   // Ideographic space
+    ];
+
+    const inputWhitespaceProp: CharProp = {
+      map: new Map(),
+      def: { obj: this.makeFalse(), defPart: -1 },
+      loc: new Location()
+    };
+
+    for (const [start, count] of inputWhitespaceChars) {
+      for (let i = 0; i < count; i++) {
+        inputWhitespaceProp.map.set(start + i, { obj: this.makeTrue(), defPart: -1 });
+      }
+    }
+
+    this.charProperties_.set('input-whitespace?', inputWhitespaceProp);
+
+    // punct? property - punctuation characters
+    if (!this.strictMode_) {
+      const punctChars: [number, number][] = [
+        [0x0021, 1],   // !
+        [0x002C, 1],   // ,
+        [0x002E, 1],   // .
+        [0x003A, 2],   // : ;
+        [0x003F, 1],   // ?
+        [0x037E, 1],   // Greek question mark
+        [0x0387, 1],   // Greek ano teleia
+        [0x0589, 1],   // Armenian full stop
+        [0x060C, 1],   // Arabic comma
+        [0x061B, 1],   // Arabic semicolon
+        [0x061F, 1],   // Arabic question mark
+        [0x06D4, 1],   // Arabic full stop
+        [0x0964, 2],   // Devanagari danda and double danda
+        [0x0E5A, 2],   // Thai characters
+        [0x203C, 2],   // Double exclamation mark and interrobang
+        [0x3001, 2],   // Ideographic comma and full stop
+        [0xFE50, 3],   // Small comma, full stop, semicolon
+        [0xFE54, 4],   // Small semicolon, exclamation mark, question mark, etc
+        [0xFF01, 1],   // Fullwidth !
+        [0xFF0C, 1],   // Fullwidth ,
+        [0xFF0E, 1],   // Fullwidth .
+        [0xFF1A, 2],   // Fullwidth : ;
+        [0xFF1F, 1],   // Fullwidth ?
+        [0xFF61, 1],   // Halfwidth ideographic full stop
+        [0xFF64, 1],   // Halfwidth ideographic comma
+      ];
+
+      const punctProp: CharProp = {
+        map: new Map(),
+        def: { obj: this.makeFalse(), defPart: -1 },
+        loc: new Location()
+      };
+
+      for (const [start, count] of punctChars) {
+        for (let i = 0; i < count; i++) {
+          punctProp.map.set(start + i, { obj: this.makeTrue(), defPart: -1 });
+        }
+      }
+
+      this.charProperties_.set('punct?', punctProp);
+    }
   }
 
   // Compilation
