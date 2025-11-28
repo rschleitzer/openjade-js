@@ -35,10 +35,10 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj } from './SosofoObj';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj } from './SosofoObj';
 import { Address } from './FOTBuilder';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
-import { InheritedC } from './Style';
+import { InheritedC, StyleObj as StyleStyleObj } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
 import { Interpreter } from './ELObj';
 import { NodePtr, NodeListPtr, NamedNodeListPtr, GroveString, AccessResult, SdataMapper, PropertyValue, ComponentName } from '../grove/Node';
@@ -4746,6 +4746,120 @@ export class SgmlParsePrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// element-number - count elements with same GI up to and including this node
+// Following upstream DEFPRIMITIVE(ElementNumber) in primitive.cxx
+export class ElementNumberPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);  // 0 required, 1 optional (node)
+  constructor() { super(ElementNumberPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get this node's GI
+    const giResult = node.node()!.getGi();
+    if (giResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const gi = giResult.str;
+
+    // Count elements with same GI in document order up to this node
+    // For simplicity, we traverse from the document root and count
+    const rootPtr = new NodePtr();
+    if (node.node()!.getGroveRoot(rootPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    let count = 0;
+    const countElements = (nd: NodePtr): boolean => {
+      // Check if this is an element with matching GI
+      const ndGiResult = nd.node()!.getGi();
+      if (ndGiResult.result === AccessResult.accessOK && ndGiResult.str.equals(gi)) {
+        count++;
+        if (nd.sameNode(node)) {
+          return true; // Found our target node
+        }
+      }
+
+      // Recursively check children
+      const childPtr = new NodePtr();
+      if (nd.node()!.firstChild(childPtr) === AccessResult.accessOK) {
+        do {
+          if (countElements(childPtr)) {
+            return true;
+          }
+        } while (childPtr.assignNextChunkSibling() === AccessResult.accessOK);
+      }
+      return false;
+    };
+
+    // Start counting from root's first child (document element)
+    const docElemPtr = new NodePtr();
+    if (rootPtr.node()!.firstChild(docElemPtr) === AccessResult.accessOK) {
+      do {
+        if (countElements(docElemPtr)) {
+          break;
+        }
+      } while (docElemPtr.assignNextChunkSibling() === AccessResult.accessOK);
+    }
+
+    return interp.makeInteger(count);
+  }
+}
+
+// table-unit - create a length spec with table unit factor
+// Following upstream DEFPRIMITIVE(TableUnit) in primitive.cxx
+export class TableUnitPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);  // 1 required (number)
+  constructor() { super(TableUnitPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const kRes = args[0].exactIntegerValue();
+    if (!kRes.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAnExactInteger, 0, args[0]);
+    }
+
+    // Create a LengthSpec with tableUnit factor
+    const spec = new LengthSpec({ unknown: LengthSpec.Unknown.tableUnit, factor: kRes.value });
+    return new LengthSpecObj(spec);
+  }
+}
+
+// next-match - continue processing with next matching rule
+// Following upstream DEFPRIMITIVE(NextMatch) in primitive.cxx
+export class NextMatchPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);  // 0 required, 1 optional (style)
+  constructor() { super(NextMatchPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.processingMode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentProcessingMode);
+      return interp.makeError();
+    }
+
+    let style: StyleStyleObj | null = null;
+    if (argc > 0) {
+      const styleObj = args[0].asStyle();
+      if (!styleObj) {
+        return this.argError(interp, loc, ArgErrorMessages.notAStyle, 0, args[0]);
+      }
+      // Cast to Style.StyleObj which has the appendIter method
+      style = styleObj as StyleStyleObj;
+    }
+
+    return new NextMatchSosofoObj(style);
+  }
+}
+
 // preced - return preceding siblings
 // Following upstream DEFPRIMITIVE(Preced) in primitive.cxx
 export class PrecedPrimitiveObj extends PrimitiveObjBase {
@@ -4964,5 +5078,9 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['entity-notation', () => new EntityNotationPrimitiveObj()],
   // Processing primitives
   ['process-element-with-id', () => new ProcessElementWithIdPrimitiveObj()],
-  ['sgml-parse', () => new SgmlParsePrimitiveObj()]
+  ['sgml-parse', () => new SgmlParsePrimitiveObj()],
+  // Additional primitives
+  ['element-number', () => new ElementNumberPrimitiveObj()],
+  ['table-unit', () => new TableUnitPrimitiveObj()],
+  ['next-match', () => new NextMatchPrimitiveObj()]
 ]);
