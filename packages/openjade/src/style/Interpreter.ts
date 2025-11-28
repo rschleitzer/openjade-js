@@ -2319,8 +2319,10 @@ export class Interpreter {
       return null;
     }
 
-    // Handle exponent
-    if (i + 1 < str.length && str[i] === 'e') {
+    // Handle exponent - only if the character after 'e' is not a letter
+    // This allows "1em" to be parsed as "1" with unit "em" instead of failing exponent parse
+    if (i + 1 < str.length && str[i] === 'e'
+        && this.lexCategory(str.charCodeAt(i + 1)) !== LexCategory.lexLetter) {
       hadDecimalPoint = true;
       i++;
       const expResult = this.scanSignDigitsStr(str, i);
