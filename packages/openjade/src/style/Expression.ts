@@ -428,7 +428,7 @@ export class ConstantExpression extends Expression {
 
   override optimize(interp: Interpreter, _env: Environment, expr: Owner<Expression>): void {
     const tem = this.obj_.resolveQuantities(false, interp, this.location());
-    if (tem !== this.obj_) {
+    if (tem !== null) {
       interp.makePermanent(tem);
       expr.value = new ResolvedConstantExpression(tem, this.location());
     }
@@ -950,9 +950,8 @@ export class CaseExpression extends Expression {
       for (let j = 0; j < this.cases_[i].datums.length; j++) {
         const datum = this.cases_[i].datums[j];
         const tem = datum.resolveQuantities(false, interp, this.location());
-        // Check if resolved: either a new object was returned, or the datum has no quantities
-        const isResolved = tem !== datum || datum.quantityValue().type === QuantityType.noQuantity;
-        if (isResolved) {
+        // tem is null when unresolved, non-null when resolved
+        if (tem !== null) {
           if (k && ELObj.eqv(k, tem)) {
             expr.value = this.cases_[i].expr.value;
             this.cases_[i].expr.value = null;

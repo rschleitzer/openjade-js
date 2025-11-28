@@ -411,7 +411,10 @@ export const InterpreterMessages = {
   ambiguousMatch: 'ambiguousMatch',
   // From Insn.ts
   stackTrace: 'stackTrace',
-  stackTraceEllipsis: 'stackTraceEllipsis'
+  stackTraceEllipsis: 'stackTraceEllipsis',
+  noCurrentProcessingMode: 'noCurrentProcessingMode',
+  noCurrentNode: 'noCurrentNode',
+  undefinedQuantity: 'undefinedQuantity'
 } as const;
 
 // Re-export SyntacticKey from Identifier.ts for convenience
@@ -1582,7 +1585,16 @@ export class Interpreter {
       ['use', SyntacticKey.keyUse],
       ['label', SyntacticKey.keyLabel],
       ['content-map', SyntacticKey.keyContentMap],
-      ['data', SyntacticKey.keyData]
+      ['data', SyntacticKey.keyData],
+      // Language-related keywords for define-language
+      ['collate', SyntacticKey.keyCollate],
+      ['toupper', SyntacticKey.keyToupper],
+      ['tolower', SyntacticKey.keyTolower],
+      ['symbol', SyntacticKey.keySymbol],
+      ['order', SyntacticKey.keyOrder],
+      ['forward', SyntacticKey.keyForward],
+      ['backward', SyntacticKey.keyBackward],
+      ['position', SyntacticKey.keyPosition]
     ];
 
     for (const [name, key] of keys) {
@@ -2500,7 +2512,8 @@ export class Interpreter {
     if (hints & ConvertFlags.convertAllowNumber) {
       const tem = this.convertNumber(stringToStringC(str));
       if (tem) {
-        return tem.resolveQuantities(true, this, loc);
+        const resolved = tem.resolveQuantities(true, this, loc);
+        if (resolved) return resolved;
       }
     }
 

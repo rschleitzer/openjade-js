@@ -13,7 +13,9 @@ import {
   VectorObj,
   NodeListObj,
   MutableBoxObj,
-  Interpreter
+  Interpreter,
+  setInsnFactories,
+  InsnPtr as ELObjInsnPtr
 } from './ELObj';
 import { Collector, CollectorObject } from './Collector';
 import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj } from './SosofoObj';
@@ -2269,3 +2271,18 @@ export function createLabelSosofoInsn(loc: Location, next: InsnPtr): InsnPtr {
 export function createContentMapSosofoInsn(loc: Location, next: InsnPtr): InsnPtr {
   return new ContentMapSosofoInsn(loc, next);
 }
+
+export function createFunctionCallInsn(nArgs: number, func: FunctionObj, loc: Location, next: InsnPtr): InsnPtr {
+  return new FunctionCallInsn(nArgs, func, loc, next);
+}
+
+export function createFunctionTailCallInsn(nArgs: number, func: FunctionObj, loc: Location, nCallerArgs: number): InsnPtr {
+  return new FunctionTailCallInsn(nArgs, func, loc, nCallerArgs);
+}
+
+// Initialize factory functions in ELObj to avoid circular dependency
+// This matches upstream where FunctionObj::makeCallInsn creates FunctionCallInsn
+setInsnFactories(
+  (nArgs, func, loc, next) => new FunctionCallInsn(nArgs, func, loc, next),
+  (nArgs, func, loc, nCallerArgs) => new FunctionTailCallInsn(nArgs, func, loc, nCallerArgs)
+);

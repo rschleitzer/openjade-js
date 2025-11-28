@@ -1225,13 +1225,10 @@ class ElementNode extends ChunkNode {
     } else {
       // Has attributes - create AttElementChunk
       const nAtts = atts.size();
-      // Find actual number of attributes to store (skip trailing unspecified)
-      let actualNAtts = nAtts;
-      while (actualNAtts > 0 && !atts.specified(actualNAtts - 1)) {
-        actualNAtts--;
-      }
-      // Ensure we store at least all specified attributes
-      if (actualNAtts === 0) actualNAtts = nAtts;
+      // Store all attributes (including unspecified ones that may have DTD defaults)
+      // The upstream C++ does optimize by skipping trailing IMPLIED attributes,
+      // but for correctness we need to store all attributes so DTD defaults work.
+      const actualNAtts = nAtts;
 
       let attChunk: AttElementChunk;
       if (event.included()) {

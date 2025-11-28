@@ -22,6 +22,7 @@ import {
   EmptyNodeListObj,
   PairNodeListObj,
   FunctionObj,
+  InsnPtr as ELObjInsnPtr,
   Signature,
   GlyphIdObj,
   AddressObj,
@@ -34,9 +35,9 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj } from './SosofoObj';
-import { InterpreterMessages, IdentifierImpl } from './Interpreter';
-import { PrimitiveObj, EvalContext, VM, InsnPtr } from './Insn';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj } from './SosofoObj';
+import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
+import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
 import { Interpreter } from './ELObj';
 import { NodePtr, NodeListPtr, GroveString, AccessResult, SdataMapper } from '../grove/Node';
 
@@ -2156,6 +2157,265 @@ export class NodeListLengthPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// MapNodeListObj - lazy node list that maps a function over nodes
+// Following upstream class MapNodeListObj in primitive.cxx
+class MapNodeListObj extends NodeListObj {
+  private func_: FunctionObj | null;
+  private nl_: NodeListObj;
+  private mapped_: NodeListObj | null = null;
+  private context_: EvalContext;
+  private loc_: Location;
+
+  constructor(func: FunctionObj, nl: NodeListObj, context: EvalContext, loc: Location) {
+    super();
+    this.func_ = func;
+    this.nl_ = nl;
+    this.context_ = context;
+    this.loc_ = loc;
+  }
+
+  private mapNext(context: EvalContext, interp: Interpreter): void {
+    if (!this.func_) return;
+
+    const nd = this.nl_.nodeListFirst(context, interp);
+    if (!nd.node()) return;
+
+    // Create VM to call the function
+    const vm = new VM(interp, this.context_);
+    const insn = this.func_.makeCallInsn(1, interp, this.loc_, null);
+
+    // Call the function with the node as argument
+    const ret = vm.eval(insn, null, new NodePtrNodeListObj(nd));
+    if (interp.isError(ret)) {
+      this.func_ = null;
+      return;
+    }
+
+    this.mapped_ = ret.asNodeList();
+    if (!this.mapped_) {
+      interp.setNextLocation(this.loc_);
+      interp.message('returnNotNodeList');
+      this.func_ = null;
+      return;
+    }
+
+    this.nl_ = this.nl_.nodeListRest(context, interp);
+  }
+
+  override nodeListFirst(context: EvalContext, interp: Interpreter): NodePtr {
+    for (;;) {
+      if (!this.mapped_) {
+        this.mapNext(context, interp);
+        if (!this.mapped_) break;
+      }
+      const nd = this.mapped_.nodeListFirst(context, interp);
+      if (nd.node()) return nd;
+      this.mapped_ = null;
+    }
+    return new NodePtr();
+  }
+
+  override nodeListRest(context: EvalContext, interp: Interpreter): NodeListObj {
+    for (;;) {
+      if (!this.mapped_) {
+        this.mapNext(context, interp);
+        if (!this.mapped_) break;
+      }
+      const nd = this.mapped_.nodeListFirst(context, interp);
+      if (nd.node()) {
+        const rest = this.mapped_.nodeListRest(context, interp);
+        if (rest.nodeListFirst(context, interp).node()) {
+          return new PairNodeListObj(rest, new MapNodeListObj(this.func_!, this.nl_, this.context_, this.loc_));
+        }
+        return new MapNodeListObj(this.func_!, this.nl_, this.context_, this.loc_);
+      }
+      this.mapped_ = null;
+    }
+    return new EmptyNodeListObj();
+  }
+
+  override suppressError(): boolean {
+    return this.func_ === null;
+  }
+}
+
+// node-list-map - map a function over a node list
+// Following upstream DEFPRIMITIVE(NodeListMap) in primitive.cxx
+export class NodeListMapPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(NodeListMapPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const func = args[0].asFunction();
+    if (!func) {
+      return this.argError(interp, loc, ArgErrorMessages.notAProcedure, 0, args[0]);
+    }
+    if (func.nRequiredArgs() > 1) {
+      interp.setNextLocation(loc);
+      interp.message(InsnMessages.missingArg);
+      return interp.makeError();
+    }
+    if (func.nRequiredArgs() + func.nOptionalArgs() + (func.restArg() ? 1 : 0) === 0) {
+      interp.setNextLocation(loc);
+      interp.message(InsnMessages.tooManyArgs);
+      return interp.makeError();
+    }
+    interp.makeReadOnly(func);
+    const nl = args[1].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 1, args[1]);
+    }
+    return new MapNodeListObj(func, nl, context, loc);
+  }
+}
+
+// DescendantsNodeListObj - lazy node list of all descendants of a node
+// Following upstream class DescendantsNodeListObj in primitive.cxx
+class DescendantsNodeListObj extends NodeListObj {
+  private start_: NodePtr;
+  private depth_: number;
+
+  constructor(start: NodePtr, depth: number = 0) {
+    super();
+    this.start_ = new NodePtr(start.node());
+    this.depth_ = depth;
+
+    // If depth is 0, we need to move to first child to start
+    if (depth === 0 && start.node()) {
+      const child = new NodePtr();
+      if (start.node()!.firstChild(child) === AccessResult.accessOK) {
+        this.start_ = child;
+        this.depth_ = 1;
+      } else {
+        this.start_ = new NodePtr(); // empty
+      }
+    }
+  }
+
+  private static advance(nd: NodePtr, depthRef: { value: number }): void {
+    if (!nd.node()) return;
+
+    // Try to go to first child
+    const child = new NodePtr();
+    if (nd.node()!.firstChild(child) === AccessResult.accessOK) {
+      nd.assign(child.node());
+      depthRef.value++;
+      return;
+    }
+
+    if (depthRef.value === 0) {
+      nd.clear();
+      return;
+    }
+
+    // Try to go to next sibling, or parent's next sibling
+    while (nd.assignNextSibling() !== AccessResult.accessOK) {
+      if (depthRef.value === 1 || nd.assignOrigin() !== AccessResult.accessOK) {
+        nd.clear();
+        return;
+      }
+      depthRef.value--;
+    }
+  }
+
+  override nodeListFirst(_context: EvalContext, _interp: Interpreter): NodePtr {
+    return this.start_;
+  }
+
+  override nodeListRest(context: EvalContext, interp: Interpreter): NodeListObj {
+    if (!this.start_.node()) {
+      return new EmptyNodeListObj();
+    }
+    const newStart = new NodePtr(this.start_.node());
+    const depthRef = { value: this.depth_ };
+    DescendantsNodeListObj.advance(newStart, depthRef);
+    if (!newStart.node()) {
+      return new EmptyNodeListObj();
+    }
+    const result = new DescendantsNodeListObj(newStart, depthRef.value);
+    result.start_ = newStart;
+    result.depth_ = depthRef.value;
+    return result;
+  }
+}
+
+// descendants - get all descendants of a node
+// Following upstream DEFPRIMITIVE(Descendants) in primitive.cxx
+export class DescendantsPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(DescendantsPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nodeRes = args[0].optSingletonNodeList(context, interp);
+    if (!nodeRes.result) {
+      // Not an optional singleton - try as node list to map over
+      const nl = args[0].asNodeList();
+      if (nl) {
+        // Return a map that applies descendants to each node
+        // For simplicity, collect all descendants eagerly
+        const allDescendants: NodePtr[] = [];
+        let current: NodeListObj | null = nl;
+        while (current) {
+          const first = current.nodeListFirst(context, interp);
+          if (!first.node()) break;
+          // Collect descendants of this node
+          const desc = new DescendantsNodeListObj(first, 0);
+          let descCur: NodeListObj | null = desc;
+          while (descCur) {
+            const descFirst = descCur.nodeListFirst(context, interp);
+            if (!descFirst.node()) break;
+            allDescendants.push(descFirst);
+            descCur = descCur.nodeListRest(context, interp);
+          }
+          current = current.nodeListRest(context, interp);
+        }
+        if (allDescendants.length === 0) {
+          return interp.makeEmptyNodeList();
+        }
+        let result: NodeListObj = new NodePtrNodeListObj(allDescendants[allDescendants.length - 1]);
+        for (let i = allDescendants.length - 2; i >= 0; i--) {
+          result = new PairNodeListObj(new NodePtrNodeListObj(allDescendants[i]), result);
+        }
+        return result;
+      }
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+    if (!nodeRes.node.node()) {
+      return interp.makeEmptyNodeList();
+    }
+    return new DescendantsNodeListObj(nodeRes.node, 0);
+  }
+}
+
+// node-list-reverse - reverse a node list
+// Following upstream DEFPRIMITIVE(NodeListReverse) in primitive.cxx
+export class NodeListReversePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(NodeListReversePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+    // Collect all nodes in the list
+    const nodes: NodePtr[] = [];
+    let current: NodeListObj | null = nl;
+    while (current) {
+      const first = current.nodeListFirst(context, interp);
+      if (!first || !first.node()) break;
+      nodes.push(first);
+      current = current.nodeListRest(context, interp);
+    }
+    if (nodes.length === 0) {
+      return interp.makeEmptyNodeList();
+    }
+    // Build reversed list
+    let result: NodeListObj = new NodePtrNodeListObj(nodes[0]);
+    for (let i = 1; i < nodes.length; i++) {
+      result = new PairNodeListObj(new NodePtrNodeListObj(nodes[i]), result);
+    }
+    return result;
+  }
+}
+
 // node-list-ref - returns the nth node in a node list (0-indexed)
 export class NodeListRefPrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(2, 0, false);
@@ -2260,6 +2520,36 @@ export class EmptySosofoPrimitiveObj extends PrimitiveObjBase {
   constructor() { super(EmptySosofoPrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
     return new EmptySosofoObj();
+  }
+}
+
+// process-children - process children of current node
+// Following upstream DEFPRIMITIVE(ProcessChildren) in primitive.cxx
+export class ProcessChildrenPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  constructor() { super(ProcessChildrenPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.processingMode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentProcessingMode);
+      return interp.makeError();
+    }
+    return new ProcessChildrenSosofoObj(context.processingMode as ProcessingMode);
+  }
+}
+
+// process-children-trim - process children of current node, trimming whitespace
+// Following upstream DEFPRIMITIVE(ProcessChildrenTrim) in primitive.cxx
+export class ProcessChildrenTrimPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  constructor() { super(ProcessChildrenTrimPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.processingMode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentProcessingMode);
+      return interp.makeError();
+    }
+    return new ProcessChildrenTrimSosofoObj(context.processingMode as ProcessingMode);
   }
 }
 
@@ -2421,10 +2711,6 @@ function nodeAttributeString(
   const attPtr = new NodePtr();
   const namedResult = attsResult.atts.namedNode(name, attPtr);
   if (namedResult !== AccessResult.accessOK) {
-    let attrNameStr = '';
-    for (let i = 0; i < attrNameLen; i++) {
-      attrNameStr += String.fromCharCode(attrName[i]);
-    }
     return false;
   }
 
@@ -2566,6 +2852,262 @@ export class CurrentNodePrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// parent - get parent node
+// Following upstream DEFPRIMITIVE(Parent) in primitive.cxx
+export class ParentPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);  // 0 required, 1 optional
+  constructor() { super(ParentPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnOptSingletonNode, 0, args[0]);
+      }
+      if (!nodeRes.node.node()) {
+        return args[0];  // Return the original node list if empty
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    const parentPtr = new NodePtr();
+    if (node.node()!.getParent(parentPtr) !== AccessResult.accessOK) {
+      return interp.makeEmptyNodeList();
+    }
+    return new NodePtrNodeListObj(parentPtr);
+  }
+}
+
+// ancestor - find ancestor with given GI (element name)
+// Following upstream DEFPRIMITIVE(Ancestor) in primitive.cxx
+export class AncestorPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (gi), 1 optional (node)
+  constructor() { super(AncestorPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get the GI to search for
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    // Build the GI string for comparison
+    let giStr = '';
+    for (let i = 0; i < sd.length; i++) {
+      giStr += String.fromCharCode(sd.data[i]);
+    }
+    // Normalize to lowercase for case-insensitive comparison
+    const giLower = giStr.toLowerCase();
+
+    // Traverse ancestors looking for matching GI
+    const current = new NodePtr(node.node());
+    while (current.node()!.getParent(current) === AccessResult.accessOK) {
+      const giResult = current.node()!.getGi();
+      if (giResult.result === AccessResult.accessOK) {
+        const gs = giResult.str;
+        const data = gs.data();
+        if (data) {
+          let nodeGi = '';
+          for (let i = 0; i < gs.size(); i++) {
+            nodeGi += String.fromCharCode(data[i]);
+          }
+          if (nodeGi.toLowerCase() === giLower) {
+            return new NodePtrNodeListObj(current);
+          }
+        }
+      }
+    }
+    return interp.makeEmptyNodeList();
+  }
+}
+
+// first-sibling? - test if node is the first sibling of its type
+// Following upstream DEFPRIMITIVE(IsFirstSibling) in primitive.cxx
+export class IsFirstSiblingPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(IsFirstSiblingPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let nd: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      nd = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      nd = context.currentNode;
+    }
+
+    // Get the GI (generic identifier/element name) of this node
+    const giResult = nd.node()!.getGi();
+    if (giResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const gi = giResult.str;
+
+    // Get first sibling
+    const p = new NodePtr();
+    if (nd.node()!.firstSibling(p) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    // Iterate through siblings to check if any earlier sibling has same GI
+    while (p.node() && !p.sameNode(nd)) {
+      const temResult = p.node()!.getGi();
+      if (temResult.result === AccessResult.accessOK && temResult.str.equals(gi)) {
+        return interp.makeFalse();  // Found an earlier sibling with same GI
+      }
+      if (p.assignNextChunkSibling() !== AccessResult.accessOK) {
+        break;
+      }
+    }
+    return interp.makeTrue();
+  }
+}
+
+// last-sibling? - test if node is the last sibling of its type
+// Following upstream DEFPRIMITIVE(IsLastSibling) in primitive.cxx
+export class IsLastSiblingPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(IsLastSiblingPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let nd: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      nd = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      nd = context.currentNode;
+    }
+
+    // Get the GI (generic identifier/element name) of this node
+    const giResult = nd.node()!.getGi();
+    if (giResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const gi = giResult.str;
+
+    // Check following siblings for same GI
+    const ndCopy = new NodePtr(nd.node());
+    while (ndCopy.assignNextChunkSibling() === AccessResult.accessOK) {
+      const temResult = ndCopy.node()!.getGi();
+      if (temResult.result === AccessResult.accessOK && temResult.str.equals(gi)) {
+        return interp.makeFalse();  // Found a later sibling with same GI
+      }
+    }
+    return interp.makeTrue();
+  }
+}
+
+// Helper function to extract data from a node (following upstream nodeData in primitive.cxx)
+function nodeData(nd: NodePtr, mapper: SdataMapper, chunk: boolean, chars: Char[]): void {
+  // Try charChunk first - gets character data from data nodes
+  const chunkResult = nd.node()!.charChunk(mapper);
+  if (chunkResult.result === AccessResult.accessOK) {
+    const str = chunkResult.str;
+    const data = str.data();
+    if (data) {
+      const len = chunk ? str.size() : 1;
+      for (let i = 0; i < len; i++) {
+        chars.push(data[i]);
+      }
+    }
+    return;
+  }
+
+  // Try tokens - gets attribute value tokens
+  const tokensResult = nd.node()!.tokens();
+  if (tokensResult.result === AccessResult.accessOK) {
+    const str = tokensResult.str;
+    const data = str.data();
+    if (data) {
+      for (let i = 0; i < str.size(); i++) {
+        chars.push(data[i]);
+      }
+    }
+    return;
+  }
+
+  // Recursively process children
+  const cnd = new NodePtr();
+  if (nd.node()!.firstChild(cnd) === AccessResult.accessOK) {
+    do {
+      nodeData(cnd, mapper, true, chars);
+    } while (cnd.assignNextChunkSibling() === AccessResult.accessOK);
+    return;
+  }
+
+  // Last resort: try getToken - for attribute value nodes
+  const tokenResult = nd.node()!.getToken();
+  if (tokenResult.result === AccessResult.accessOK) {
+    const str = tokenResult.str;
+    const data = str.data();
+    if (data) {
+      for (let i = 0; i < str.size(); i++) {
+        chars.push(data[i]);
+      }
+    }
+  }
+}
+
+// data - extract string data from a node list
+// Following upstream DEFPRIMITIVE(Data) in primitive.cxx
+export class DataPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(DataPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let nl = args[0].asNodeList();
+    if (!nl) {
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    const chars: Char[] = [];
+
+    // Iterate through all nodes in the node list
+    for (;;) {
+      const nd = nl.nodeListFirst(context, interp);
+      if (!nd.node()) {
+        break;
+      }
+
+      // Get the rest of the node list and chunk flag
+      const chunkRestResult = nl.nodeListChunkRest(context, interp);
+      const chunk = chunkRestResult.chunk;
+      nl = chunkRestResult.list;
+
+      nodeData(nd, defaultSdataMapper, chunk, chars);
+    }
+
+    return new StringObj(new Uint32Array(chars));
+  }
+}
+
 // gi - get generic identifier (element name)
 export class GiPrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(0, 1, false);
@@ -2649,6 +3191,63 @@ class NodeListPtrNodeListObj extends NodeListObj {
   }
 }
 
+// ChildrenMapNodeListObj - lazy node list that maps children over nodes
+// Following upstream pattern where primitives support mapping over node lists
+class ChildrenMapNodeListObj extends NodeListObj {
+  private nl_: NodeListObj;
+  private children_: NodeListObj | null = null;
+
+  constructor(nl: NodeListObj) {
+    super();
+    this.nl_ = nl;
+  }
+
+  private getNextChildren(context: EvalContext, interp: Interpreter): void {
+    const nd = this.nl_.nodeListFirst(context, interp);
+    if (!nd.node()) return;
+
+    const childrenListPtr = new NodeListPtr();
+    if (nd.node()!.children(childrenListPtr) === AccessResult.accessOK) {
+      this.children_ = new NodeListPtrNodeListObj(childrenListPtr);
+    } else {
+      this.children_ = new EmptyNodeListObj();
+    }
+    this.nl_ = this.nl_.nodeListRest(context, interp);
+  }
+
+  override nodeListFirst(context: EvalContext, interp: Interpreter): NodePtr {
+    for (;;) {
+      if (!this.children_) {
+        this.getNextChildren(context, interp);
+        if (!this.children_) break;
+      }
+      const nd = this.children_.nodeListFirst(context, interp);
+      if (nd.node()) return nd;
+      this.children_ = null;
+    }
+    return new NodePtr();
+  }
+
+  override nodeListRest(context: EvalContext, interp: Interpreter): NodeListObj {
+    for (;;) {
+      if (!this.children_) {
+        this.getNextChildren(context, interp);
+        if (!this.children_) break;
+      }
+      const nd = this.children_.nodeListFirst(context, interp);
+      if (nd.node()) {
+        const rest = this.children_.nodeListRest(context, interp);
+        if (rest.nodeListFirst(context, interp).node()) {
+          return new PairNodeListObj(rest, new ChildrenMapNodeListObj(this.nl_));
+        }
+        return new ChildrenMapNodeListObj(this.nl_);
+      }
+      this.children_ = null;
+    }
+    return new EmptyNodeListObj();
+  }
+}
+
 // children - get children of a node as node list
 export class ChildrenPrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(1, 0, false);
@@ -2656,11 +3255,10 @@ export class ChildrenPrimitiveObj extends PrimitiveObjBase {
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
     const nodeRes = args[0].optSingletonNodeList(context, interp);
     if (!nodeRes.result) {
-      // Check if it's a node list (for mapping)
+      // Check if it's a node list (for mapping children over each node)
       const nl = args[0].asNodeList();
       if (nl) {
-        // TODO: Support mapping over node lists
-        return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+        return new ChildrenMapNodeListObj(nl);
       }
       return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
     }
@@ -3127,5 +3725,17 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   // node-list-filter is defined in builtins.dsl, not as a primitive
   ['node-list=?', () => new IsNodeListEqualPrimitiveObj()],
   ['node-list-last', () => new NodeListLastPrimitiveObj()],
-  ['element-with-id', () => new ElementWithIdPrimitiveObj()]
+  ['element-with-id', () => new ElementWithIdPrimitiveObj()],
+  // Process children and process-children-trim
+  ['process-children', () => new ProcessChildrenPrimitiveObj()],
+  ['process-children-trim', () => new ProcessChildrenTrimPrimitiveObj()],
+  // Node navigation primitives
+  ['parent', () => new ParentPrimitiveObj()],
+  ['ancestor', () => new AncestorPrimitiveObj()],
+  ['first-sibling?', () => new IsFirstSiblingPrimitiveObj()],
+  ['last-sibling?', () => new IsLastSiblingPrimitiveObj()],
+  ['data', () => new DataPrimitiveObj()],
+  ['node-list-reverse', () => new NodeListReversePrimitiveObj()],
+  ['node-list-map', () => new NodeListMapPrimitiveObj()],
+  ['descendants', () => new DescendantsPrimitiveObj()]
 ]);

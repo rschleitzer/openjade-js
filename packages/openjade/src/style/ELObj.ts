@@ -30,6 +30,19 @@ export interface Insn {
 
 export type InsnPtr = Insn | null;
 
+// Factory function references - set by Insn.ts to avoid circular dependencies
+// Matches upstream pattern where FunctionObj::makeCallInsn creates FunctionCallInsn
+export let createFunctionCallInsn: (nArgs: number, func: FunctionObj, loc: Location, next: InsnPtr) => InsnPtr;
+export let createFunctionTailCallInsn: (nArgs: number, func: FunctionObj, loc: Location, nCallerArgs: number) => InsnPtr;
+
+export function setInsnFactories(
+  callInsn: typeof createFunctionCallInsn,
+  tailCallInsn: typeof createFunctionTailCallInsn
+): void {
+  createFunctionCallInsn = callInsn;
+  createFunctionTailCallInsn = tailCallInsn;
+}
+
 // Forward declaration for VM (defined in Insn.ts)
 export interface VM {
   sp: number;
@@ -125,8 +138,12 @@ export class EvalContext {
   // Placeholder - will be fully implemented
 }
 
-export class Unit {
-  // Placeholder for unit definition
+// Unit interface - implemented in Interpreter.ts
+export interface Unit {
+  name(): StringC;
+  defined(part: { value: number }, loc: { value: Location | null }): boolean;
+  resolveQuantity(force: boolean, interp: Interpreter, val: number, valExp: number): ELObj | null;
+  resolveQuantityDouble(force: boolean, interp: Interpreter, val: number, unitExp: number): ELObj | null;
 }
 
 // Forward declaration for InheritedC
@@ -237,7 +254,7 @@ export abstract class ELObj extends CollectorObject {
     return { type: QuantityType.noQuantity, longVal: 0, doubleVal: 0, dim: 0 };
   }
 
-  resolveQuantities(_force: boolean, _interp: Interpreter, _loc: Location): ELObj {
+  resolveQuantities(_force: boolean, _interp: Interpreter, _loc: Location): ELObj | null {
     return this;
   }
 
@@ -439,9 +456,12 @@ export class PairObj extends ELObj {
     out.put(0x29); // ')'
   }
 
-  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj {
+  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj | null {
     const newCar = this.car_.resolveQuantities(force, interp, loc);
     const newCdr = this.cdr_.resolveQuantities(force, interp, loc);
+    if (newCar === null || newCdr === null) {
+      return null;
+    }
     if (newCar === this.car_ && newCdr === this.cdr_) {
       return this;
     }
@@ -494,11 +514,12 @@ export class VectorObj extends ELObj {
     out.put(0x29); // ')'
   }
 
-  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj {
+  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj | null {
     let changed = false;
     const newElements: ELObj[] = [];
     for (const elem of this.elements_) {
       const resolved = elem.resolveQuantities(force, interp, loc);
+      if (resolved === null) return null;
       if (resolved !== elem) changed = true;
       newElements.push(resolved);
     }
@@ -907,9 +928,15 @@ export class UnresolvedQuantityObj extends ELObj {
     this.unitExp_ = unitExp;
   }
 
-  override resolveQuantities(_force: boolean, _interp: Interpreter, _loc: Location): ELObj {
-    // TODO: Implement unit resolution
-    return this;
+  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj | null {
+    const part = { value: 0 };
+    const defLoc = { value: null as Location | null };
+    if (!this.unit_.defined(part, defLoc)) {
+      interp.setNextLocation(loc);
+      interp.message('undefinedQuantity', this.unit_.name());
+      return interp.makeError();
+    }
+    return this.unit_.resolveQuantityDouble(force, interp, this.val_, this.unitExp_);
   }
 }
 
@@ -926,9 +953,15 @@ export class UnresolvedLengthObj extends ELObj {
     this.valExp_ = valExp;
   }
 
-  override resolveQuantities(_force: boolean, _interp: Interpreter, _loc: Location): ELObj {
-    // TODO: Implement unit resolution
-    return this;
+  override resolveQuantities(force: boolean, interp: Interpreter, loc: Location): ELObj | null {
+    const part = { value: 0 };
+    const defLoc = { value: null as Location | null };
+    if (!this.unit_.defined(part, defLoc)) {
+      interp.setNextLocation(loc);
+      interp.message('undefinedQuantity', this.unit_.name());
+      return interp.makeError();
+    }
+    return this.unit_.resolveQuantity(force, interp, this.val_, this.valExp_);
   }
 }
 
@@ -1171,12 +1204,12 @@ export abstract class FunctionObj extends ELObj {
     return this.sig_.nRequiredArgs + this.sig_.nOptionalArgs + this.sig_.nKeyArgs + (this.sig_.restArg ? 1 : 0);
   }
 
-  makeCallInsn(_nArgs: number, _interp: Interpreter, _loc: Location, next: InsnPtr): InsnPtr {
-    return next;
+  makeCallInsn(nArgs: number, _interp: Interpreter, loc: Location, next: InsnPtr): InsnPtr {
+    return createFunctionCallInsn(nArgs, this, loc, next);
   }
 
-  makeTailCallInsn(_nArgs: number, _interp: Interpreter, _loc: Location, _nCallerArgs: number): InsnPtr {
-    return null;
+  makeTailCallInsn(nArgs: number, _interp: Interpreter, loc: Location, nCallerArgs: number): InsnPtr {
+    return createFunctionTailCallInsn(nArgs, this, loc, nCallerArgs);
   }
 
   // Call the function with arguments on the VM stack
