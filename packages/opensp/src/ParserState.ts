@@ -13379,28 +13379,35 @@ export class ParserState extends ContentState implements ParserStateInterface {
    * Port of Parser::sdParseNaming from parseSd.cxx (lines 1531-1855)
    */
   protected sdParseNaming(sdBuilder: SdBuilder, parm: SdParam): Boolean {
-    // Keys for the two passes (namestart, namechar)
+    // Keys array matching C++: UCNMSTRT, NAMESTRT, LCNMCHAR, UCNMCHAR, NAMECHAR, NAMECASE
     const keys = [
-      [Sd.ReservedName.rUCNMSTRT, Sd.ReservedName.rNAMESTRT, Sd.ReservedName.rLCNMCHAR],
-      [Sd.ReservedName.rUCNMCHAR, Sd.ReservedName.rNAMECHAR, Sd.ReservedName.rNAMECASE]
+      Sd.ReservedName.rUCNMSTRT,
+      Sd.ReservedName.rNAMESTRT,
+      Sd.ReservedName.rLCNMCHAR,
+      Sd.ReservedName.rUCNMCHAR,
+      Sd.ReservedName.rNAMECHAR,
+      Sd.ReservedName.rNAMECASE
     ];
 
     const nameStartChar = new ISet<Char>();
     const nameChar = new ISet<Char>();
 
-    // Two passes: first for name start chars, then for name chars
+    // Two passes: first for name start chars (isNamechar=0), then for name chars (isNamechar=1)
     for (let isNamechar = 0; isNamechar <= 1; isNamechar++) {
       const set = isNamechar ? nameChar : nameStartChar;
 
-      // Parse LCNMSTRT/LCNMCHAR literal(s)
+      // Parse LCNMSTRT/LCNMCHAR literal(s) - terminates at UCNMSTRT/UCNMCHAR
       const lcChars = new String<SyntaxChar>();
-      if (!this.parseNamingLiteral(sdBuilder, parm, lcChars, keys[isNamechar][0])) {
+      if (!this.parseNamingLiteralSingle(sdBuilder, parm, lcChars, keys[isNamechar * 3])) {
         return false;
       }
 
-      // Parse UCNMSTRT/UCNMCHAR literal(s)
+      // Parse UCNMSTRT/UCNMCHAR literal(s) - terminates at NAMESTRT/NAMECHAR OR LCNMCHAR/NAMECASE
+      // This is the key fix: in classic SGML (docbook.dcl), there's no NAMESTRT/NAMECHAR,
+      // so we must also accept LCNMCHAR/NAMECASE as terminators
       const ucChars = new String<SyntaxChar>();
-      if (!this.parseNamingLiteral(sdBuilder, parm, ucChars, keys[isNamechar][1])) {
+      if (!this.parseNamingLiteralDual(sdBuilder, parm, ucChars,
+          keys[isNamechar * 3 + 1], keys[isNamechar * 3 + 2])) {
         return false;
       }
 
@@ -13423,14 +13430,14 @@ export class ParserState extends ContentState implements ParserStateInterface {
         this.message(isNamechar ? ParserMessages.nmcharLength : ParserMessages.nmstrtLength);
       }
 
-      // Handle optional NAMESTRT/NAMECHAR section if present
-      if (parm.type === SdParam.Type.reservedName + keys[isNamechar][1]) {
+      // Handle optional NAMESTRT/NAMECHAR section if present (XML-style extended naming)
+      if (parm.type === SdParam.Type.reservedName + keys[isNamechar * 3 + 1]) {
         if (!sdBuilder.externalSyntax && !sdBuilder.enr) {
           this.message(ParserMessages.enrRequired);
           sdBuilder.enr = true;
         }
-        // Parse additional characters
-        if (!this.parseAdditionalNamingChars(sdBuilder, parm, set, keys[isNamechar][2])) {
+        // Parse additional characters until LCNMCHAR/NAMECASE
+        if (!this.parseAdditionalNamingChars(sdBuilder, parm, set, keys[isNamechar * 3 + 2])) {
           return false;
         }
       }
@@ -13497,9 +13504,10 @@ export class ParserState extends ContentState implements ParserStateInterface {
   }
 
   /**
-   * parseNamingLiteral - Parse naming literal(s) until next keyword
+   * parseNamingLiteralSingle - Parse naming literal(s) until a single next keyword
+   * Used for LCNMSTRT/LCNMCHAR which terminate at UCNMSTRT/UCNMCHAR
    */
-  protected parseNamingLiteral(
+  protected parseNamingLiteralSingle(
     sdBuilder: SdBuilder,
     parm: SdParam,
     chars: String<SyntaxChar>,
@@ -13525,6 +13533,94 @@ export class ParserState extends ContentState implements ParserStateInterface {
         case PrevParam.paramOther:
           allowedParams = new AllowedSdParams(
             SdParam.Type.reservedName + nextKeyword,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number
+          );
+          break;
+      }
+
+      if (!this.parseSdParam(allowedParams, parm)) {
+        return false;
+      }
+
+      // Check for ENR requirement
+      if ((parm.type === SdParam.Type.paramLiteral && prevParam !== PrevParam.paramNone) ||
+          parm.type === SdParam.Type.number) {
+        if (!sdBuilder.externalSyntax && !sdBuilder.enr) {
+          this.message(ParserMessages.enrRequired);
+          sdBuilder.enr = true;
+        }
+      }
+
+      prevParam = parm.type === SdParam.Type.number ? PrevParam.paramNumber : PrevParam.paramOther;
+
+      if (parm.type === SdParam.Type.minus) {
+        // Handle range
+        if (!this.parseSdParam(new AllowedSdParams(SdParam.Type.number), parm)) {
+          return false;
+        }
+        if (chars.size() > 0 && parm.n < chars.get(chars.size() - 1)) {
+          this.message(ParserMessages.sdInvalidRange);
+        } else if (chars.size() > 0) {
+          // Add range
+          const start = chars.get(chars.size() - 1) + 1;
+          for (let c = start; c <= parm.n; c++) {
+            chars.append([c as SyntaxChar], 1);
+          }
+        }
+      } else {
+        this.sdParamConvertToLiteral(parm);
+        if (parm.type !== SdParam.Type.paramLiteral) {
+          break;
+        }
+        // Append characters
+        for (let i = 0; i < parm.paramLiteralText.size(); i++) {
+          chars.append([parm.paramLiteralText.get(i)], 1);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * parseNamingLiteralDual - Parse naming literal(s) until one of two possible keywords
+   * Used for UCNMSTRT/UCNMCHAR which can terminate at:
+   * - NAMESTRT/NAMECHAR (XML/extended syntax) OR
+   * - LCNMCHAR/NAMECASE (classic SGML syntax)
+   * Port of C++ parseSd.cxx lines 1616-1724 which accepts both terminators
+   */
+  protected parseNamingLiteralDual(
+    sdBuilder: SdBuilder,
+    parm: SdParam,
+    chars: String<SyntaxChar>,
+    nextKeyword1: number,
+    nextKeyword2: number
+  ): Boolean {
+    enum PrevParam { paramNone, paramNumber, paramOther }
+    let prevParam = PrevParam.paramNone;
+
+    for (;;) {
+      let allowedParams: AllowedSdParams;
+      switch (prevParam) {
+        case PrevParam.paramNone:
+          allowedParams = new AllowedSdParams(SdParam.Type.paramLiteral, SdParam.Type.number);
+          break;
+        case PrevParam.paramNumber:
+          // Accept BOTH possible terminator keywords (this is the key fix!)
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword1,
+            SdParam.Type.reservedName + nextKeyword2,
+            SdParam.Type.paramLiteral,
+            SdParam.Type.number,
+            SdParam.Type.minus
+          );
+          break;
+        case PrevParam.paramOther:
+          // Accept BOTH possible terminator keywords
+          allowedParams = new AllowedSdParams(
+            SdParam.Type.reservedName + nextKeyword1,
+            SdParam.Type.reservedName + nextKeyword2,
             SdParam.Type.paramLiteral,
             SdParam.Type.number
           );
@@ -14597,23 +14693,28 @@ export class ParserState extends ContentState implements ParserStateInterface {
               booleanFeature++;
             }
           }
-          continue;
+          // FALL THROUGH to EMPTYNRM case (no break/continue!)
+          // This matches C++ fall-through behavior
 
+        // eslint-disable-next-line no-fallthrough
         case Sd.ReservedName.rEMPTYNRM:
-          // Check for EMPTYNRM or skip to IMPLYDEF
+          // Check for EMPTYNRM or skip to LINK
+          // In classic SGML (docbook.dcl), there's no EMPTYNRM - we go directly to LINK
+          // features[i + 7] = LINK when i is at EMPTYNRM
           if (!this.parseSdParam(
             new AllowedSdParams(
-              SdParam.Type.reservedName + feature.name,
-              SdParam.Type.reservedName + features[i + 7].name
+              SdParam.Type.reservedName + features[i].name,  // EMPTYNRM
+              SdParam.Type.reservedName + features[i + 7].name  // LINK
             ),
             parm
           )) {
             return false;
           }
-          if (parm.type === SdParam.Type.reservedName + feature.name) {
+          if (parm.type === SdParam.Type.reservedName + features[i].name) {
+            // Got EMPTYNRM - require WWW extensions
             this.requireWWW(sdBuilder);
           } else {
-            // Skip to IMPLYDEF
+            // Got LINK - skip IMPLYDEF section (features[17-22]) to LINK (features[23])
             booleanFeature += 5;
             i += 7;
           }

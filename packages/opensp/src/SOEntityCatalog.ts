@@ -550,6 +550,7 @@ export class SOEntityCatalog extends EntityCatalog {
       this.sgmlDeclBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
       this.sgmlDeclCatalogPath_.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
       this.haveSgmlDecl_ = true;
+
     }
   }
 
@@ -856,12 +857,6 @@ export class CatalogParser {
       return;
     }
 
-    // Save the current base ID and set it to this catalog's path for relative path resolution
-    const savedBaseId = em.currentBaseId();
-    const savedBaseIdCopy = new StringOf<Char>();
-    savedBaseIdCopy.assign(savedBaseId.data(), savedBaseId.size());
-    em.setCurrentBaseId(sysid);
-
     this.in_ = em.open(
       sysid,
       sysidCharset,
@@ -871,7 +866,6 @@ export class CatalogParser {
     );
 
     if (!this.in_) {
-      em.setCurrentBaseId(savedBaseIdCopy);  // Restore on failure
       catalog.endCatalog();
       return;
     }
@@ -958,6 +952,13 @@ export class CatalogParser {
     catalog.endCatalog();
 
     // Parse sub-catalogs
+    // Set the base ID to the current catalog's path for resolving relative CATALOG entries
+    // This is needed because expandSystemId uses currentBaseId_ to resolve relative paths
+    const savedBaseId = em.currentBaseId();
+    const savedBaseIdCopy = new StringOf<Char>();
+    savedBaseIdCopy.assign(savedBaseId.data(), savedBaseId.size());
+    em.setCurrentBaseId(sysid);
+
     for (let i = 0; i < subSysids.length; i++) {
       const tem = new StringOf<Char>();
       if (em.expandSystemId(
@@ -981,7 +982,7 @@ export class CatalogParser {
       }
     }
 
-    // Restore the previous base ID
+    // Restore the base ID
     em.setCurrentBaseId(savedBaseIdCopy);
   }
 
@@ -1270,6 +1271,12 @@ export class SOCatalogManager {
         );
       }
 
+      // Port of SOCatalogManagerImpl::addCatalogsForDocument from SOEntityCatalog.cxx lines 342-395
+      // Load catalog from the document's directory if useDocCatalog_ is true
+      if (this.useDocCatalog_ && systemId.size() > 0) {
+        this.addCatalogsForDocument(parser, systemId, entityCatalog, charset, mgr);
+      }
+
       // Parse optional system catalogs
       for (let i = this.nSystemCatalogsMustExist_; i < this.systemCatalogs_.size(); i++) {
         parser.parseCatalog(
@@ -1285,6 +1292,54 @@ export class SOCatalogManager {
     }
 
     return new ConstPtr<EntityCatalog>(entityCatalog);
+  }
+
+  // Port of SOCatalogManagerImpl::addCatalogsForDocument from SOEntityCatalog.cxx lines 342-395
+  // This function looks for a catalog file in the same directory as the document and parses it
+  private addCatalogsForDocument(
+    parser: CatalogParser,
+    sysid: StringC,
+    entityCatalog: SOEntityCatalog,
+    charset: CharsetInfo,
+    mgr: Messenger
+  ): void {
+    // Convert StringC to JavaScript string to work with paths
+    let sysidStr = '';
+    for (let i = 0; i < sysid.size(); i++) {
+      sysidStr += String.fromCharCode(sysid.get(i));
+    }
+
+    // Get the directory from the system ID
+    // Following C++ logic: resolve relative to the base, then look for "catalog"
+    let lastSlash = sysidStr.lastIndexOf('/');
+    if (lastSlash < 0) {
+      lastSlash = sysidStr.lastIndexOf('\\');
+    }
+
+    let catalogPath: string;
+    if (lastSlash >= 0) {
+      catalogPath = sysidStr.substring(0, lastSlash + 1) + 'catalog';
+    } else {
+      // No directory component, try current directory
+      catalogPath = 'catalog';
+    }
+
+    // Create a StringC for the catalog path
+    const catalogSysid = new StringOf<Char>();
+    for (let i = 0; i < catalogPath.length; i++) {
+      catalogSysid.append([catalogPath.charCodeAt(i)], 1);
+    }
+
+    // Try to parse the catalog file (don't require it to exist - use mustExist = false)
+    parser.parseCatalog(
+      catalogSysid,
+      false, // mustExist = false, as per C++ implementation which uses 0
+      this.sysidCharset_ || charset,
+      this.catalogCharset_!,
+      InputSourceOrigin.make(),
+      entityCatalog,
+      mgr
+    );
   }
 
   // Factory method

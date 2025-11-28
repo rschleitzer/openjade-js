@@ -378,12 +378,14 @@ function main(): number {
   }
 
   if (catalogSysids.size() > 0) {
+    // Enable document directory catalog loading - each parser gets its own catalog
+    // with its own SGMLDECL setting based on its directory's catalog
     const catalogManager = SOCatalogManager.make(
       catalogSysids,
       parsed.catalogs.length,
       charset,
       charset,
-      true
+      true  // useDocCatalog - each parser gets its own catalog
     );
     (entityManager as ExtendEntityManager).setCatalogManager(catalogManager);
   }
