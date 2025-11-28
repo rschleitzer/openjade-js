@@ -13,7 +13,21 @@ import type { Interpreter } from './Interpreter';
 function stringObjToString(strObj: StringObj): string {
   const data = strObj.stringData();
   if (!data.result) return '';
-  return String.fromCharCode(...Array.from(data.data.slice(0, data.length)));
+  // Use loop instead of spread to avoid stack overflow with large strings
+  let result = '';
+  for (let i = 0; i < data.length; i++) {
+    result += String.fromCharCode(data.data[i]);
+  }
+  return result;
+}
+
+// Helper to convert Uint32Array to JS string without spread operator
+function uint32ArrayToString(data: Uint32Array, length: number): string {
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += String.fromCharCode(data[i]);
+  }
+  return result;
 }
 
 // Boolean inherited characteristic
@@ -249,7 +263,7 @@ export class StringInheritedC extends InheritedC {
   make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const strData = obj.stringData();
     if (strData.result) {
-      const str = String.fromCharCode(...strData.data.slice(0, strData.length));
+      const str = uint32ArrayToString(strData.data, strData.length);
       return new StringInheritedC(this.identifier(), this.index(), str);
     }
     this.invalidValue(loc, interp);
@@ -310,7 +324,7 @@ export class FontFamilyNameC extends StringInheritedC {
   override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const strData = obj.stringData();
     if (strData.result) {
-      const str = String.fromCharCode(...strData.data.slice(0, strData.length));
+      const str = uint32ArrayToString(strData.data, strData.length);
       return new FontFamilyNameC(this.identifier(), this.index(), str);
     }
     this.invalidValue(loc, interp);

@@ -13,6 +13,7 @@ import {
   ElementTypeFromElementType as ElementType,
   AttributeDefinitionList,
   AttributeValue,
+  AttributeList,
   SubstTable,
   Location,
   Origin,
@@ -47,7 +48,10 @@ import {
   SdataMapper,
   NodeVisitor,
   Severity,
-  EntityType
+  EntityType,
+  NamedNodeList,
+  NamedNodeListPtr,
+  NamedNodeListType
 } from '../grove/Node';
 
 import { LocNode } from '../grove/LocNode';
@@ -73,6 +77,17 @@ function setString(to: GroveString, from: StringC): void {
     }
     to.assign(dest, size);
   }
+}
+
+// Helper to convert StringC to JavaScript string
+function stringCToString(sc: StringC): string {
+  if (!sc || !sc.data() || sc.size() === 0) return '';
+  const data = sc.data();
+  let result = '';
+  for (let i = 0; i < sc.size(); i++) {
+    result += String.fromCharCode(data[i]);
+  }
+  return result;
 }
 
 // MessageItem for storing parser messages
@@ -120,8 +135,18 @@ abstract class Chunk {
     return { result: AccessResult.accessNotInClass, chunk: null, nNodes: 0 };
   }
 
-  getFirstSibling(_grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
-    return { result: AccessResult.accessNotInClass, chunk: null };
+  // Following upstream Chunk::getFirstSibling
+  getFirstSibling(grove: GroveImpl): { result: AccessResult; chunk: Chunk | null } {
+    // If origin is the grove root (document element), return accessNotInClass
+    if (this.origin === grove.root()) {
+      return { result: AccessResult.accessNotInClass, chunk: null };
+    }
+    // Return origin->after() - the first child of our parent (first sibling)
+    const p = this.origin?.after() ?? null;
+    if (!p) {
+      return { result: AccessResult.accessNull, chunk: null };
+    }
+    return { result: AccessResult.accessOK, chunk: p };
   }
 
   id(): StringC | null {
@@ -175,6 +200,66 @@ class ElementChunk extends ParentChunk {
 
   static key(chunk: ElementChunk): StringC | null {
     return chunk.id();
+  }
+
+  // Number of attributes stored (for iteration)
+  nAtts(): number {
+    return 0;
+  }
+}
+
+// AttElementChunk - stores attribute values
+class AttElementChunk extends ElementChunk {
+  private attributeValues_: (AttributeValue | null)[] = [];
+
+  constructor(nAtts: number) {
+    super();
+    this.attributeValues_ = new Array(nAtts).fill(null);
+  }
+
+  setAttributeValue(index: number, value: AttributeValue | null): void {
+    if (index < this.attributeValues_.length) {
+      this.attributeValues_[index] = value;
+    }
+  }
+
+  override attributeValue(attIndex: number, grove: GroveImpl): AttributeValue | null {
+    if (attIndex < this.attributeValues_.length) {
+      return this.attributeValues_[attIndex];
+    }
+    return super.attributeValue(attIndex, grove);
+  }
+
+  override nAtts(): number {
+    return this.attributeValues_.length;
+  }
+
+  // Override id() to return the ID attribute value (matching upstream AttElementChunk::id())
+  override id(): StringC | null {
+    const defList = this.attDefList();
+    if (!defList) return null;
+    const idIdx = defList.idIndex();
+    // idIndex() returns -1 if no ID attribute defined
+    if (idIdx === -1 || idIdx >= this.attributeValues_.length) return null;
+    const av = this.attributeValues_[idIdx];
+    if (!av) return null;
+    const t = av.text();
+    if (!t) return null;
+    return t.string();
+  }
+}
+
+// IncludedElementChunk - element included from inclusion exception
+class IncludedElementChunk extends ElementChunk {
+  override included(): boolean {
+    return true;
+  }
+}
+
+// IncludedAttElementChunk - included element with attributes
+class IncludedAttElementChunk extends AttElementChunk {
+  override included(): boolean {
+    return true;
   }
 }
 
@@ -393,8 +478,13 @@ class GroveImpl {
   // Storage
   private chunks_: Chunk[] = [];
   private defaultedEntityTable_: Map<string, Entity> = new Map();
+  private idTable_: Map<string, ElementChunk> = new Map();
   // Track the last allocated chunk to maintain allocation order (for after())
   private lastAllocatedChunk_: Chunk | null = null;
+  // Attribute value storage (prevents GC from collecting)
+  private attributeValues_: AttributeValue[] = [];
+  // Implied attribute value placeholder
+  private impliedAttributeValue_: AttributeValue | null = null;
 
   constructor(groveIndex: number) {
     this.groveIndex_ = groveIndex;
@@ -436,6 +526,22 @@ class GroveImpl {
 
   entitySubstTable(): SubstTable | null {
     return this.instanceSyntax_?.entitySubstTable() ?? null;
+  }
+
+  // Look up element by ID (matching upstream GroveImpl::lookupElement)
+  lookupElement(id: string): ElementChunk | null {
+    return this.idTable_.get(id) ?? null;
+  }
+
+  // Case-insensitive element lookup for when NAMETOKEN values are normalized
+  lookupElementCaseInsensitive(id: string): ElementChunk | null {
+    const idLower = id.toLowerCase();
+    for (const [key, chunk] of this.idTable_) {
+      if (key.toLowerCase() === idLower) {
+        return chunk;
+      }
+    }
+    return null;
   }
 
   getAppinfo(): { available: boolean; appinfo: StringC | null } {
@@ -502,7 +608,7 @@ class GroveImpl {
   // Grove building
   pendingData(): DataChunk | null { return this.pendingData_; }
 
-  push(chunk: ElementChunk, _hasId: boolean): void {
+  push(chunk: ElementChunk, hasId: boolean): void {
     // Flush pending data first
     if (this.pendingData_) {
       if (this.tailTarget_) {
@@ -515,6 +621,15 @@ class GroveImpl {
     chunk.origin = this.origin_;
     // Must set origin_ to chunk before advancing completeLimit_
     this.origin_ = chunk;
+
+    // Insert into ID table if element has an ID attribute (matching upstream idTable_.insert)
+    if (hasId) {
+      const idStr = chunk.id();
+      if (idStr) {
+        const key = stringCToString(idStr);
+        this.idTable_.set(key, chunk);
+      }
+    }
 
     // Set as document element if appropriate, or link via tailTarget_
     if (chunk.origin === this.root_ && this.root_.documentElement === null) {
@@ -626,6 +741,26 @@ class GroveImpl {
     return this.defaultedEntityTable_.get(nameKey) ?? null;
   }
 
+  // Store attribute value to prevent GC
+  storeAttributeValue(value: AttributeValue): void {
+    this.attributeValues_.push(value);
+  }
+
+  // Get implied attribute value (placeholder for unspecified attributes)
+  impliedAttributeValue(): AttributeValue | null {
+    return this.impliedAttributeValue_;
+  }
+
+  // Link a chunk into the allocation order (for chunks created outside allocChunk)
+  linkChunk(chunk: Chunk): void {
+    this.nChunksSinceLocOrigin_++;
+    this.chunks_.push(chunk);
+    if (this.lastAllocatedChunk_) {
+      this.lastAllocatedChunk_.nextInAllocationOrder_ = chunk;
+    }
+    this.lastAllocatedChunk_ = chunk;
+  }
+
   private finishProlog(): void {
     this.tailTarget_ = null;
   }
@@ -698,16 +833,37 @@ abstract class BaseNode extends Node implements LocNode {
     return { result: false, ptr: null };
   }
 
-  override nextSibling(_ptr: NodePtr): AccessResult {
-    return AccessResult.accessNotInClass;
+  // Default nextSibling delegates to nextChunkSibling (matching upstream BaseNode::nextSibling)
+  override nextSibling(ptr: NodePtr): AccessResult {
+    return this.nextChunkSibling(ptr);
   }
 
-  override follow(_ptr: NodeListPtr): AccessResult {
-    return AccessResult.accessNotInClass;
+  override follow(ptr: NodeListPtr): AccessResult {
+    const nd = new NodePtr();
+    const ret = this.nextSibling(nd);
+    if (ret === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(nd));
+      return ret;
+    }
+    if (ret === AccessResult.accessNull) {
+      ptr.assign(new BaseNodeList());
+      return AccessResult.accessOK;
+    }
+    return ret;
   }
 
-  override children(_ptr: NodeListPtr): AccessResult {
-    return AccessResult.accessNotInClass;
+  override children(ptr: NodeListPtr): AccessResult {
+    const head = new NodePtr();
+    const ret = this.firstChild(head);
+    if (ret === AccessResult.accessOK) {
+      ptr.assign(new SiblingNodeList(head));
+      return ret;
+    }
+    if (ret === AccessResult.accessNull) {
+      ptr.assign(new BaseNodeList());
+      return AccessResult.accessOK;
+    }
+    return ret;
   }
 
   override getOrigin(_ptr: NodePtr): AccessResult {
@@ -794,8 +950,13 @@ abstract class ChunkNode extends BaseNode {
     return false;
   }
 
+  // Following upstream ChunkNode::firstSibling
   override firstSibling(ptr: NodePtr): AccessResult {
-    return AccessResult.accessNotInClass;
+    const { result, chunk } = this.chunk_.getFirstSibling(this.grove());
+    if (result !== AccessResult.accessOK || !chunk) {
+      return result;
+    }
+    return chunk.setNodePtrFirst(ptr, this);
   }
 
   override siblingsIndex(): { result: AccessResult; index: number } {
@@ -908,6 +1069,25 @@ class SgmlDocumentNode extends ChunkNode implements SdNode {
     };
   }
 
+  // Override getElements() to return NamedNodeList of elements indexed by ID
+  // (matching upstream SgmlDocumentNode::getElements)
+  override getElements(): { result: AccessResult; elements: NamedNodeList | null } {
+    // Wait for document element (matching upstream wait logic)
+    if (!this.grove().root().documentElement) {
+      if (this.grove().complete()) {
+        return { result: AccessResult.accessNull, elements: null };
+      }
+      // In synchronous mode, just return null if not available yet
+      return { result: AccessResult.accessNull, elements: null };
+    }
+    // Note: upstream checks generalSubstTable(), but we proceed without it
+    // since we can still do exact-match lookups without normalization
+    return {
+      result: AccessResult.accessOK,
+      elements: new ElementsNamedNodeList(this.grove())
+    };
+  }
+
   override queryInterface(iid: string): { result: boolean; ptr: any } {
     if (iid === SdNode.iid) {
       return { result: true, ptr: this };
@@ -977,6 +1157,13 @@ class ElementNode extends ChunkNode {
     return { result: AccessResult.accessOK, index: this.elemChunk().elementIndex };
   }
 
+  override getAttributes(): { result: AccessResult; atts: NamedNodeList | null } {
+    return {
+      result: AccessResult.accessOK,
+      atts: new ElementAttributesNamedNodeList(this.grove(), this.elemChunk())
+    };
+  }
+
   override firstChild(ptr: NodePtr): AccessResult {
     const chunk = this.elemChunk();
     // Use after() to get the next chunk in allocation order (emulates C++ pointer arithmetic)
@@ -1018,10 +1205,73 @@ class ElementNode extends ChunkNode {
     if (origin && origin.pointer()) {
       grove.setLocOrigin(origin.pointer()!);
     }
-    const chunk = grove.allocChunk(ElementChunk);
+
+    const atts = event.attributes();
+    let hasId = false;
+    let chunk: ElementChunk;
+
+    // Get the attribute definition list
+    const elemType = event.elementType();
+    const defList = elemType?.attributeDefTemp();
+
+    // Check if we have any specified attributes
+    if (atts.nSpec() === 0 && (!defList || !defList.anyCurrent())) {
+      // No attributes - use simple ElementChunk
+      if (event.included()) {
+        chunk = grove.allocChunk(IncludedElementChunk);
+      } else {
+        chunk = grove.allocChunk(ElementChunk);
+      }
+    } else {
+      // Has attributes - create AttElementChunk
+      const nAtts = atts.size();
+      // Find actual number of attributes to store (skip trailing unspecified)
+      let actualNAtts = nAtts;
+      while (actualNAtts > 0 && !atts.specified(actualNAtts - 1)) {
+        actualNAtts--;
+      }
+      // Ensure we store at least all specified attributes
+      if (actualNAtts === 0) actualNAtts = nAtts;
+
+      let attChunk: AttElementChunk;
+      if (event.included()) {
+        attChunk = new IncludedAttElementChunk(actualNAtts);
+      } else {
+        attChunk = new AttElementChunk(actualNAtts);
+      }
+      grove.linkChunk(attChunk);
+
+      // Check for ID attribute
+      const idIndexResult = atts.idIndex();
+      if (idIndexResult.valid && atts.specified(idIndexResult.index) && atts.value(idIndexResult.index)) {
+        hasId = true;
+      }
+
+      // Store attribute values
+      for (let i = 0; i < actualNAtts; i++) {
+        if (atts.specified(i)) {
+          // Store the actual value
+          const value = atts.value(i);
+          attChunk.setAttributeValue(i, value);
+          // Keep a reference in the grove to prevent GC
+          if (value) {
+            grove.storeAttributeValue(value);
+          }
+        } else {
+          // Use default value from definition
+          if (defList) {
+            const def = defList.def(i);
+            const defaultVal = def?.defaultValue(grove.impliedAttributeValue());
+            attChunk.setAttributeValue(i, defaultVal ?? null);
+          }
+        }
+      }
+
+      chunk = attChunk;
+    }
+
     chunk.type = event.elementType();
     chunk.locIndex = event.location().index();
-    const hasId = false; // TODO: Check for ID attribute
     grove.push(chunk, hasId);
   }
 }
@@ -1954,6 +2204,281 @@ class GroveBuilderEventHandler extends GroveBuilderMessageEventHandler {
 
   override entityDefaulted(event: EntityDefaultedEvent): void {
     this.grove_.addDefaultedEntity(event.entityPointer());
+  }
+}
+
+// AttributeAsgnNode - represents an attribute assignment
+class AttributeAsgnNode extends Node {
+  private grove_: GroveImpl;
+  private chunk_: ElementChunk;
+  private attIndex_: number;
+
+  constructor(grove: GroveImpl, chunk: ElementChunk, attIndex: number) {
+    super();
+    this.grove_ = grove;
+    this.chunk_ = chunk;
+    this.attIndex_ = attIndex;
+  }
+
+  grove(): GroveImpl {
+    return this.grove_;
+  }
+
+  override accept(visitor: NodeVisitor): void {
+    visitor.attributeAssignment(this);
+  }
+
+  override classDef(): ClassDef {
+    return ClassDef.attributeAssignment;
+  }
+
+  override getOriginToSubnodeRelPropertyName(): { result: AccessResult; id: ComponentName.Id } {
+    return { result: AccessResult.accessOK, id: ComponentName.Id.idAttributes };
+  }
+
+  // Get the attribute name
+  override getGi(): { result: AccessResult; str: GroveString } {
+    const defList = this.chunk_.attDefList();
+    if (!defList) {
+      return { result: AccessResult.accessNull, str: new GroveString() };
+    }
+    const def = defList.def(this.attIndex_);
+    if (!def) {
+      return { result: AccessResult.accessNull, str: new GroveString() };
+    }
+    const name = def.name();
+    const str = new GroveString();
+    setString(str, name);
+    return { result: AccessResult.accessOK, str };
+  }
+
+  // Get implied (whether attribute was not specified)
+  override getImplied(): { result: AccessResult; implied: boolean } {
+    const value = this.chunk_.attributeValue(this.attIndex_, this.grove_);
+    // Implied if value is null or is the implied placeholder
+    const implied = !value || value === this.grove_.impliedAttributeValue();
+    return { result: AccessResult.accessOK, implied };
+  }
+
+  // Get tokens for tokenized attribute value
+  tokens(): { result: AccessResult; str: GroveString } {
+    const value = this.chunk_.attributeValue(this.attIndex_, this.grove_);
+    if (!value) {
+      return { result: AccessResult.accessNull, str: new GroveString() };
+    }
+    // Check if it's a tokenized attribute value
+    const text = value.text();
+    if (text) {
+      const str = new GroveString();
+      setString(str, text.string());
+      return { result: AccessResult.accessOK, str };
+    }
+    return { result: AccessResult.accessNotInClass, str: new GroveString() };
+  }
+
+  override firstChild(_ptr: NodePtr): AccessResult {
+    // Attribute value children not implemented yet
+    return AccessResult.accessNull;
+  }
+
+  override children(ptr: NodeListPtr): AccessResult {
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  override follow(ptr: NodeListPtr): AccessResult {
+    ptr.assign(new BaseNodeList());
+    return AccessResult.accessOK;
+  }
+
+  // Next sibling in the attribute list
+  override nextSibling(ptr: NodePtr): AccessResult {
+    const nAtts = this.chunk_.nAtts();
+    const nextIdx = this.attIndex_ + 1;
+    if (nextIdx < nAtts) {
+      ptr.assign(new AttributeAsgnNode(this.grove_, this.chunk_, nextIdx));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override groveIndex(): number {
+    return this.grove_.groveIndex();
+  }
+
+  override equals(node: Node): boolean {
+    if (!(node instanceof AttributeAsgnNode)) return false;
+    // Same attribute on same element chunk
+    return this.chunk_ === node.chunk_ && this.attIndex_ === node.attIndex_;
+  }
+}
+
+// AttributeNodeList - list of attribute assignment nodes
+class AttributeNodeList extends BaseNodeList {
+  private grove_: GroveImpl;
+  private chunk_: ElementChunk;
+  private index_: number;
+
+  constructor(grove: GroveImpl, chunk: ElementChunk, index: number = 0) {
+    super();
+    this.grove_ = grove;
+    this.chunk_ = chunk;
+    this.index_ = index;
+  }
+
+  override first(ptr: NodePtr): AccessResult {
+    const nAtts = this.chunk_.nAtts();
+    if (this.index_ < nAtts) {
+      ptr.assign(new AttributeAsgnNode(this.grove_, this.chunk_, this.index_));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+
+  override rest(ptr: NodeListPtr): AccessResult {
+    const nAtts = this.chunk_.nAtts();
+    const nextIdx = this.index_ + 1;
+    if (nextIdx < nAtts) {
+      ptr.assign(new AttributeNodeList(this.grove_, this.chunk_, nextIdx));
+      return AccessResult.accessOK;
+    }
+    return AccessResult.accessNull;
+  }
+}
+
+// ElementAttributesNamedNodeList - named node list for element attributes
+class ElementAttributesNamedNodeList extends NamedNodeList {
+  private grove_: GroveImpl;
+  private chunk_: ElementChunk;
+
+  constructor(grove: GroveImpl, chunk: ElementChunk) {
+    super();
+    this.grove_ = grove;
+    this.chunk_ = chunk;
+  }
+
+  override namedNode(name: GroveString, ptr: NodePtr): AccessResult {
+    const defList = this.chunk_.attDefList();
+    if (!defList) {
+      return AccessResult.accessNull;
+    }
+
+    // Find attribute by name
+    const nDefs = defList.size();
+    for (let i = 0; i < nDefs; i++) {
+      const def = defList.def(i);
+      if (!def) continue;
+      const defName = def.name();
+      // Compare names (case-insensitive for SGML)
+      const gs = new GroveString();
+      setString(gs, defName);
+      if (this.compareNames(name, gs)) {
+        ptr.assign(new AttributeAsgnNode(this.grove_, this.chunk_, i));
+        return AccessResult.accessOK;
+      }
+    }
+    return AccessResult.accessNull;
+  }
+
+  private compareNames(a: GroveString, b: GroveString): boolean {
+    if (a.size() !== b.size()) return false;
+    const dataA = a.data();
+    const dataB = b.data();
+    if (!dataA || !dataB) return false;
+
+    // Case-insensitive comparison (SGML normalizes to uppercase)
+    for (let i = 0; i < a.size(); i++) {
+      const ca = dataA[i];
+      const cb = dataB[i];
+      // Normalize to uppercase for comparison
+      const na = (ca >= 0x61 && ca <= 0x7a) ? ca - 0x20 : ca;
+      const nb = (cb >= 0x61 && cb <= 0x7a) ? cb - 0x20 : cb;
+      if (na !== nb) return false;
+    }
+    return true;
+  }
+
+  override normalize(chars: Uint32Array, size: number): number {
+    // Normalize characters to uppercase for SGML
+    for (let i = 0; i < size; i++) {
+      const c = chars[i];
+      if (c >= 0x61 && c <= 0x7a) { // a-z
+        chars[i] = c - 0x20; // convert to A-Z
+      }
+    }
+    return size;
+  }
+
+  override nodeList(): NodeListPtr {
+    const ptr = new NodeListPtr();
+    ptr.assign(new AttributeNodeList(this.grove_, this.chunk_));
+    return ptr;
+  }
+
+  override type(): NamedNodeListType {
+    return NamedNodeListType.attributes;
+  }
+}
+
+// ElementsNamedNodeList - named node list for elements indexed by ID
+// (matching upstream ElementsNamedNodeList)
+class ElementsNamedNodeList extends NamedNodeList {
+  private grove_: GroveImpl;
+
+  constructor(grove: GroveImpl) {
+    super();
+    this.grove_ = grove;
+  }
+
+  // Look up element by ID (matching upstream ElementsNamedNodeList::namedNodeU)
+  override namedNode(name: GroveString, ptr: NodePtr): AccessResult {
+    // Convert GroveString to JavaScript string for lookup
+    const nameData = name.data();
+    if (!nameData) return AccessResult.accessNull;
+    let idStr = '';
+    for (let i = 0; i < name.size(); i++) {
+      idStr += String.fromCharCode(nameData[i]);
+    }
+
+    // Look up element in the ID table - try exact match first
+    let element = this.grove_.lookupElement(idStr);
+    if (element) {
+      ptr.assign(new ElementNode(this.grove_, element));
+      return AccessResult.accessOK;
+    }
+
+    // If not found, try case-insensitive lookup
+    // (SGML NAMETOKEN values may be normalized differently than ID values)
+    element = this.grove_.lookupElementCaseInsensitive(idStr);
+    if (element) {
+      ptr.assign(new ElementNode(this.grove_, element));
+      return AccessResult.accessOK;
+    }
+
+    return AccessResult.accessNull;
+  }
+
+  // Normalize using general substitution table (matching upstream BaseNamedNodeList)
+  override normalize(chars: Uint32Array, size: number): number {
+    const substTable = this.grove_.generalSubstTable();
+    if (substTable) {
+      for (let i = 0; i < size; i++) {
+        chars[i] = substTable.subst(chars[i]);
+      }
+    }
+    return size;
+  }
+
+  override nodeList(): NodeListPtr {
+    // Return a node list of all elements with IDs
+    // For now, return empty - full implementation would iterate idTable_
+    const ptr = new NodeListPtr();
+    ptr.assign(new BaseNodeList());
+    return ptr;
+  }
+
+  override type(): NamedNodeListType {
+    return NamedNodeListType.elements;
   }
 }
 

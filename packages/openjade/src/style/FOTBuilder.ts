@@ -515,6 +515,10 @@ export abstract class FOTBuilder {
   startSideline(): void {}
   endSideline(): void {}
 
+  // Entity flow object (for Transform backend output redirection)
+  startEntity(_systemId: StringC): void {}
+  endEntity(): void {}
+
   // Box flow object
   startBox(_nic: BoxNIC): void {}
   endBox(): void {}

@@ -1730,6 +1730,16 @@ export class NodePtr {
     this.node_ = null;
   }
 
+  // Compare if two NodePtrs point to the same node
+  // Following upstream operator== for NodePtr (which uses Node::operator==)
+  sameNode(other: NodePtr): boolean {
+    if (!this.node_ || !other.node_) {
+      return this.node_ === other.node_;
+    }
+    // Use equals() method to properly compare grove nodes
+    return this.node_.equals(other.node_);
+  }
+
   toBoolean(): boolean {
     return this.node_ !== null;
   }

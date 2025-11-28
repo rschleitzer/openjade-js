@@ -30,6 +30,7 @@ export class ProcessContext {
   private havePageType_: boolean = false;
   private pageType_: number = 0;
   private nodeStack_: NodeStackEntry[] = [];
+  private processNodeCount_: number = 0; // DEBUG: Loop detection
 
   constructor(interp: Interpreter, fotb: FOTBuilder) {
     this.vm_ = new VM(interp);
@@ -130,6 +131,22 @@ export class ProcessContext {
 
   // Process a single node
   processNode(nodePtr: NodePtr, processingMode: ProcessingMode | null, chunk: boolean = true): void {
+    this.processNodeCount_++;
+    const gi = nodePtr.getGi();
+    let giStr = '(none)';
+    if (gi) {
+      const data = gi.data();
+      const len = gi.size();
+      giStr = '';
+      for (let i = 0; i < len; i++) {
+        giStr += String.fromCharCode(data[i]);
+      }
+    }
+    if (this.processNodeCount_ <= 5 || this.processNodeCount_ % 1000 === 0) {
+    }
+    if (this.processNodeCount_ > 100000) {
+      throw new Error('Infinite loop detected in processNode');
+    }
     if (!processingMode) {
       return;
     }
@@ -158,8 +175,6 @@ export class ProcessContext {
     this.currentFOTBuilder().startNode(nodePtr, processingMode.name());
 
     // Find matching rules
-    const gi = nodePtr.getGi();
-    const giStr = gi ? String.fromCharCode(...Array.from(gi.data()).slice(0, gi.size())) : '(none)';
     for (;;) {
       const rule = processingMode.findMatch(
         nodePtr,

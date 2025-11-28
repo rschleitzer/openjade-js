@@ -2483,7 +2483,7 @@ export class SchemeParser extends Messenger {
     if (!this.in_) return;
     for (;;) {
       const c = this.in_.get(this);
-      if (c === eE || c === 0x0D) { // end or '\r'
+      if (c === eE || c === 0x0D || c === 0x0A) { // end or '\r' or '\n'
         break;
       }
     }

@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, StringC, Char } from '@openjade-js/opensp';
+import { Location, StringC, Char, String as StringOf } from '@openjade-js/opensp';
 import { ELObj, SymbolObj, QuantityType, StringObj } from './ELObj';
 import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';
@@ -34,6 +34,26 @@ import { StyleObj } from './Style';
 import { FlowObj, CompoundFlowObj, SosofoObj, ProcessContext } from './SosofoObj';
 import { Identifier, SyntacticKey } from './Identifier';
 import type { Interpreter } from './Interpreter';
+
+// Helper to convert StringC to JS string
+function stringCToString(sc: StringC): string {
+  if (!sc || !sc.ptr_ || sc.length_ === 0) return '';
+  let result = '';
+  for (let i = 0; i < sc.length_; i++) {
+    result += String.fromCharCode(sc.ptr_[i]);
+  }
+  return result;
+}
+
+// Helper to convert Uint32Array (or number array) to JS string without spread operator
+// This avoids stack overflow for large arrays that occur with String.fromCharCode(...)
+function uint32ArrayToString(data: Uint32Array | number[], length: number): string {
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += String.fromCharCode(data[i]);
+  }
+  return result;
+}
 
 // Helper to check if identifier matches a display NIC property
 function isDisplayNIC(ident: Identifier): boolean {
@@ -154,7 +174,7 @@ export class DisplayGroupFlowObj extends CompoundFlowObj {
       const strData = obj.stringData();
       if (strData) {
         this.nic_.hasCoalesceId = true;
-        this.nic_.coalesceId = String.fromCharCode(...strData.data.slice(0, strData.length));
+        this.nic_.coalesceId = uint32ArrayToString(strData.data, strData.length);
       }
     }
   }
@@ -279,7 +299,7 @@ export class ExternalGraphicFlowObj extends FlowObj {
             {
               const strData = obj.stringData();
               if (strData) {
-                this.nic_.entitySystemId = String.fromCharCode(...strData.data.slice(0, strData.length));
+                this.nic_.entitySystemId = uint32ArrayToString(strData.data, strData.length);
               }
             }
             break;
@@ -287,7 +307,7 @@ export class ExternalGraphicFlowObj extends FlowObj {
             {
               const strData = obj.stringData();
               if (strData) {
-                this.nic_.notationSystemId = String.fromCharCode(...strData.data.slice(0, strData.length));
+                this.nic_.notationSystemId = uint32ArrayToString(strData.data, strData.length);
               }
             }
             break;
@@ -1658,7 +1678,7 @@ export class FormattingInstructionFlowObj extends FlowObj {
     if (ident.syntacticKey(keyRef) && keyRef.value === SyntacticKey.keyData) {
       const strData = obj.stringData();
       if (strData.result) {
-        this.instruction_ = String.fromCharCode(...strData.data.slice(0, strData.length));
+        this.instruction_ = uint32ArrayToString(strData.data, strData.length);
       }
     }
   }
@@ -1667,6 +1687,62 @@ export class FormattingInstructionFlowObj extends FlowObj {
     const copy = new FormattingInstructionFlowObj();
     copy.style_ = this.style_;
     copy.instruction_ = this.instruction_;
+    return copy;
+  }
+}
+
+// Entity flow object - for Transform backend output file redirection
+// This is an extension flow object from UNREGISTERED::James Clark//Flow Object Class::entity
+export class EntityFlowObj extends CompoundFlowObj {
+  private systemId_: StringC;
+
+  constructor() {
+    super();
+    this.systemId_ = new StringOf<Char>(null, 0);
+  }
+
+  override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
+    fotb.startEntity(this.systemId_);
+    super.processInner(context);
+    fotb.endEntity();
+  }
+
+  override hasNonInheritedC(ident: Identifier): boolean {
+    // Check if the identifier name is "system-id"
+    const nameStr = stringCToString(ident.name());
+    return nameStr === 'system-id';
+  }
+
+  override setNonInheritedC(ident: Identifier, obj: ELObj, _loc: Location, _interp: Interpreter): void {
+    const nameStr = stringCToString(ident.name());
+    if (nameStr === 'system-id') {
+      const strData = obj.stringData();
+      if (strData.result) {
+        // Convert Uint32Array to Char[] for StringOf constructor
+        const chars: Char[] = [];
+        for (let i = 0; i < strData.length; i++) {
+          chars.push(strData.data[i]);
+        }
+        this.systemId_ = new StringOf<Char>(chars, chars.length);
+      }
+    }
+  }
+
+  override copy(_interp: Interpreter): FlowObj {
+    const copy = new EntityFlowObj();
+    copy.style_ = this.style_;
+    copy.content_ = this.content_;
+    // Copy the systemId_
+    const ptr = this.systemId_.ptr_;
+    const len = this.systemId_.size();
+    if (ptr && len > 0) {
+      const chars: Char[] = [];
+      for (let i = 0; i < len; i++) {
+        chars.push(ptr[i]);
+      }
+      copy.systemId_ = new StringOf<Char>(chars, chars.length);
+    }
     return copy;
   }
 }

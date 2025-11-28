@@ -242,7 +242,16 @@ export class VM extends EvalContext {
     this.closureLoc = new Location();
 
     // The inner loop
+    let insnCount = 0;
     while (insn) {
+      insnCount++;
+      if (insnCount % 100000 === 0) {
+      }
+      if (insnCount >= 100 && insnCount <= 120) {
+      }
+      if (insnCount > 10000000) {
+        throw new Error('Infinite loop detected in VM');
+      }
       insn = insn.execute(this);
     }
 

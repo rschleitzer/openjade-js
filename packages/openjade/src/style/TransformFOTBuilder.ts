@@ -6,7 +6,7 @@ import { String as StringOf } from '@openjade-js/opensp';
 import { NodePtr, GroveString } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 
-const RE = 0x0D; // carriage return
+const RE = 0x0D; // carriage return (SGML record end) - matches upstream
 
 // Document type non-inherited characteristics
 export interface DocumentTypeNIC {
@@ -79,7 +79,11 @@ export class FileOutputStream implements OutputCharStream {
 
   flush(): void {
     if (this.fs_ && this.buffer_.length > 0) {
-      const content = this.buffer_.join('');
+      let content = this.buffer_.join('');
+      // Following upstream RecordOutputCharStream::outputBuf:
+      // Translate RE (\r) to platform newline (\n on Unix)
+      // and ignore RS (\n) - but since we're on Unix, just convert CR to LF
+      content = content.replace(/\r/g, '\n');
       this.fs_.writeFileSync(this.filename_, content, 'utf8');
       this.buffer_ = [];
     }
@@ -95,6 +99,13 @@ enum ReState {
   stateMiddle = 0,
   stateStartOfElement = 1,
   statePendingRe = 2
+}
+
+// Open file info for entity stack
+interface OpenFile {
+  systemId: string;
+  saveOs: OutputCharStream;
+  os: FileOutputStream | null;
 }
 
 // Helper function to output numeric character reference
@@ -145,6 +156,7 @@ export class TransformFOTBuilder extends FOTBuilder {
   private RE_: string;
   private SP_: string;
   private preserveSdataStack_: boolean[] = [false];
+  private openFileStack_: OpenFile[] = [];
 
   constructor(os: OutputCharStream, xml: boolean = false, options: string[] = []) {
     super();
@@ -177,7 +189,7 @@ export class TransformFOTBuilder extends FOTBuilder {
 
   private flushPendingReCharRef(): void {
     if (this.state_ === ReState.statePendingRe) {
-      this.os().write('&#13;');
+      this.os().write('&#10;'); // LF for Unix-style newlines
       this.state_ = ReState.stateMiddle;
     }
   }
@@ -314,7 +326,7 @@ export class TransformFOTBuilder extends FOTBuilder {
 
     if (this.state_ === ReState.stateStartOfElement && s[0] === RE) {
       start = 1;
-      this.os().write('&#13;');
+      this.os().write('&#10;'); // LF for Unix-style newlines
       if (n === 1) {
         this.state_ = ReState.stateMiddle;
         return;
@@ -393,8 +405,43 @@ export class TransformFOTBuilder extends FOTBuilder {
     this.preserveSdata_ = last ?? false;
   }
 
+  // Start a new entity (output file)
+  override startEntity(systemId: StringC): void {
+    this.flushPendingRe();
+    const sysIdStr = stringCToString(systemId);
+
+    const openFile: OpenFile = {
+      systemId: sysIdStr,
+      saveOs: this.os_,
+      os: null
+    };
+
+    if (sysIdStr.length > 0) {
+      openFile.os = new FileOutputStream(sysIdStr);
+      this.os_ = openFile.os;
+    }
+
+    this.openFileStack_.push(openFile);
+  }
+
+  // End current entity (close output file)
+  override endEntity(): void {
+    this.flushPendingRe();
+
+    if (this.openFileStack_.length === 0) {
+      return;
+    }
+
+    const openFile = this.openFileStack_.pop()!;
+    if (openFile.os) {
+      openFile.os.flush();
+      openFile.os.close();
+    }
+    this.os_ = openFile.saveOs;
+  }
+
   // Flush output buffer when done
-  flush(): void {
+  override flush(): void {
     this.os_.flush();
   }
 }

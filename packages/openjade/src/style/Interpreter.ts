@@ -53,7 +53,7 @@ import { Environment } from './Expression';
 import { Pattern, MatchContext, Element } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
-import { FormattingInstructionFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
+import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
 import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
 
 // Default character for unmapped SDATA entities
@@ -1196,7 +1196,12 @@ export class Interpreter {
       return new StringObj(chars);
     }
     // Convert array of char codes to string
-    return new StringObj(String.fromCharCode(...chars));
+    // Use loop instead of spread to avoid stack overflow with large strings
+    let str = '';
+    for (let i = 0; i < chars.length; i++) {
+      str += String.fromCharCode(chars[i]);
+    }
+    return new StringObj(str);
   }
 
   makeLength(val: number, _dim?: number): LengthObj {
@@ -1649,6 +1654,8 @@ export class Interpreter {
     // Check for known flow object classes
     if (pubidStr === 'UNREGISTERED::James Clark//Flow Object Class::formatting-instruction') {
       flowObj = new FormattingInstructionFlowObj();
+    } else if (pubidStr === 'UNREGISTERED::James Clark//Flow Object Class::entity') {
+      flowObj = new EntityFlowObj();
     } else {
       // Create unknown flow object for unrecognized classes
       flowObj = new UnknownFlowObj(pubidStr);
@@ -2616,7 +2623,8 @@ export class Interpreter {
     while (tem.node()) {
       const temNode = tem.node()!;
       // Check if we've reached our target node
-      if (temNode === nd) {
+      // Use equals() instead of === to properly compare grove nodes
+      if (temNode.equals(nd)) {
         break;
       }
       // Check if sibling has same gi

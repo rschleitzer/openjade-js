@@ -556,6 +556,12 @@ export class CharObj extends ELObj {
     const charRes = other.charValue();
     return charRes.result && charRes.ch === this.ch_;
   }
+
+  // Characters are eqv? if they have the same value
+  override isEquiv(other: ELObj): boolean {
+    const charRes = other.charValue();
+    return charRes.result && charRes.ch === this.ch_;
+  }
 }
 
 // String object
@@ -618,6 +624,11 @@ export class StringObj extends ELObj {
       if (this.data_[i] !== strData.data[i]) return false;
     }
     return true;
+  }
+
+  // For case statements: strings are eqv? if they have the same content
+  override isEquiv(other: ELObj): boolean {
+    return this.isEqual(other);
   }
 }
 
@@ -1087,21 +1098,27 @@ export class PairNodeListObj extends NodeListObj {
   }
 
   override nodeListFirst(ctx: EvalContext, interp: Interpreter): NodePtr {
+    // Following upstream: PairNodeListObj::nodeListFirst in ELObj.cxx
+    // If head has a valid first node, return it
     if (this.head_) {
-      return this.head_.nodeListFirst(ctx, interp);
+      const nd = this.head_.nodeListFirst(ctx, interp);
+      if (nd.node()) {
+        return nd;
+      }
+      // head is exhausted, fall through to tail
     }
     return this.tail_.nodeListFirst(ctx, interp);
   }
 
   override nodeListRest(ctx: EvalContext, interp: Interpreter): NodeListObj {
-    if (this.head_) {
-      const rest = this.head_.nodeListRest(ctx, interp);
-      const first = rest.nodeListFirst(ctx, interp);
-      if (first.node()) {
-        return new PairNodeListObj(rest, this.tail_);
-      }
+    // Following upstream: PairNodeListObj::nodeListRest in ELObj.cxx
+    // If head is null or head is empty, skip to tail's rest
+    if (!this.head_ || !this.head_.nodeListFirst(ctx, interp).node()) {
+      return this.tail_.nodeListRest(ctx, interp);
     }
-    return this.tail_.nodeListRest(ctx, interp);
+    // Head has elements, so get head's rest and pair with tail
+    const tem = this.head_.nodeListRest(ctx, interp);
+    return new PairNodeListObj(tem, this.tail_);
   }
 
   override traceSubObjects(collector: Collector): void {

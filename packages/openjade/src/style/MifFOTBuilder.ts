@@ -88,8 +88,25 @@ const INITIAL_PAGE_SIZE = 72000 * 8;
 const INITIAL_PAGE_HEIGHT = (72000 * 23) / 2;
 
 // Convert millipoints to points string
+// Following upstream MifFOTBuilder.cxx operator<<(T_dimension):
+// Strip trailing zeros and decimal point if no fractional part
 function toPoints(mp: number): string {
-  return `${(mp / 1000).toFixed(3)}pt`;
+  const whole = Math.floor(Math.abs(mp) / 1000);
+  const frac = Math.abs(mp) % 1000;
+  const sign = mp < 0 ? '-' : '';
+
+  if (frac === 0) {
+    return `${sign}${whole}pt`;
+  }
+
+  // Format with 3 decimal places, then strip trailing zeros
+  let fracStr = frac.toString().padStart(3, '0');
+  // Strip trailing zeros
+  while (fracStr.endsWith('0')) {
+    fracStr = fracStr.slice(0, -1);
+  }
+
+  return `${sign}${whole}.${fracStr}pt`;
 }
 
 // MIF output stream with indentation support
@@ -352,31 +369,152 @@ function makeTable(): Table {
   };
 }
 
-// Text flow for header/footer
-interface TextFlow {
+// ============================================================================
+// MIF Page/TextRect/TextFlow structures following upstream
+// ============================================================================
+
+// Page type keywords (following upstream MifDoc)
+const sBodyPage = 'BodyPage';
+const sOtherMasterPage = 'OtherMasterPage';
+const sRightMasterPage = 'RightMasterPage';
+const sLeftMasterPage = 'LeftMasterPage';
+
+// Page tag keywords
+const sFirst = 'First';
+const sRight = 'Right';
+const sLeft = 'Left';
+
+// TextRect with ID (following upstream MifDoc::TextRect)
+interface TextRect {
+  id: number;
+  shapeRect: { l: number; t: number; w: number; h: number };
+  numColumns: number;
+  columnGap: number;
+  columnBalance: boolean;
+}
+
+// Global ID counter for MIF objects (following upstream Object::IDCnt)
+let mifObjectIdCnt = 0;
+
+function makeTextRect(
+  shapeRect: { l: number; t: number; w: number; h: number },
+  numColumns: number = 1,
+  columnGap: number = 0,
+  columnBalance: boolean = false
+): TextRect {
+  return {
+    id: ++mifObjectIdCnt,
+    shapeRect,
+    numColumns,
+    columnGap,
+    columnBalance
+  };
+}
+
+// Page structure (following upstream MifDoc::Page)
+interface Page {
+  pageType: string;
+  pageTag: string;
+  pageBackground: string;
+  textRects: TextRect[];
+}
+
+function makePage(pageType: string, pageTag: string, pageBackground: string = ''): Page {
+  return {
+    pageType,
+    pageTag,
+    pageBackground,
+    textRects: []
+  };
+}
+
+// Text flow with TextRect reference (following upstream MifDoc::TextFlow)
+interface MifTextFlow {
+  textRectId: number;
+  tag: string;
+  autoConnect: boolean;
+  isBody: boolean;
   content: string;
+}
+
+function makeMifTextFlow(
+  textRect: TextRect,
+  isBody: boolean,
+  tag: string
+): MifTextFlow {
+  return {
+    textRectId: textRect.id,
+    tag,
+    autoConnect: isBody, // Only body flows have TFAutoConnect (following upstream)
+    isBody,
+    content: ''
+  };
 }
 
 // Simple page sequence state
 interface SimplePageSequence {
-  bodyTextFlow: TextFlow | null;
-  firstHeaderTextFlow: TextFlow | null;
-  firstFooterTextFlow: TextFlow | null;
-  leftHeaderTextFlow: TextFlow | null;
-  leftFooterTextFlow: TextFlow | null;
-  rightHeaderTextFlow: TextFlow | null;
-  rightFooterTextFlow: TextFlow | null;
+  // Pages
+  bodyPage: Page | null;
+  firstMasterPage: Page | null;
+  rightMasterPage: Page | null;
+  leftMasterPage: Page | null;
+
+  // TextRects
+  bodyTextRect: TextRect | null;
+  firstBodyTextRect: TextRect | null;
+  rightBodyTextRect: TextRect | null;
+  leftBodyTextRect: TextRect | null;
+  firstHeaderTextRect: TextRect | null;
+  firstFooterTextRect: TextRect | null;
+  rightHeaderTextRect: TextRect | null;
+  rightFooterTextRect: TextRect | null;
+  leftHeaderTextRect: TextRect | null;
+  leftFooterTextRect: TextRect | null;
+
+  // TextFlows
+  bodyTextFlow: MifTextFlow | null;
+  firstHeaderTextFlow: MifTextFlow | null;
+  firstFooterTextFlow: MifTextFlow | null;
+  leftHeaderTextFlow: MifTextFlow | null;
+  leftFooterTextFlow: MifTextFlow | null;
+  rightHeaderTextFlow: MifTextFlow | null;
+  rightFooterTextFlow: MifTextFlow | null;
+
+  // Empty text flows for master page body areas
+  firstBodyEmptyFlow: MifTextFlow | null;
+  leftBodyEmptyFlow: MifTextFlow | null;
+  rightBodyEmptyFlow: MifTextFlow | null;
 }
 
 function makeSimplePageSequence(): SimplePageSequence {
   return {
+    bodyPage: null,
+    firstMasterPage: null,
+    rightMasterPage: null,
+    leftMasterPage: null,
+
+    bodyTextRect: null,
+    firstBodyTextRect: null,
+    rightBodyTextRect: null,
+    leftBodyTextRect: null,
+    firstHeaderTextRect: null,
+    firstFooterTextRect: null,
+    rightHeaderTextRect: null,
+    rightFooterTextRect: null,
+    leftHeaderTextRect: null,
+    leftFooterTextRect: null,
+
     bodyTextFlow: null,
     firstHeaderTextFlow: null,
     firstFooterTextFlow: null,
     leftHeaderTextFlow: null,
     leftFooterTextFlow: null,
     rightHeaderTextFlow: null,
-    rightFooterTextFlow: null
+    rightFooterTextFlow: null,
+
+    firstBodyEmptyFlow: null,
+    leftBodyEmptyFlow: null,
+    rightBodyEmptyFlow: null
   };
 }
 
@@ -457,7 +595,7 @@ export class MifFOTBuilder extends SerialFOTBuilder {
   // ============================================================================
 
   private outMifHeader(): void {
-    this.os_.write('<MIFFile 5.0>\n');
+    this.os_.write('<MIFFile 5.0>');
   }
 
   private outPgfCatalog(): void {
@@ -555,30 +693,15 @@ export class MifFOTBuilder extends SerialFOTBuilder {
     this.os_.writeLine('>');
   }
 
+  // Following upstream MifFOTBuilder: only output ColorCatalog if custom colors exist
   private outColorCatalog(): void {
+    // Only output if we have custom colors (following upstream)
+    if (this.colorCatalog_.size === 0) {
+      return;
+    }
+
     this.os_.writeLine('<ColorCatalog ');
     this.os_.indent();
-
-    // Default colors
-    this.os_.writeLine('<Color ');
-    this.os_.indent();
-    this.os_.writeLine('<ColorTag `Black\'>');
-    this.os_.writeLine('<ColorCyan 0>');
-    this.os_.writeLine('<ColorMagenta 0>');
-    this.os_.writeLine('<ColorYellow 0>');
-    this.os_.writeLine('<ColorBlack 100>');
-    this.os_.outdent();
-    this.os_.writeLine('>');
-
-    this.os_.writeLine('<Color ');
-    this.os_.indent();
-    this.os_.writeLine('<ColorTag `White\'>');
-    this.os_.writeLine('<ColorCyan 0>');
-    this.os_.writeLine('<ColorMagenta 0>');
-    this.os_.writeLine('<ColorYellow 0>');
-    this.os_.writeLine('<ColorBlack 0>');
-    this.os_.outdent();
-    this.os_.writeLine('>');
 
     // Custom colors from document
     for (const [name, color] of this.colorCatalog_) {
@@ -602,31 +725,80 @@ export class MifFOTBuilder extends SerialFOTBuilder {
     this.os_.writeLine('>');
   }
 
+  // Following upstream MifDoc::Document::out
   private outDocumentSetup(): void {
     const f = this.nextFormat_;
 
     this.os_.writeLine('<Document ');
     this.os_.indent();
-    this.os_.writeLine(`<DPageSize ${toPoints(f.FotPageWidth)} ${toPoints(f.FotPageHeight)}>`);
-    this.os_.writeLine('<DStartPage 1>');
-    this.os_.writeLine(`<DPageNumStyle Arabic>`);
-    this.os_.writeLine(`<DTwoSides Yes>`);
-    this.os_.writeLine(`<DParity FirstRight>`);
-    this.os_.writeLine(`<DColumnGap ${toPoints(f.FotPageColumnSep)}>`);
+    // Following upstream order
     this.os_.writeLine(`<DColumns ${f.FotPageNColumns}>`);
-    this.os_.writeLine(`<DMargins ${toPoints(f.FotLeftMargin)} ${toPoints(f.FotTopMargin)} ${toPoints(f.FotRightMargin)} ${toPoints(f.FotBottomMargin)}>`);
+    this.os_.writeLine(`<DPageSize ${toPoints(f.FotPageWidth)} ${toPoints(f.FotPageHeight)}>`);
+    this.os_.writeLine('<DTwoSides Yes>');
+    this.os_.writeLine('<DParity FirstRight>');
     this.os_.outdent();
     this.os_.writeLine('>');
   }
 
-  private outTextFlow(content: string, flowTag: string): void {
+  // Output a TextRect following upstream MifDoc::TextRect::out
+  private outTextRect(tr: TextRect): void {
+    this.os_.writeLine('<TextRect ');
+    this.os_.indent();
+    this.os_.writeLine(`<ID ${tr.id}>`);
+    this.os_.writeLine('<Pen 15>');
+    this.os_.writeLine('<Fill 15>');
+    this.os_.writeLine(`<PenWidth ${toPoints(0)}>`);
+    this.os_.writeLine(`<ObColor \`Black'>`);
+    this.os_.writeLine(`<ShapeRect ${toPoints(tr.shapeRect.l)} ${toPoints(tr.shapeRect.t)} ${toPoints(tr.shapeRect.w)} ${toPoints(tr.shapeRect.h)}>`);
+    this.os_.writeLine(`<TRNumColumns ${tr.numColumns}>`);
+    this.os_.writeLine(`<TRColumnGap ${toPoints(tr.columnGap)}>`);
+    this.os_.writeLine(`<TRColumnBalance ${tr.columnBalance ? 'Yes' : 'No'}>`);
+    this.os_.outdent();
+    this.os_.writeLine('>');
+  }
+
+  // Output a Page following upstream MifDoc::Page::out
+  private outPage(page: Page): void {
+    this.os_.writeLine('<Page ');
+    this.os_.indent();
+    this.os_.writeLine(`<PageType ${page.pageType}>`);
+    // Always output PageTag (even if empty)
+    this.os_.writeLine(`<PageTag \`${page.pageTag}'>`);
+    if (page.pageBackground) {
+      this.os_.writeLine(`<PageBackground \`${page.pageBackground}'>`);
+    }
+    for (const tr of page.textRects) {
+      this.outTextRect(tr);
+    }
+    this.os_.outdent();
+    this.os_.writeLine('>');
+  }
+
+  // Output a TextFlow following upstream MifDoc::TextFlow::out
+  private outMifTextFlow(tf: MifTextFlow, useTextRectId: boolean): void {
     this.os_.writeLine('<TextFlow ');
     this.os_.indent();
-    this.os_.writeLine(`<TFTag \`${flowTag}'>`);
-    this.os_.writeLine('<TFAutoConnect Yes>');
+    if (tf.tag) {
+      this.os_.writeLine(`<TFTag \`${tf.tag}'>`);
+    }
+    if (tf.autoConnect) {
+      this.os_.writeLine('<TFAutoConnect Yes>');
+    }
 
-    if (content.length > 0) {
-      this.os_.write(content);
+    // Output paragraph(s)
+    if (tf.content.length > 0) {
+      this.os_.write(tf.content);
+    } else if (useTextRectId) {
+      // Empty para with TextRectID
+      this.os_.writeLine('<Para ');
+      this.os_.indent();
+      this.os_.writeLine('<ParaLine ');
+      this.os_.indent();
+      this.os_.writeLine(`<TextRectID ${tf.textRectId}>`);
+      this.os_.outdent();
+      this.os_.writeLine('>');
+      this.os_.outdent();
+      this.os_.writeLine('>');
     }
 
     this.os_.outdent();
@@ -649,15 +821,64 @@ export class MifFOTBuilder extends SerialFOTBuilder {
   }
 
   override flush(): void {
-    // Build complete MIF document
+    // Build complete MIF document following upstream order:
+    // MifHeader, ColorCatalog, PgfCatalog, Document, Pages, TextFlows
     this.outMifHeader();
     this.outColorCatalog();
     this.outPgfCatalog();
     this.outDocumentSetup();
 
-    // Output body text flow
-    if (this.fotSimplePageSequence_.bodyTextFlow) {
-      this.outTextFlow(this.fotSimplePageSequence_.bodyTextFlow.content, 'A');
+    const sps = this.fotSimplePageSequence_;
+
+    // Output pages (following upstream order: bodyPage, first, right, left)
+    if (sps.bodyPage) {
+      this.outPage(sps.bodyPage);
+    }
+    if (sps.firstMasterPage) {
+      this.outPage(sps.firstMasterPage);
+    }
+    if (sps.rightMasterPage) {
+      this.outPage(sps.rightMasterPage);
+    }
+    if (sps.leftMasterPage) {
+      this.outPage(sps.leftMasterPage);
+    }
+
+    // Output text flows (following upstream order)
+    // First the empty flows for master page body areas
+    if (sps.firstBodyEmptyFlow) {
+      this.outMifTextFlow(sps.firstBodyEmptyFlow, true);
+    }
+    if (sps.leftBodyEmptyFlow) {
+      this.outMifTextFlow(sps.leftBodyEmptyFlow, true);
+    }
+    if (sps.rightBodyEmptyFlow) {
+      this.outMifTextFlow(sps.rightBodyEmptyFlow, true);
+    }
+
+    // Then the body text flow with content
+    if (sps.bodyTextFlow) {
+      this.outMifTextFlow(sps.bodyTextFlow, true);
+    }
+
+    // Then header/footer text flows
+    if (sps.firstHeaderTextFlow) {
+      this.outMifTextFlow(sps.firstHeaderTextFlow, true);
+    }
+    if (sps.firstFooterTextFlow) {
+      this.outMifTextFlow(sps.firstFooterTextFlow, true);
+    }
+    if (sps.leftHeaderTextFlow) {
+      this.outMifTextFlow(sps.leftHeaderTextFlow, true);
+    }
+    if (sps.leftFooterTextFlow) {
+      this.outMifTextFlow(sps.leftFooterTextFlow, true);
+    }
+    if (sps.rightHeaderTextFlow) {
+      this.outMifTextFlow(sps.rightHeaderTextFlow, true);
+    }
+    if (sps.rightFooterTextFlow) {
+      this.outMifTextFlow(sps.rightFooterTextFlow, true);
     }
 
     // Write output
@@ -810,6 +1031,9 @@ export class MifFOTBuilder extends SerialFOTBuilder {
     this.end();
   }
 
+  // Track if this is the first paragraph output (needs TextRectID)
+  private firstParagraphOutput_: boolean = true;
+
   private startParagraphMif(): void {
     this.inParagraph_ = true;
     this.paragraphContent_ = '';
@@ -819,60 +1043,45 @@ export class MifFOTBuilder extends SerialFOTBuilder {
     if (!this.inParagraph_) return;
 
     const f = this.nextFormat_;
+    const sps = this.fotSimplePageSequence_;
 
-    // Build paragraph MIF
-    let para = '\n<Para ';
-    para += '\n  <PgfTag `Default Pgf Format\'>';
+    // Build paragraph MIF following upstream structure
+    let para = '\n  <Para ';
 
-    // Apply format overrides
-    para += `\n  <PgfSpBefore ${toPoints(this.pendingSpaceBefore_)}>`;
-    this.pendingSpaceBefore_ = 0;
-
-    para += `\n  <PgfLIndent ${toPoints(this.computeLengthSpec(f.FotStartIndentSpec))}>`;
-    para += `\n  <PgfFIndent ${toPoints(this.computeLengthSpec(f.FotFirstLineStartIndentSpec) + this.computeLengthSpec(f.FotStartIndentSpec))}>`;
-    para += `\n  <PgfRIndent ${toPoints(this.computeLengthSpec(f.FotEndIndentSpec))}>`;
-
-    // Handle placement based on pending break
-    switch (this.pendingBreak_) {
-      case Symbol.symbolPage:
-        para += '\n  <PgfPlacement PageTop>';
-        break;
-      case Symbol.symbolColumn:
-        para += '\n  <PgfPlacement ColumnTop>';
-        break;
-      default:
-        para += '\n  <PgfPlacement Anywhere>';
-    }
-    this.pendingBreak_ = Symbol.symbolFalse;
-
-    // Quadding/alignment
-    switch (f.FotDisplayAlignment) {
-      case Symbol.symbolStart:
-        para += '\n  <PgfAlignment Left>';
-        break;
-      case Symbol.symbolEnd:
-        para += '\n  <PgfAlignment Right>';
-        break;
-      case Symbol.symbolCenter:
-        para += '\n  <PgfAlignment Center>';
-        break;
-      case Symbol.symbolJustify:
-        para += '\n  <PgfAlignment LeftRight>';
-        break;
+    // First paragraph needs Pgf format override and TextRectID
+    if (this.firstParagraphOutput_) {
+      para += '\n    <Pgf ';
+      para += '\n      <PgfTag `Default Pgf Format\'>';
+      para += '\n      <PgfFont ';
+      para += `\n        <FSize ${toPoints(12000)}>`; // Base font size
+      para += '\n      >';
+      para += '\n    >';
     }
 
-    // Para content
-    para += '\n  <ParaLine ';
+    para += '\n    <ParaLine ';
+
+    // Add TextRectID for first paragraph to link to body TextRect
+    if (this.firstParagraphOutput_ && sps.bodyTextRect) {
+      para += `\n      <TextRectID ${sps.bodyTextRect.id}>`;
+      this.firstParagraphOutput_ = false;
+    }
+
+    // Add font override for content
+    para += '\n      <Font ';
+    para += `\n        <FSize ${toPoints(f.FSize)}>`;
+    para += '\n      >';
+
+    // Add string content
     if (this.paragraphContent_.length > 0) {
-      para += `\n    <String \`${this.paragraphContent_}\'>`;
+      para += `\n      <String \`${this.paragraphContent_}\'>`;
     }
+
+    para += '\n    >';
     para += '\n  >';
 
-    para += '\n>';
-
     // Append to body text flow
-    if (this.fotSimplePageSequence_.bodyTextFlow) {
-      this.fotSimplePageSequence_.bodyTextFlow.content += para;
+    if (sps.bodyTextFlow) {
+      sps.bodyTextFlow.content += para;
     }
 
     this.inParagraph_ = false;
@@ -941,13 +1150,93 @@ export class MifFOTBuilder extends SerialFOTBuilder {
   // Simple Page Sequence
   // ============================================================================
 
+  // Following upstream MifFOTBuilder::setupSimplePageSequence
+  private setupSimplePageSequence(): void {
+    // Reset ID counter for consistent output
+    mifObjectIdCnt = 0;
+
+    const f = this.nextFormat_;
+    const sps = this.fotSimplePageSequence_;
+
+    // Create pages (following upstream)
+    sps.firstMasterPage = makePage(sOtherMasterPage, sFirst);
+    sps.rightMasterPage = makePage(sRightMasterPage, sRight);
+    sps.leftMasterPage = makePage(sLeftMasterPage, sLeft);
+    sps.bodyPage = makePage(sBodyPage, '', sFirst);
+
+    // Calculate rects (following upstream)
+    const bodyRect = {
+      l: f.FotLeftMargin,
+      t: f.FotTopMargin,
+      w: f.FotPageWidth - f.FotLeftMargin - f.FotRightMargin,
+      h: f.FotPageHeight - f.FotTopMargin - f.FotBottomMargin
+    };
+
+    const headerRect = {
+      l: f.FotLeftMargin,
+      t: 0,
+      w: bodyRect.w,
+      h: f.FotTopMargin
+    };
+
+    const footerRect = {
+      l: f.FotLeftMargin,
+      t: f.FotPageHeight - f.FotBottomMargin,
+      w: bodyRect.w,
+      h: f.FotBottomMargin
+    };
+
+    // Create TextRects in exact upstream order (from MifFOTBuilder::setupSimplePageSequence):
+    // 1. Body TextRects for master pages (first, right, left), then main body
+    // 2. Header TextRects (first, right, left)
+    // 3. Footer TextRects (first, right, left)
+    sps.firstBodyTextRect = makeTextRect(bodyRect, f.FotPageNColumns, f.FotPageColumnSep);
+    sps.rightBodyTextRect = makeTextRect(bodyRect, f.FotPageNColumns, f.FotPageColumnSep);
+    sps.leftBodyTextRect = makeTextRect(bodyRect, f.FotPageNColumns, f.FotPageColumnSep);
+    sps.bodyTextRect = makeTextRect(bodyRect, f.FotPageNColumns, f.FotPageColumnSep);
+    sps.firstHeaderTextRect = makeTextRect(headerRect);
+    sps.rightHeaderTextRect = makeTextRect(headerRect);
+    sps.leftHeaderTextRect = makeTextRect(headerRect);
+    sps.firstFooterTextRect = makeTextRect(footerRect);
+    sps.rightFooterTextRect = makeTextRect(footerRect);
+    sps.leftFooterTextRect = makeTextRect(footerRect);
+
+    // Add text rects to pages (order: header, body, footer on each master page)
+    sps.firstMasterPage.textRects.push(sps.firstHeaderTextRect);
+    sps.firstMasterPage.textRects.push(sps.firstBodyTextRect);
+    sps.firstMasterPage.textRects.push(sps.firstFooterTextRect);
+
+    sps.rightMasterPage.textRects.push(sps.rightHeaderTextRect);
+    sps.rightMasterPage.textRects.push(sps.rightBodyTextRect);
+    sps.rightMasterPage.textRects.push(sps.rightFooterTextRect);
+
+    sps.leftMasterPage.textRects.push(sps.leftHeaderTextRect);
+    sps.leftMasterPage.textRects.push(sps.leftBodyTextRect);
+    sps.leftMasterPage.textRects.push(sps.leftFooterTextRect);
+
+    sps.bodyPage.textRects.push(sps.bodyTextRect);
+
+    // Create empty text flows for master page body areas (following upstream)
+    sps.firstBodyEmptyFlow = makeMifTextFlow(sps.firstBodyTextRect, true, 'A');
+    sps.leftBodyEmptyFlow = makeMifTextFlow(sps.leftBodyTextRect, true, 'A');
+    sps.rightBodyEmptyFlow = makeMifTextFlow(sps.rightBodyTextRect, true, 'A');
+
+    // Create the body text flow (where paragraphs go)
+    sps.bodyTextFlow = makeMifTextFlow(sps.bodyTextRect, true, 'A');
+
+    // Create header/footer text flows
+    sps.firstHeaderTextFlow = makeMifTextFlow(sps.firstHeaderTextRect, false, '');
+    sps.firstFooterTextFlow = makeMifTextFlow(sps.firstFooterTextRect, false, '');
+    sps.leftHeaderTextFlow = makeMifTextFlow(sps.leftHeaderTextRect, false, '');
+    sps.leftFooterTextFlow = makeMifTextFlow(sps.leftFooterTextRect, false, '');
+    sps.rightHeaderTextFlow = makeMifTextFlow(sps.rightHeaderTextRect, false, '');
+    sps.rightFooterTextFlow = makeMifTextFlow(sps.rightFooterTextRect, false, '');
+  }
+
   override startSimplePageSequenceSerial(): void {
     this.start();
     this.inSimplePageSequence_ = true;
     this.firstHeaderFooter_ = true;
-
-    // Initialize body text flow
-    this.fotSimplePageSequence_.bodyTextFlow = { content: '' };
   }
 
   override endSimplePageSequenceSerial(): void {
@@ -956,19 +1245,39 @@ export class MifFOTBuilder extends SerialFOTBuilder {
   }
 
   override startSimplePageSequenceHeaderFooterSerial(flags: number): void {
-    // Determine which header/footer this is
+    // Setup page structure on first header/footer (following upstream)
+    if (this.firstHeaderFooter_) {
+      this.setupSimplePageSequence();
+      this.firstHeaderFooter_ = false;
+    }
+
+    // Determine which header/footer flow to use
     const isFirst = (flags & HF.firstHF) === HF.firstHF;
     const isFront = (flags & HF.frontHF) === HF.frontHF;
     const isHeader = (flags & HF.headerHF) === HF.headerHF;
+    const isLeft = (flags & HF.leftHF) === HF.leftHF;
+    const isCenter = (flags & HF.centerHF) === HF.centerHF;
+    const isRight = (flags & HF.rightHF) === HF.rightHF;
 
-    let position = '';
-    if ((flags & HF.leftHF) === HF.leftHF) position = 'Left';
-    else if ((flags & HF.centerHF) === HF.centerHF) position = 'Center';
-    else if ((flags & HF.rightHF) === HF.rightHF) position = 'Right';
-
-    // Create text flow for this header/footer region
-    // Simplified - just track that we're in a header/footer
+    // Start tracking header/footer content
     this.start();
+
+    // Add tab characters for center and right positions (following upstream)
+    const sps = this.fotSimplePageSequence_;
+    let flow: MifTextFlow | null = null;
+
+    if (isFirst && isFront) {
+      flow = isHeader ? sps.firstHeaderTextFlow : sps.firstFooterTextFlow;
+    } else if (!isFirst && isFront) {
+      flow = isHeader ? sps.rightHeaderTextFlow : sps.rightFooterTextFlow;
+    } else if (!isFirst && !isFront) {
+      flow = isHeader ? sps.leftHeaderTextFlow : sps.leftFooterTextFlow;
+    }
+
+    if (flow && (isCenter || isRight)) {
+      // Add tab for positioning
+      flow.content += '<Char Tab>';
+    }
   }
 
   override endSimplePageSequenceHeaderFooterSerial(_flags: number): void {
@@ -976,7 +1285,42 @@ export class MifFOTBuilder extends SerialFOTBuilder {
   }
 
   override endAllSimplePageSequenceHeaderFooter(): void {
-    // All header/footers processed
+    // All header/footers processed - finalize header/footer flows
+    const sps = this.fotSimplePageSequence_;
+
+    // Wrap header/footer content in Para/ParaLine if not empty
+    // Following upstream MifDoc::Para/ParaLine formatting
+    const wrapHeaderFooter = (tf: MifTextFlow | null, pgfTag: string) => {
+      if (tf && tf.content.length > 0) {
+        // Count <Char Tab> occurrences to match legacy format
+        const tabCount = (tf.content.match(/<Char Tab>/g) || []).length;
+        const charContent = Array(tabCount)
+          .fill('      <Char Tab>')
+          .join('\n');
+
+        // Note: <Para , <Font , <ParaLine  need trailing space to match legacy
+        // Don't end with \n since outMifTextFlow's writeLine('>') adds the newline
+        const wrappedContent =
+          '\n  <Para \n' +
+          `    <PgfTag \`${pgfTag}'>\n` +
+          '    <Font \n' +
+          `      <FSize ${toPoints(this.nextFormat_.FSize)}>\n` +
+          '    >\n' +
+          '    <ParaLine \n' +
+          `      <TextRectID ${tf.textRectId}>\n` +
+          charContent + '\n' +
+          '    >\n' +
+          '  >';
+        tf.content = wrappedContent;
+      }
+    };
+
+    wrapHeaderFooter(sps.firstHeaderTextFlow, 'Header');
+    wrapHeaderFooter(sps.firstFooterTextFlow, 'Footer');
+    wrapHeaderFooter(sps.leftHeaderTextFlow, 'Header');
+    wrapHeaderFooter(sps.leftFooterTextFlow, 'Footer');
+    wrapHeaderFooter(sps.rightHeaderTextFlow, 'Header');
+    wrapHeaderFooter(sps.rightFooterTextFlow, 'Footer');
   }
 
   // ============================================================================

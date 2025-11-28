@@ -10,7 +10,8 @@ import {
   KeywordObj,
   Insn as ELObjInsn,
   InsnPtr as ELObjInsnPtr,
-  Signature
+  Signature,
+  QuantityType
 } from './ELObj';
 import { FlowObj, SequenceFlowObj, CompoundFlowObj } from './SosofoObj';
 import type { Interpreter } from './Interpreter';
@@ -947,8 +948,11 @@ export class CaseExpression extends Expression {
       }
       let nResolved = 0;
       for (let j = 0; j < this.cases_[i].datums.length; j++) {
-        const tem = this.cases_[i].datums[j].resolveQuantities(false, interp, this.location());
-        if (tem !== this.cases_[i].datums[j]) {
+        const datum = this.cases_[i].datums[j];
+        const tem = datum.resolveQuantities(false, interp, this.location());
+        // Check if resolved: either a new object was returned, or the datum has no quantities
+        const isResolved = tem !== datum || datum.quantityValue().type === QuantityType.noQuantity;
+        if (isResolved) {
           if (k && ELObj.eqv(k, tem)) {
             expr.value = this.cases_[i].expr.value;
             this.cases_[i].expr.value = null;

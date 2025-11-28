@@ -16,8 +16,14 @@ import {
   UnivCharsetDesc,
   EntityManager,
   Ptr,
-  String as StringOf
+  String as StringOf,
+  createExtendEntityManager,
+  ExtendEntityManager,
+  SOCatalogManager,
+  Vector
 } from '@openjade-js/opensp';
+import * as fs from 'fs';
+import * as path from 'path';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 import { FOTBuilderExtension, StyleEngine, GroveManager } from './StyleEngine';
@@ -274,14 +280,14 @@ export abstract class DssslApp extends Messenger implements GroveManager {
 
   // Parse document and build grove
   private parseDocument(sysid: StringC): number {
-    if (!this.entityManager_) {
-      console.error('No entity manager');
-      return 1;
-    }
+    // Create a document-specific entity manager with the document's catalog
+    // This allows the document to use its own SGML declaration (e.g., XML-style with NAMECASE GENERAL NO)
+    // while keeping the DSSSL spec parsing using the standard DSSSL catalog
+    const docEntityManager = this.createDocumentEntityManager(sysid);
 
     const params = new SgmlParser.Params();
     params.sysid = sysid;
-    params.entityManager = new Ptr(this.entityManager_);
+    params.entityManager = new Ptr(docEntityManager);
     params.options = this.options_;
 
     const parser = new SgmlParser(params);
@@ -301,6 +307,46 @@ export abstract class DssslApp extends Messenger implements GroveManager {
     }
 
     return groveBuilder.errorCount() > 0 ? 1 : 0;
+  }
+
+  // Create an entity manager for document parsing with the document's catalog
+  private createDocumentEntityManager(sysid: StringC): EntityManager {
+    const sysidStr = stringCToString(sysid);
+    const docDir = path.dirname(path.resolve(sysidStr));
+
+    // File reader function
+    const fileReader = (filePath: string): Uint8Array | null => {
+      try {
+        return fs.readFileSync(filePath);
+      } catch {
+        return null;
+      }
+    };
+
+    const entityManager = createExtendEntityManager(this.systemCharset_, fileReader);
+
+    // Set up catalog manager with document's catalog
+    const catalogSysids = new Vector<StringC>();
+
+    // Look for catalog file in document's directory
+    const docCatalog = path.join(docDir, 'catalog');
+    if (fs.existsSync(docCatalog)) {
+      catalogSysids.push_back(makeStringC(docCatalog));
+    }
+
+    // Create catalog manager if we have any catalogs
+    if (catalogSysids.size() > 0) {
+      const catalogManager = SOCatalogManager.make(
+        catalogSysids,
+        0,  // Number of explicitly specified catalogs that must exist
+        this.systemCharset_,
+        this.systemCharset_,
+        true  // useDocCatalog
+      );
+      (entityManager as ExtendEntityManager).setCatalogManager(catalogManager);
+    }
+
+    return entityManager;
   }
 
   // Main processing - called after document is parsed
