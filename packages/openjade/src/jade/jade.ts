@@ -346,7 +346,12 @@ function main(): number {
   // File reader function
   const fileReader = (filePath: string): Uint8Array | null => {
     try {
-      return fs.readFileSync(filePath);
+      const data = fs.readFileSync(filePath);
+      // Skip UTF-8 BOM if present (EF BB BF)
+      if (data.length >= 3 && data[0] === 0xEF && data[1] === 0xBB && data[2] === 0xBF) {
+        return data.subarray(3);
+      }
+      return data;
     } catch {
       return null;
     }
