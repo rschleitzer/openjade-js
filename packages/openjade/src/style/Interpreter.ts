@@ -2232,11 +2232,15 @@ export class Interpreter {
     this.installInheritedC('line-cap', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLineCap(v), FOTSymbol.symbolButt));
     this.installInheritedC('input-whitespace-treatment', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setInputWhitespaceTreatment(v), FOTSymbol.symbolPreserve));
     this.installInheritedC('last-line-quadding', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLastLineQuadding(v), FOTSymbol.symbolRelative));
+    this.installInheritedC('box-type', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setBoxType(v), FOTSymbol.symbolBorder));
+    this.installInheritedC('cell-row-alignment', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellRowAlignment(v), FOTSymbol.symbolStart));
 
     // Additional commonly used characteristics that aren't directly supported - use IgnoredInheritedC
     const ignoredChars = [
       'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
-      'heading-level', 'keep?', 'break-before?', 'break-after?'
+      'heading-level', 'keep?', 'break-before?', 'break-after?',
+      'language', 'country',
+      'cell-after-row-border', 'cell-after-column-border'
     ];
     for (const name of ignoredChars) {
       this.installIgnoredC(name);
@@ -2419,6 +2423,15 @@ export class Interpreter {
     }
     this.initialValueValues_.push(expr);
     this.initialValueNames_.push(ident);
+  }
+
+  installExtensionInheritedC(ident: IdentifierImpl, pubid: StringC, loc: Location): void {
+    // For extension characteristics declared via (declare-characteristic ...),
+    // we create an ignored inherited characteristic that just ignores values.
+    // A full implementation would look up the extension table and create
+    // the appropriate type of InheritedC.
+    const ic = new IgnoredInheritedC(ident, this.nInheritedC_++);
+    ident.setInheritedC(ic, this.currentPartIndex(), loc);
   }
 
   private compileCharProperties(): void {

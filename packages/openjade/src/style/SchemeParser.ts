@@ -911,10 +911,7 @@ export class SchemeParser extends Messenger {
     if (!this.getToken(allowString | (this.dsssl2() ? allowFalse : 0), tok)) {
       return false;
     }
-    let pubid = '';
-    if (tok.value === Token.tokenString) {
-      pubid = stringCToString(this.currentToken_);
-    }
+    const pubidStr = this.currentToken_;
     const expr = { value: null as Expression | null };
     const key: { value: SyntacticKey } = { value: SyntacticKey.notKey };
     if (!this.parseExpressionFull(0, expr, key, tok)) {
@@ -923,7 +920,15 @@ export class SchemeParser extends Messenger {
     if (!this.getToken(allowCloseParen, tok)) {
       return false;
     }
-    // Handle characteristic declaration
+    // Register the extension characteristic
+    const defLoc = { value: new Location() };
+    const defPart = { value: 0 };
+    if (!ident.inheritedCDefined(defPart, defLoc) || defPart.value > this.interp_.currentPartIndex()) {
+      this.interp_.installExtensionInheritedC(ident, pubidStr, loc);
+      if (expr.value) {
+        this.interp_.installInitialValue(ident, expr.value);
+      }
+    }
     return true;
   }
 

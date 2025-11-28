@@ -872,7 +872,11 @@ export class TableFlowObj extends CompoundFlowObj {
     const keyRef = { value: SyntacticKey.notKey };
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
-        case SyntacticKey.keyWidth:
+        case SyntacticKey.keyBeforeRowBorder:
+        case SyntacticKey.keyAfterRowBorder:
+        case SyntacticKey.keyBeforeColumnBorder:
+        case SyntacticKey.keyAfterColumnBorder:
+        case SyntacticKey.keyTableWidth:
           return true;
         default:
           break;
@@ -882,16 +886,28 @@ export class TableFlowObj extends CompoundFlowObj {
   }
 
   override setNonInheritedC(ident: Identifier, obj: ELObj, loc: Location, interp: Interpreter): void {
-    if (!setDisplayNIC(this.nic_, ident, obj, loc, interp)) {
-      const keyRef = { value: SyntacticKey.notKey };
-      if (ident.syntacticKey(keyRef)) {
-        switch (keyRef.value) {
-          case SyntacticKey.keyWidth:
+    if (setDisplayNIC(this.nic_, ident, obj, loc, interp)) {
+      return;
+    }
+    const keyRef = { value: SyntacticKey.notKey };
+    if (ident.syntacticKey(keyRef)) {
+      switch (keyRef.value) {
+        case SyntacticKey.keyTableWidth:
+          if (obj === interp.makeFalse()) {
+            this.nic_.widthType = TableNIC.widthMinimum;
+          } else {
             // TODO: Parse width specification
-            break;
-          default:
-            break;
-        }
+            this.nic_.widthType = TableNIC.widthExplicit;
+          }
+          break;
+        case SyntacticKey.keyBeforeRowBorder:
+        case SyntacticKey.keyAfterRowBorder:
+        case SyntacticKey.keyBeforeColumnBorder:
+        case SyntacticKey.keyAfterColumnBorder:
+          // TODO: Store border styles for processing
+          break;
+        default:
+          break;
       }
     }
   }
@@ -957,6 +973,7 @@ export class TableColumnFlowObj extends FlowObj {
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
         case SyntacticKey.keyColumnIndex:
+        case SyntacticKey.keyColumnNumber:
         case SyntacticKey.keyNColumnsSpanned:
         case SyntacticKey.keyWidth:
           return true;
@@ -972,6 +989,7 @@ export class TableColumnFlowObj extends FlowObj {
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
         case SyntacticKey.keyColumnIndex:
+        case SyntacticKey.keyColumnNumber:
           this.nic_.columnIndex = obj.asInteger() ?? 0;
           break;
         case SyntacticKey.keyNColumnsSpanned:
@@ -1042,8 +1060,12 @@ export class TableCellFlowObj extends CompoundFlowObj {
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
         case SyntacticKey.keyColumnIndex:
+        case SyntacticKey.keyColumnNumber:
+        case SyntacticKey.keyRowNumber:
         case SyntacticKey.keyNColumnsSpanned:
         case SyntacticKey.keyNRowsSpanned:
+        case SyntacticKey.keyIsStartsRow:
+        case SyntacticKey.keyIsEndsRow:
           return true;
         default:
           break;
@@ -1057,13 +1079,21 @@ export class TableCellFlowObj extends CompoundFlowObj {
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
         case SyntacticKey.keyColumnIndex:
+        case SyntacticKey.keyColumnNumber:
           this.nic_.columnIndex = obj.asInteger() ?? 0;
+          break;
+        case SyntacticKey.keyRowNumber:
+          // Row number - currently not stored but accepted
           break;
         case SyntacticKey.keyNColumnsSpanned:
           this.nic_.nColumnsSpanned = obj.asInteger() ?? 1;
           break;
         case SyntacticKey.keyNRowsSpanned:
           this.nic_.nRowsSpanned = obj.asInteger() ?? 1;
+          break;
+        case SyntacticKey.keyIsStartsRow:
+        case SyntacticKey.keyIsEndsRow:
+          // Boolean flags - currently not stored but accepted
           break;
         default:
           break;
