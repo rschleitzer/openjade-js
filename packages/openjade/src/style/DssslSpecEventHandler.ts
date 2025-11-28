@@ -609,7 +609,8 @@ export class DssslSpecEventHandler extends EventHandler {
   override startElement(event: StartElementEvent): void {
     const gi = stringCToString(event.name());
     for (const entry of DssslSpecEventHandler.mappingTable) {
-      if (gi === entry.gi) {
+      // SGML is case-insensitive, so compare case-insensitively
+      if (gi.toUpperCase() === entry.gi) {
         entry.start(this, event);
         break;
       }
@@ -619,7 +620,8 @@ export class DssslSpecEventHandler extends EventHandler {
   override endElement(event: EndElementEvent): void {
     const gi = stringCToString(event.name());
     for (const entry of DssslSpecEventHandler.mappingTable) {
-      if (gi === entry.gi) {
+      // SGML is case-insensitive, so compare case-insensitively
+      if (gi.toUpperCase() === entry.gi) {
         entry.end(this, event);
         break;
       }

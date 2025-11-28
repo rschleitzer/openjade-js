@@ -801,6 +801,127 @@ export class IgnoredInheritedC extends InheritedC {
   }
 }
 
+// Generic boolean inherited characteristic - uses setter callback
+export type BoolSetter = (fotb: FOTBuilder, value: boolean) => void;
+
+export class GenericBoolInheritedC extends BoolInheritedC {
+  private setter_: BoolSetter;
+
+  constructor(ident: Identifier | null, index: number, setter: BoolSetter, defaultValue: boolean = false) {
+    super(ident, index, defaultValue);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.value_);
+    value.obj = null;
+  }
+
+  override make(obj: ELObj, _loc: Location, _interp: Interpreter): InheritedC | null {
+    return new GenericBoolInheritedC(this.identifier(), this.index(), this.setter_, obj.isTrue());
+  }
+}
+
+// Generic length inherited characteristic - uses setter callback
+export type LengthSetter = (fotb: FOTBuilder, value: Length) => void;
+
+export class GenericLengthInheritedC extends LengthInheritedC {
+  private setter_: LengthSetter;
+
+  constructor(ident: Identifier | null, index: number, setter: LengthSetter, defaultValue: Length = 0) {
+    super(ident, index, defaultValue);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.size_);
+    value.obj = null;
+  }
+
+  override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const q = obj.quantityValue();
+    if (q.type !== 0 && q.dim === 1) {
+      const length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+      return new GenericLengthInheritedC(this.identifier(), this.index(), this.setter_, length);
+    }
+    this.invalidValue(loc, interp);
+    return null;
+  }
+}
+
+// Generic length spec inherited characteristic - uses setter callback
+export type LengthSpecSetter = (fotb: FOTBuilder, value: FOTLengthSpec) => void;
+
+export class GenericLengthSpecInheritedC extends LengthSpecInheritedC {
+  private setter_: LengthSpecSetter;
+
+  constructor(ident: Identifier | null, index: number, setter: LengthSpecSetter, defaultSpec?: LengthSpec) {
+    super(ident, index, defaultSpec);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    // Convert ELObj LengthSpec to FOTBuilder LengthSpec
+    const converted = this.spec_.convert();
+    if (converted.result) {
+      this.setter_(fotb, converted.spec);
+    }
+    value.obj = null;
+  }
+}
+
+// Generic symbol inherited characteristic - uses setter callback
+export type SymbolSetter = (fotb: FOTBuilder, value: Symbol) => void;
+
+export class GenericSymbolInheritedC extends SymbolInheritedC {
+  private setter_: SymbolSetter;
+
+  constructor(ident: Identifier | null, index: number, setter: SymbolSetter, defaultValue: Symbol = Symbol.symbolFalse) {
+    super(ident, index, defaultValue);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.sym_);
+    value.obj = null;
+  }
+
+  override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const symObj = obj.asSymbol();
+    if (symObj) {
+      // Try to convert symbol to FOT symbol using the interpreter
+      const fotSym = (interp as any).convertToFOTSymbol?.(symObj) ?? this.sym_;
+      return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, fotSym);
+    }
+    this.invalidValue(loc, interp);
+    return null;
+  }
+}
+
 // Factory to create inherited characteristics by name
 export function createInheritedC(name: string, index: number, ident: Identifier | null): InheritedC | null {
   switch (name) {

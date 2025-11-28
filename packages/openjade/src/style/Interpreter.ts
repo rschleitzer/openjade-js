@@ -58,7 +58,8 @@ import {
   QuaddingC, DisplayAlignmentC, StartIndentC, EndIndentC,
   FirstLineStartIndentC, LineSpacingC, FieldWidthC,
   ColorC, BackgroundColorC, LinesC, WritingModeC,
-  createInheritedC, IgnoredInheritedC
+  createInheritedC, IgnoredInheritedC,
+  GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC
 } from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
 import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj } from './primitive';
@@ -1904,27 +1905,58 @@ export class Interpreter {
     this.installInheritedC('background-color', new BackgroundColorC(null, this.nInheritedC_++));
     this.installInheritedC('writing-mode', new WritingModeC(null, this.nInheritedC_++));
 
-    // Additional characteristics that are commonly used - install using createInheritedC for any available
-    const additionalChars = [
-      'left-margin', 'right-margin', 'top-margin', 'bottom-margin',
-      'header-margin', 'footer-margin', 'page-width', 'page-height',
-      'line-thickness', 'cell-before-row-margin', 'cell-after-row-margin',
-      'cell-before-column-margin', 'cell-after-column-margin',
-      'last-line-end-indent', 'position-point-shift', 'start-margin', 'end-margin',
-      'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
-      'heading-level', 'border-present?'
-    ];
+    // Margin characteristics - length
+    this.installInheritedC('left-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setLeftMargin(v)));
+    this.installInheritedC('right-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setRightMargin(v)));
+    this.installInheritedC('top-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setTopMargin(v)));
+    this.installInheritedC('bottom-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setBottomMargin(v)));
+    this.installInheritedC('header-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setHeaderMargin(v)));
+    this.installInheritedC('footer-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setFooterMargin(v)));
 
-    for (const name of additionalChars) {
-      const ic = createInheritedC(name, this.nInheritedC_, null);
-      if (ic) {
-        this.installInheritedC(name, ic);
-        this.nInheritedC_++;
-      } else {
-        // For unimplemented characteristics, create a simple placeholder
-        // that allows the keyword but ignores the value
-        this.installIgnoredC(name);
-      }
+    // Page dimensions
+    this.installInheritedC('page-width', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setPageWidth(v), this.unitsPerInch_ * 8 + this.unitsPerInch_ / 2));
+    this.installInheritedC('page-height', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setPageHeight(v), this.unitsPerInch_ * 11));
+
+    // Line/border characteristics
+    this.installInheritedC('line-thickness', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setLineThickness(v), Math.round(this.unitsPerInch_ / 72)));
+
+    // Cell margins
+    this.installInheritedC('cell-before-row-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellBeforeRowMargin(v)));
+    this.installInheritedC('cell-after-row-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellAfterRowMargin(v)));
+    this.installInheritedC('cell-before-column-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellBeforeColumnMargin(v)));
+    this.installInheritedC('cell-after-column-margin', new GenericLengthInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellAfterColumnMargin(v)));
+
+    // LengthSpec characteristics
+    this.installInheritedC('last-line-end-indent', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setLastLineEndIndent(v)));
+    this.installInheritedC('position-point-shift', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setPositionPointShift(v)));
+    this.installInheritedC('start-margin', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setStartMargin(v)));
+    this.installInheritedC('end-margin', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setEndMargin(v)));
+    this.installInheritedC('sideline-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setSidelineSep(v)));
+    this.installInheritedC('marginalia-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMarginaliaSep(v)));
+
+    // Boolean characteristics
+    this.installInheritedC('border-present?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setBorderPresent(v), true));
+    this.installInheritedC('inhibit-line-breaks?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setInhibitLineBreaks(v)));
+    this.installInheritedC('hyphenate?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setHyphenate(v)));
+    this.installInheritedC('kern?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setKern(v)));
+    this.installInheritedC('ligature?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLigature(v)));
+    this.installInheritedC('score-spaces?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setScoreSpaces(v)));
+    this.installInheritedC('numbered-lines?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setNumberedLines(v), true));
+    this.installInheritedC('hanging-punct?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setHangingPunct(v)));
+
+    // Symbol characteristics
+    this.installInheritedC('line-join', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLineJoin(v), FOTSymbol.symbolMiter));
+    this.installInheritedC('line-cap', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLineCap(v), FOTSymbol.symbolButt));
+    this.installInheritedC('input-whitespace-treatment', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setInputWhitespaceTreatment(v), FOTSymbol.symbolPreserve));
+    this.installInheritedC('last-line-quadding', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setLastLineQuadding(v), FOTSymbol.symbolRelative));
+
+    // Additional commonly used characteristics that aren't directly supported - use IgnoredInheritedC
+    const ignoredChars = [
+      'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
+      'heading-level', 'keep?', 'break-before?', 'break-after?'
+    ];
+    for (const name of ignoredChars) {
+      this.installIgnoredC(name);
     }
   }
 
