@@ -687,6 +687,12 @@ export class IntegerObj extends ELObj {
     return intVal.result && intVal.value === this.n_;
   }
 
+  // eqv? for integers: two exact integers with the same value are eqv
+  override isEquiv(other: ELObj): boolean {
+    const intVal = other.exactIntegerValue();
+    return intVal.result && intVal.value === this.n_;
+  }
+
   override asInteger(): number { return this.n_; }
   override asReal(): number { return this.n_; }
 }
@@ -718,6 +724,12 @@ export class RealObj extends ELObj {
 
   override isEqual(other: ELObj): boolean {
     const realVal = other.realValue();
+    return realVal.result && realVal.value === this.n_;
+  }
+
+  // eqv? for inexact reals: two inexact reals with the same value are eqv
+  override isEquiv(other: ELObj): boolean {
+    const realVal = other.inexactRealValue();
     return realVal.result && realVal.value === this.n_;
   }
 
@@ -1029,16 +1041,16 @@ export abstract class NodeListObj extends ELObj {
   override asNodeList(): NodeListObj { return this; }
 
   override optSingletonNodeList(ctx: EvalContext, interp: Interpreter): { result: boolean; node: NodePtr } {
-    const first = this.nodeListFirst(ctx, interp);
-    if (!first.node()) {
-      return { result: false, node: new NodePtr() };
-    }
+    // C++ checks rest first, returns true as long as rest is empty
+    // (even for an empty list - returns true with null node)
     const rest = this.nodeListRest(ctx, interp);
     const restFirst = rest.nodeListFirst(ctx, interp);
     if (restFirst.node()) {
+      // More than one node - not a singleton
       return { result: false, node: new NodePtr() };
     }
-    return { result: true, node: first };
+    // Rest is empty, return first (which may be null for empty list)
+    return { result: true, node: this.nodeListFirst(ctx, interp) };
   }
 
   abstract nodeListFirst(ctx: EvalContext, interp: Interpreter): NodePtr;
@@ -1060,8 +1072,20 @@ export abstract class NodeListObj extends ELObj {
     return this; // Default - subclasses can implement reversal
   }
 
-  nodeListLength(_ctx: EvalContext, _interp: Interpreter): number {
-    return 0;
+  nodeListLength(ctx: EvalContext, interp: Interpreter): number {
+    // C++ iterates through the list counting nodes
+    let nl: NodeListObj = this;
+    let n = 0;
+    for (;;) {
+      const nd = nl.nodeListFirst(ctx, interp);
+      if (!nd.node()) {
+        break;
+      }
+      const chunkResult = nl.nodeListChunkRest(ctx, interp);
+      nl = chunkResult.list;
+      n += 1;
+    }
+    return n;
   }
 
   suppressError(): boolean {
@@ -1096,10 +1120,8 @@ export class NodePtrNodeListObj extends NodeListObj {
   }
 
   override optSingletonNodeList(_ctx: EvalContext, _interp: Interpreter): { result: boolean; node: NodePtr } {
-    if (this.node_.node()) {
-      return { result: true, node: this.node_ };
-    }
-    return { result: false, node: new NodePtr() };
+    // C++ always returns true and sets node to node_, even if null
+    return { result: true, node: this.node_ };
   }
 
   chunkComplete(): boolean {

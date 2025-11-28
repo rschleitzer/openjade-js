@@ -2145,14 +2145,8 @@ export class NodeListLengthPrimitiveObj extends PrimitiveObjBase {
     if (!nl) {
       return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
     }
-    let count = 0;
-    let current: NodeListObj | null = nl;
-    while (current) {
-      const first = current.nodeListFirst(context, interp);
-      if (!first || !first.node()) break;
-      count++;
-      current = current.nodeListRest(context, interp);
-    }
+    // Use the nodeListLength method which properly iterates through the list
+    const count = nl.nodeListLength(context, interp);
     return new IntegerObj(count);
   }
 }
@@ -2696,12 +2690,14 @@ function nodeAttributeString(
   const nd = node.node();
   if (!nd) return false;
 
+  // Get attr name as string for debug
+  let attrNameStr = '';
+  for (let i = 0; i < attrNameLen; i++) {
+    attrNameStr += String.fromCharCode(attrName[i]);
+  }
+
   const attsResult = nd.getAttributes();
   if (attsResult.result !== AccessResult.accessOK || !attsResult.atts) {
-    let attrNameStr = '';
-    for (let i = 0; i < attrNameLen; i++) {
-      attrNameStr += String.fromCharCode(attrName[i]);
-    }
     return false;
   }
 
@@ -3272,26 +3268,6 @@ export class ChildrenPrimitiveObj extends PrimitiveObjBase {
     if (nd.children(childrenListPtr) !== AccessResult.accessOK) {
       return interp.makeEmptyNodeList();
     }
-
-    // Count children for debug
-    let count = 0;
-    let list = childrenListPtr.list();
-    while (list) {
-      const firstPtr = new NodePtr();
-      if (list.first(firstPtr) !== AccessResult.accessOK) break;
-      if (!firstPtr.node()) break;
-      count++;
-      const restPtr = new NodeListPtr();
-      if (list.rest(restPtr) !== AccessResult.accessOK) break;
-      list = restPtr.list();
-    }
-    const giRes = nd.getGi();
-    const gi = giRes.result === AccessResult.accessOK ? (() => {
-      const data = giRes.str.data();
-      let s = '';
-      if (data) for (let i = 0; i < giRes.str.size(); i++) s += String.fromCharCode(data[i]);
-      return s;
-    })() : '(no gi)';
 
     return new NodeListPtrNodeListObj(childrenListPtr);
   }

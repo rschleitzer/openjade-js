@@ -247,11 +247,7 @@ export class VM extends EvalContext {
     let insnCount = 0;
     while (insn) {
       insnCount++;
-      if (insnCount % 100000 === 0) {
-      }
-      if (insnCount >= 100 && insnCount <= 120) {
-      }
-      if (insnCount > 10000000) {
+      if (insnCount > 1000000000) {
         throw new Error('Infinite loop detected in VM');
       }
       insn = insn.execute(this);
