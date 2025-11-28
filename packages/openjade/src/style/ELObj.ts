@@ -127,6 +127,8 @@ export interface Interpreter {
   lookupExternalProc(pubid: StringC): FunctionObj | null;
   // Grove utilities
   childNumber(node: any): { result: boolean; value: number };
+  // Node property lookup
+  lookupNodeProperty(str: StringC): { found: boolean; id: number };
 }
 
 // Forward type for node pointer

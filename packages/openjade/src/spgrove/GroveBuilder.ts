@@ -177,8 +177,13 @@ class ElementChunk extends ParentChunk {
   type: ElementType | null = null;
   elementIndex: number = 0;
 
-  attributeValue(_attIndex: number, _grove: GroveImpl): AttributeValue | null {
-    return null;
+  attributeValue(attIndex: number, grove: GroveImpl): AttributeValue | null {
+    // Following C++: return attDefList()->def(attIndex)->defaultValue(grove.impliedAttributeValue())
+    const defList = this.attDefList();
+    if (!defList) return null;
+    const def = defList.def(attIndex);
+    if (!def) return null;
+    return def.defaultValue(grove.impliedAttributeValue());
   }
 
   mustOmitEndTag(): boolean {
@@ -202,9 +207,10 @@ class ElementChunk extends ParentChunk {
     return chunk.id();
   }
 
-  // Number of attributes stored (for iteration)
+  // Number of attributes (from definition list for iteration)
   nAtts(): number {
-    return 0;
+    // Use defList->size() as in C++ for attribute iteration
+    return this.attDefList()?.size() ?? 0;
   }
 }
 
@@ -230,9 +236,7 @@ class AttElementChunk extends ElementChunk {
     return super.attributeValue(attIndex, grove);
   }
 
-  override nAtts(): number {
-    return this.attributeValues_.length;
-  }
+  // Note: nAtts() inherited from ElementChunk uses attDefList().size()
 
   // Override id() to return the ID attribute value (matching upstream AttElementChunk::id())
   override id(): StringC | null {

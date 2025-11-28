@@ -48,7 +48,7 @@ import {
   LengthSpec as FOTLengthSpec,
   Address
 } from './FOTBuilder';
-import { NodePtr, GroveString, AccessResult } from '../grove/Node';
+import { NodePtr, GroveString, AccessResult, ComponentName } from '../grove/Node';
 import { Environment } from './Expression';
 import { Pattern, MatchContext, Element } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
@@ -414,7 +414,8 @@ export const InterpreterMessages = {
   stackTraceEllipsis: 'stackTraceEllipsis',
   noCurrentProcessingMode: 'noCurrentProcessingMode',
   noCurrentNode: 'noCurrentNode',
-  undefinedQuantity: 'undefinedQuantity'
+  undefinedQuantity: 'undefinedQuantity',
+  noNodePropertyValue: 'noNodePropertyValue'
 } as const;
 
 // Re-export SyntacticKey from Identifier.ts for convenience
@@ -1874,7 +1875,18 @@ export class Interpreter {
   }
 
   private installNodeProperties(): void {
-    // Install node property names
+    // Install node property names - following upstream Interpreter::installNodeProperties()
+    for (let i = 0; i < ComponentName.nIds; i++) {
+      const id: ComponentName.Id = i;
+      const rcsName = ComponentName.rcsName(id);
+      const sdqlName = ComponentName.sdqlName(id);
+      if (rcsName) {
+        this.nodePropertyTable_.set(rcsName, i);
+      }
+      if (sdqlName) {
+        this.nodePropertyTable_.set(sdqlName, i);
+      }
+    }
   }
 
   private installBuiltins(): void {

@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, Char, StringC, String as StringOf } from '@openjade-js/opensp';
+import { Location, Char, StringC, String as StringOf, String as StringClass } from '@openjade-js/opensp';
 import {
   ELObj,
   PairObj,
@@ -39,7 +39,7 @@ import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosof
 import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
 import { Interpreter } from './ELObj';
-import { NodePtr, NodeListPtr, GroveString, AccessResult, SdataMapper } from '../grove/Node';
+import { NodePtr, NodeListPtr, NamedNodeListPtr, GroveString, AccessResult, SdataMapper, PropertyValue, ComponentName } from '../grove/Node';
 
 // Signature helper
 function sig(nRequired: number, nOptional: number, restArg: boolean): Signature {
@@ -3570,6 +3570,220 @@ export class ElementWithIdPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// NamedNodeListPtrNodeListObj - wraps a NamedNodeListPtr as a NodeListObj
+// Following upstream pattern
+class NamedNodeListPtrNodeListObj extends NodeListObj {
+  private nnlPtr_: NamedNodeListPtr;
+  private nodeListPtr_: NodeListPtr | null = null;
+
+  constructor(nnlPtr: NamedNodeListPtr) {
+    super();
+    this.nnlPtr_ = nnlPtr;
+    // Get the node list from the named node list
+    const nnl = nnlPtr.list();
+    if (nnl) {
+      this.nodeListPtr_ = nnl.nodeList();
+    }
+  }
+
+  override nodeListFirst(_ctx: EvalContext, _interp: Interpreter): NodePtr {
+    if (!this.nodeListPtr_) return new NodePtr();
+    const list = this.nodeListPtr_.list();
+    if (!list) return new NodePtr();
+    const nodePtr = new NodePtr();
+    if (list.first(nodePtr) !== AccessResult.accessOK) {
+      return new NodePtr();
+    }
+    return nodePtr;
+  }
+
+  override nodeListRest(_ctx: EvalContext, _interp: Interpreter): NodeListObj {
+    if (!this.nodeListPtr_) return new EmptyNodeListObj();
+    const list = this.nodeListPtr_.list();
+    if (!list) return new EmptyNodeListObj();
+    const restPtr = new NodeListPtr();
+    if (list.rest(restPtr) !== AccessResult.accessOK) {
+      return new EmptyNodeListObj();
+    }
+    return new NodeListPtrNodeListObj(restPtr);
+  }
+}
+
+// ELObjPropertyValue - visitor for converting grove property values to ELObj
+// Following upstream class ELObjPropertyValue in ELObjPropVal.h
+class ELObjPropertyValue extends PropertyValue {
+  private interp_: Interpreter;
+  private rcs_: boolean;
+  public obj: ELObj | null = null;
+
+  constructor(interp: Interpreter, rcs: boolean) {
+    super();
+    this.interp_ = interp;
+    this.rcs_ = rcs;
+  }
+
+  setNode(value: NodePtr): void {
+    this.obj = new NodePtrNodeListObj(value);
+  }
+
+  setNodeList(value: NodeListPtr): void {
+    this.obj = new NodeListPtrNodeListObj(value);
+  }
+
+  setNamedNodeList(value: NamedNodeListPtr): void {
+    this.obj = new NamedNodeListPtrNodeListObj(value);
+  }
+
+  setBoolean(value: boolean): void {
+    if (value) {
+      this.obj = this.interp_.makeTrue();
+    } else {
+      this.obj = this.interp_.makeFalse();
+    }
+  }
+
+  setChar(value: number): void {
+    this.obj = this.interp_.makeChar(value);
+  }
+
+  setString(value: GroveString): void {
+    const data = value.data();
+    if (data) {
+      this.obj = new StringObj(data);
+    } else {
+      this.obj = new StringObj(new Uint32Array(0));
+    }
+  }
+
+  setComponentNameId(value: ComponentName.Id): void {
+    // Convert component name to symbol - choose rcsName or sdqlName based on rcs_
+    const name = this.rcs_ ? ComponentName.rcsName(value) : ComponentName.sdqlName(value);
+    if (name) {
+      this.obj = this.interp_.makeSymbol(name);
+    } else {
+      this.obj = this.interp_.makeFalse();
+    }
+  }
+
+  setStringList(_value: any): void {
+    // Not commonly used - return nil for now
+    this.obj = this.interp_.makeNil();
+  }
+
+  setComponentNameIdList(_value: ComponentName.Id[]): void {
+    // Not commonly used - return nil for now
+    this.obj = this.interp_.makeNil();
+  }
+
+  setLong(value: number): void {
+    this.obj = this.interp_.makeInteger(value);
+  }
+}
+
+// node-property - get a node property by name
+// Following upstream DEFPRIMITIVE(NodeProperty) in primitive.cxx
+export class NodePropertyPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, true);  // 2 required, rest for keyword args
+  constructor() { super(NodePropertyPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // arg[0] is property name (string or symbol)
+    const str = args[0].convertToString();
+    if (!str) {
+      return this.argError(interp, loc, 'notAStringOrSymbol', 0, args[0]);
+    }
+
+    // arg[1] is the node
+    const nodeRes = args[1].optSingletonNodeList(context, interp);
+    if (!nodeRes.result || !nodeRes.node.node()) {
+      return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+    }
+    const node = nodeRes.node;
+
+    // Parse keyword arguments (default:, null:, is-rcs:)
+    let defaultValue: ELObj | null = null;
+    let nullValue: ELObj | null = null;
+    let isRcs = false;
+
+    // Process keyword args (argc - 2 remaining args after first 2)
+    for (let i = 2; i < argc; i += 2) {
+      if (i + 1 >= argc) break;
+      const keyObj = args[i].asKeyword();
+      if (!keyObj) {
+        interp.setNextLocation(loc);
+        interp.message('keyArgsNotKey');
+        return interp.makeError();
+      }
+      const keyName = keyObj.identifier().name().toString();
+      if (keyName === 'default') {
+        defaultValue = args[i + 1];
+      } else if (keyName === 'null') {
+        nullValue = args[i + 1];
+      } else if (keyName === 'is-rcs') {
+        isRcs = args[i + 1] !== interp.makeFalse();
+      }
+    }
+
+    // Look up property ID
+    const propStr = str.stringData();
+    // Create StringC for the property name and a human-readable string version
+    const propChars: number[] = [];
+    let propNameStr = '';
+    if (propStr.data) {
+      for (let i = 0; i < propStr.length; i++) {
+        propChars.push(propStr.data[i]);
+        propNameStr += String.fromCharCode(propStr.data[i]);
+      }
+    }
+    const propName = new StringClass<number>(propChars, propChars.length);
+
+    // Debug logging
+    // console.log('[node-property] Looking up property:', propNameStr);
+
+    // Special case for 'tokens' property on model-group nodes
+    // Following upstream hack for duplicate rcsname
+    let id = ComponentName.Id.noId;
+    const clsResult = node.node()!.getClassName();
+    if (propStr.data && stringDataEquals(propStr, 'tokens') &&
+        clsResult.result === AccessResult.accessOK &&
+        clsResult.name === ComponentName.Id.idModelGroup) {
+      id = ComponentName.Id.idContentTokens;
+    } else {
+      const lookupResult = interp.lookupNodeProperty(propName);
+      if (lookupResult.found) {
+        id = lookupResult.id;
+      }
+    }
+
+    if (id !== ComponentName.Id.noId) {
+      const propValue = new ELObjPropertyValue(interp, isRcs);
+      // The property method expects an SdataMapper - use the interpreter which should implement it
+      const ret = node.node()!.property(id, interp as unknown as SdataMapper, propValue);
+      if (ret === AccessResult.accessOK && propValue.obj) {
+        return propValue.obj;
+      }
+      if (ret === AccessResult.accessNull && nullValue !== null) {
+        return nullValue;
+      }
+    }
+
+    if (defaultValue === null) {
+      interp.setNextLocation(loc);
+      interp.message('noNodePropertyValue', propNameStr);
+      return interp.makeError();
+    }
+    return defaultValue;
+  }
+}
+
+// Helper function to compare stringData with a string
+function stringDataEquals(sd: { data: Uint32Array | null; length: number; result: boolean }, str: string): boolean {
+  if (!sd.data || sd.length !== str.length) return false;
+  for (let i = 0; i < str.length; i++) {
+    if (sd.data[i] !== str.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
 // ============ Map of all primitives ============
 export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['cons', () => new ConsPrimitiveObj()],
@@ -3702,6 +3916,7 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['node-list=?', () => new IsNodeListEqualPrimitiveObj()],
   ['node-list-last', () => new NodeListLastPrimitiveObj()],
   ['element-with-id', () => new ElementWithIdPrimitiveObj()],
+  ['node-property', () => new NodePropertyPrimitiveObj()],
   // Process children and process-children-trim
   ['process-children', () => new ProcessChildrenPrimitiveObj()],
   ['process-children-trim', () => new ProcessChildrenTrimPrimitiveObj()],
