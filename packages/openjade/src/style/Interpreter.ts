@@ -240,9 +240,9 @@ export class Unit {
 
   resolveQuantity(force: boolean, interp: Interpreter, val: number, valExp: number): ELObj | null {
     this.tryCompute(force, interp);
-    let result: number;
-    if (this.computed_ === 'computedExact' && this.scale(val, valExp, this.exact_, { value: result = 0 })) {
-      return new LengthObj(result);
+    const result = { value: 0 };
+    if (this.computed_ === 'computedExact' && this.scale(val, valExp, this.exact_, result)) {
+      return new LengthObj(result.value);
     }
     let x = val;
     while (valExp > 0) {
@@ -2301,8 +2301,31 @@ export class Interpreter {
     if (i < str.length) {
       const unitResult = this.scanUnitStr(str, i);
       if (!unitResult) return null;
-      // Return unresolved quantity with unit
-      // TODO: Implement UnresolvedLengthObj/UnresolvedQuantityObj
+      // Resolve the quantity using the unit
+      const unit = unitResult.unit;
+      const unitExp = unitResult.exp;
+      // Use unit to resolve the quantity to a LengthObj or QuantityObj
+      // The 'exp' is the decimal exponent of the value (e.g., 0 for 12, -1 for 1.2)
+      // The 'unitExp' is the power of the unit (e.g., 1 for pt, 2 for pt^2)
+      if (unitExp === 1) {
+        // Simple case: unit^1
+        const resolved = unit.resolveQuantity(true, this, n, exp);
+        if (resolved) {
+          return resolved;
+        }
+      } else {
+        // Handle unit with exponent (e.g., pt^2 for area)
+        // Convert to double and call resolveQuantityDouble
+        let x = n;
+        let e = exp;
+        while (e > 0) { x *= 10.0; e--; }
+        while (e < 0) { x /= 10.0; e++; }
+        const resolved = unit.resolveQuantityDouble(true, this, x, unitExp);
+        if (resolved) {
+          return resolved;
+        }
+      }
+      // Fall back to float if resolution fails
       return this.convertNumberFloatStr(str);
     }
 

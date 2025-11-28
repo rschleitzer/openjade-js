@@ -14,6 +14,7 @@ import {
   QuantityType
 } from './ELObj';
 import { FlowObj, SequenceFlowObj, CompoundFlowObj } from './SosofoObj';
+import { StyleSpec as StyleSpecClass } from './Style';
 import type { Interpreter } from './Interpreter';
 import {
   ProcessingMode,
@@ -2227,20 +2228,22 @@ export const InterpreterMessages = {
 // Helper functions for StyleExpression and MakeExpression
 
 function createVarInheritedC(
-  _inheritedC: InheritedC,
+  inheritedC: InheritedC,
   _code: InsnPtr,
   _loc: Location
 ): InheritedC {
-  return {
-    make: () => null
-  };
+  // TODO: Create VarInheritedC wrapper if needed, for now return the base InheritedC
+  return inheritedC;
 }
 
 function createStyleSpec(
-  _forceIcs: (InheritedC | null)[],
-  _ics: (InheritedC | null)[]
+  forceIcs: (InheritedC | null)[],
+  ics: (InheritedC | null)[]
 ): StyleSpec {
-  return {};
+  // Convert arrays of InheritedC | null to just InheritedC
+  const filteredForceIcs = forceIcs.filter((ic): ic is InheritedC => ic !== null);
+  const filteredIcs = ics.filter((ic): ic is InheritedC => ic !== null);
+  return new StyleSpecClass(filteredForceIcs, filteredIcs);
 }
 
 function createSequenceFlowObj(_interp: Interpreter): FlowObj {

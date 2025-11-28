@@ -19,7 +19,7 @@ import {
 } from './ELObj';
 import { Collector, CollectorObject } from './Collector';
 import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj } from './SosofoObj';
-import { StyleObj } from './Style';
+import { StyleObj, VarStyleObj, StyleSpec as StyleStyleSpec, InheritedC as StyleInheritedC } from './Style';
 import { NodePtr } from '../grove/Node';
 
 // BoxObj type and constructor alias for use throughout this file
@@ -59,13 +59,11 @@ export interface CompoundFlowObj extends FlowObj {
   setContent(content: SosofoObj): void;
 }
 
-export interface StyleSpec {
-  // Style specification - will be defined in Style.ts
-}
+// Use StyleSpec from Style.ts
+export type StyleSpec = StyleStyleSpec;
 
-export interface InheritedC {
-  make(val: ELObj, loc: Location, interp: Interpreter): InheritedC | null;
-}
+// Use InheritedC from Style.ts
+export type InheritedC = StyleInheritedC;
 
 // Instruction interface
 export interface Insn {
@@ -1778,10 +1776,11 @@ export class VarStyleInsn extends InsnBase {
     if (this.hasUse_) {
       use = vm.stackGet(--tem) as StyleObj;
     }
-    // vm.stackSet(tem, new VarStyleObj(this.styleSpec_, use, display, vm.currentNode));
-    // For now, create a placeholder until Style.ts is ported
+    // Create VarStyleObj with the style specification
+    const styleObj = new VarStyleObj(this.styleSpec_, use, display, vm.currentNode as NodePtr | null);
+    vm.stackSet(tem, styleObj);
     vm.sp = tem + 1;
-    vm.interp.makeReadOnly(vm.stackGet(tem));
+    vm.interp.makeReadOnly(styleObj);
     return this.next_;
   }
 }

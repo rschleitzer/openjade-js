@@ -6,7 +6,7 @@ import { ELObj, NodeListObj, SymbolObj } from './ELObj';
 import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
-import { StyleObj } from './Style';
+import { StyleObj, StyleStack } from './Style';
 import { InsnPtr, VM } from './Insn';
 import type { Interpreter, ProcessingMode } from './Interpreter';
 
@@ -14,6 +14,7 @@ import type { Interpreter, ProcessingMode } from './Interpreter';
 export interface ProcessContext {
   // Processing context interface
   fotBuilder(): FOTBuilder;
+  currentStyleStack(): StyleStack;
   processNode(node: NodePtr, mode: ProcessingMode | null): void;
   processNodeList(nodeList: NodeListObj, mode: ProcessingMode | null): void;
   processChildren(mode: ProcessingMode | null): void;
@@ -259,12 +260,22 @@ export abstract class FlowObj extends SosofoObj {
     this.popStyle(context, styleLevel);
   }
 
-  pushStyle(_context: ProcessContext, _level: { value: number }): void {
-    // Override in subclasses
+  pushStyle(context: ProcessContext, _level: { value: number }): void {
+    // Push style onto the style stack - port of FlowObj::pushStyle from FlowObj.cxx
+    if (this.style_ && typeof (this.style_ as any).appendIter === 'function') {
+      context.currentStyleStack().push(this.style_, context.vm(), context.fotBuilder());
+    } else {
+      context.currentStyleStack().pushEmpty();
+    }
   }
 
-  popStyle(_context: ProcessContext, _level: number): void {
-    // Override in subclasses
+  popStyle(context: ProcessContext, _level: number): void {
+    // Pop style from the style stack - port of FlowObj::popStyle from FlowObj.cxx
+    if (this.style_ && typeof (this.style_ as any).appendIter === 'function') {
+      context.currentStyleStack().pop();
+    } else {
+      context.currentStyleStack().popEmpty();
+    }
   }
 
   abstract processInner(context: ProcessContext): void;
