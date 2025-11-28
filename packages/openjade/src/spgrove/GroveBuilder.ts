@@ -966,6 +966,19 @@ abstract class ChunkNode extends BaseNode {
   override siblingsIndex(): { result: AccessResult; index: number } {
     return { result: AccessResult.accessNotInClass, index: 0 };
   }
+
+  // Following upstream ChunkNode::getTreeRoot
+  override getTreeRoot(ptr: NodePtr): AccessResult {
+    const root = this.grove().root();
+    if (this.chunk_.origin &&
+        this.chunk_.origin !== root &&
+        // With invalid documents we might have elements in the epilog
+        !root.epilog &&
+        root.documentElement) {
+      return root.documentElement.setNodePtrFirst(ptr, this);
+    }
+    return super.getTreeRoot(ptr);
+  }
 }
 
 // SgmlDocumentNode
