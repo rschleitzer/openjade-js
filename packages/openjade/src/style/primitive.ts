@@ -36,6 +36,7 @@ import {
   LanguageObj
 } from './ELObj';
 import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj } from './SosofoObj';
+import { Address } from './FOTBuilder';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
 import { InheritedC } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
@@ -2742,6 +2743,254 @@ export class NumberToStringPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// ============ Number Formatting Primitives ============
+
+// Helper function to format a number as letters (a, b, c, ... z, aa, ab, ...)
+// Following upstream formatNumberLetter in primitive.cxx
+function formatNumberLetter(n: number, letters: string): string {
+  if (n === 0) return '0';
+
+  let neg = false;
+  if (n < 0) {
+    n = -n;
+    neg = true;
+  }
+
+  let result = '';
+  do {
+    n--;
+    const r = n % 26;
+    n = Math.floor((n - r) / 26);
+    result = letters.charAt(r) + result;
+  } while (n > 0);
+
+  if (neg) result = '-' + result;
+  return result;
+}
+
+// Helper function to format a number as decimal with optional padding
+// Following upstream formatNumberDecimal in primitive.cxx
+function formatNumberDecimal(n: number, minWidth: number): string {
+  const str = n.toString();
+  const neg = n < 0;
+  const digits = neg ? str.slice(1) : str;
+
+  if (digits.length >= minWidth) {
+    return str;
+  }
+
+  const padding = '0'.repeat(minWidth - digits.length);
+  return neg ? '-' + padding + digits : padding + digits;
+}
+
+// Helper function to format a number as Roman numerals
+// Following upstream formatNumberRoman in primitive.cxx
+function formatNumberRoman(n: number, letters: string): string {
+  if (n > 5000 || n < -5000 || n === 0) {
+    return formatNumberDecimal(n, 1);
+  }
+
+  let result = '';
+  if (n < 0) {
+    n = -n;
+    result = '-';
+  }
+
+  // M = letters[0], D = letters[1], C = letters[2], L = letters[3], X = letters[4], V = letters[5], I = letters[6]
+  while (n >= 1000) {
+    result += letters.charAt(0);
+    n -= 1000;
+  }
+
+  // Process hundreds, tens, ones
+  // letters offset: 0=M, 2=C, 4=X, 6=I (using pairs CD, LX, VI for subtraction)
+  let letterIdx = 0;
+  for (let i = 100; i > 0; i = Math.floor(i / 10)) {
+    letterIdx += 2;
+    const q = Math.floor(n / i);
+    n -= q * i;
+    switch (q) {
+      case 1:
+        result += letters.charAt(letterIdx);
+        break;
+      case 2:
+        result += letters.charAt(letterIdx) + letters.charAt(letterIdx);
+        break;
+      case 3:
+        result += letters.charAt(letterIdx) + letters.charAt(letterIdx) + letters.charAt(letterIdx);
+        break;
+      case 4:
+        result += letters.charAt(letterIdx) + letters.charAt(letterIdx - 1);
+        break;
+      case 5:
+        result += letters.charAt(letterIdx - 1);
+        break;
+      case 6:
+        result += letters.charAt(letterIdx - 1) + letters.charAt(letterIdx);
+        break;
+      case 7:
+        result += letters.charAt(letterIdx - 1) + letters.charAt(letterIdx) + letters.charAt(letterIdx);
+        break;
+      case 8:
+        result += letters.charAt(letterIdx - 1) + letters.charAt(letterIdx) + letters.charAt(letterIdx) + letters.charAt(letterIdx);
+        break;
+      case 9:
+        result += letters.charAt(letterIdx) + letters.charAt(letterIdx - 2);
+        break;
+    }
+  }
+  return result;
+}
+
+// Main format-number helper - formats a single number according to format spec
+// Following upstream formatNumber in primitive.cxx
+function formatNumber(n: number, format: Uint32Array | null, len: number, result: string[]): boolean {
+  if (len > 0 && format) {
+    const lastChar = format[len - 1];
+    switch (lastChar) {
+      case 0x61: // 'a'
+        result.push(formatNumberLetter(n, 'abcdefghijklmnopqrstuvwxyz'));
+        return true;
+      case 0x41: // 'A'
+        result.push(formatNumberLetter(n, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'));
+        return true;
+      case 0x69: // 'i'
+        result.push(formatNumberRoman(n, 'mdclxvi'));
+        return true;
+      case 0x49: // 'I'
+        result.push(formatNumberRoman(n, 'MDCLXVI'));
+        return true;
+      case 0x31: // '1'
+        result.push(formatNumberDecimal(n, len));
+        return true;
+    }
+  }
+  result.push(formatNumberDecimal(n, 1));
+  return false;
+}
+
+// format-number - format an integer according to a format string
+// Following upstream DEFPRIMITIVE(FormatNumber) in primitive.cxx
+export class FormatNumberPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);  // 2 required (number, format)
+  constructor() { super(FormatNumberPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // Get the number
+    const nRes = args[0].exactIntegerValue();
+    if (!nRes.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAnExactInteger, 0, args[0]);
+    }
+
+    // Get the format string
+    const sd = args[1].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 1, args[1]);
+    }
+
+    // Format the number
+    const result: string[] = [];
+    const validFormat = formatNumber(nRes.value, sd.data, sd.length, result);
+
+    if (!validFormat) {
+      // Invalid format - still return result but could warn
+      interp.setNextLocation(loc);
+      // interp.message('invalidNumberFormat'); // TODO: add this message
+    }
+
+    // Convert to StringObj
+    const str = result.join('');
+    const chars = new Uint32Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      chars[i] = str.charCodeAt(i);
+    }
+    return new StringObj(chars);
+  }
+}
+
+// format-number-list - format a list of numbers with format strings and separators
+// Following upstream DEFPRIMITIVE(FormatNumberList) in primitive.cxx
+export class FormatNumberListPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(3, 0, false);  // 3 required (numbers, formats, separators)
+  constructor() { super(FormatNumberListPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let numbers: ELObj = args[0];
+    let formats: ELObj = args[1];
+    let seps: ELObj = args[2];
+    const result: string[] = [];
+    let isFirst = true;
+
+    while (!numbers.isNil()) {
+      // Add separator (except before first number)
+      if (!isFirst) {
+        const sepSd = seps.stringData();
+        if (sepSd.result) {
+          // seps is a string - use it for all separators
+          result.push(stringDataToString(sepSd));
+        } else {
+          // seps should be a list of strings
+          const sepPair = seps.asPair();
+          if (!sepPair) {
+            return this.argError(interp, loc, ArgErrorMessages.notAList, 2, args[2]);
+          }
+          const carSd = sepPair.car().stringData();
+          if (!carSd.result) {
+            return this.argError(interp, loc, ArgErrorMessages.notAString, 2, sepPair.car());
+          }
+          result.push(stringDataToString(carSd));
+          seps = sepPair.cdr();
+        }
+      }
+
+      // Get current number
+      const numPair = numbers.asPair();
+      if (!numPair) {
+        return this.argError(interp, loc, ArgErrorMessages.notAList, 0, args[0]);
+      }
+
+      const numRes = numPair.car().exactIntegerValue();
+      if (!numRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnExactInteger, 0, numPair.car());
+      }
+      numbers = numPair.cdr();
+
+      // Get format
+      let format: Uint32Array | null = null;
+      let formatLen = 0;
+      const formatSd = formats.stringData();
+      if (formatSd.result) {
+        // formats is a string - use it for all numbers
+        format = formatSd.data;
+        formatLen = formatSd.length;
+      } else {
+        // formats should be a list of strings
+        const formatPair = formats.asPair();
+        if (!formatPair) {
+          return this.argError(interp, loc, ArgErrorMessages.notAList, 1, args[1]);
+        }
+        const carSd = formatPair.car().stringData();
+        if (!carSd.result) {
+          return this.argError(interp, loc, ArgErrorMessages.notAString, 1, formatPair.car());
+        }
+        format = carSd.data;
+        formatLen = carSd.length;
+        formats = formatPair.cdr();
+      }
+
+      // Format the number
+      formatNumber(numRes.value, format, formatLen, result);
+      isFirst = false;
+    }
+
+    // Convert to StringObj
+    const str = result.join('');
+    const chars = new Uint32Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      chars[i] = str.charCodeAt(i);
+    }
+    return new StringObj(chars);
+  }
+}
+
 // Default SdataMapper for grove operations
 const defaultSdataMapper = new SdataMapper();
 
@@ -3904,6 +4153,650 @@ export class ActualCPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// ============ Ancestor/Hierarchical Primitives ============
+
+// Helper function to convert a string to a normalized general name
+// Following upstream convertGeneralName in primitive.cxx
+// In SGML, general names (element names) are case-insensitive
+function convertGeneralName(obj: ELObj, node: NodePtr, result: { value: string }): boolean {
+  const sd = obj.stringData();
+  if (!sd.result || !sd.data) return false;
+
+  // Get the string and normalize to lowercase for case-insensitive comparison
+  let str = '';
+  for (let i = 0; i < sd.length; i++) {
+    str += String.fromCharCode(sd.data[i]);
+  }
+  result.value = str.toLowerCase();
+  return true;
+}
+
+// Helper function to match a list of GIs against ancestors
+// Following upstream matchAncestors in primitive.cxx
+// Returns true if the list matches, with unmatched set to the remaining unmatched portion
+function matchAncestors(obj: ELObj, node: NodePtr, result: { unmatched: ELObj }): boolean {
+  // Get parent
+  const parentPtr = new NodePtr();
+  if (node.node()!.getParent(parentPtr) !== AccessResult.accessOK) {
+    result.unmatched = obj;
+    return true;
+  }
+
+  // Recursively match ancestors first
+  if (!matchAncestors(obj, parentPtr, result)) {
+    return false;
+  }
+
+  // If nothing left to match, we're done
+  if (result.unmatched.isNil()) {
+    return true;
+  }
+
+  // Check if current unmatched is a pair
+  const pair = result.unmatched.asPair();
+  if (!pair) {
+    return false;
+  }
+
+  // Get the GI to match
+  const giResult: { value: string } = { value: '' };
+  if (!convertGeneralName(pair.car(), node, giResult)) {
+    return false;
+  }
+
+  // Check if parent's GI matches
+  const parentGiResult = parentPtr.node()!.getGi();
+  if (parentGiResult.result === AccessResult.accessOK) {
+    const gs = parentGiResult.str;
+    const data = gs.data();
+    if (data) {
+      let parentGi = '';
+      for (let i = 0; i < gs.size(); i++) {
+        parentGi += String.fromCharCode(data[i]);
+      }
+      if (parentGi.toLowerCase() === giResult.value.toLowerCase()) {
+        result.unmatched = pair.cdr();
+      }
+    }
+  }
+
+  return true;
+}
+
+// have-ancestor? - check if a node has an ancestor with given GI or matching a list of GIs
+// Following upstream DEFPRIMITIVE(IsHaveAncestor) in primitive.cxx
+export class IsHaveAncestorPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (gi/list), 1 optional (node)
+  constructor() { super(IsHaveAncestorPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Try to convert as a simple string (single GI)
+    const giResult: { value: string } = { value: '' };
+    if (convertGeneralName(args[0], node, giResult)) {
+      // Simple string case - search ancestors for matching GI
+      const current = new NodePtr(node.node());
+      while (current.node()!.getParent(current) === AccessResult.accessOK) {
+        const nodeGiResult = current.node()!.getGi();
+        if (nodeGiResult.result === AccessResult.accessOK) {
+          const gs = nodeGiResult.str;
+          const data = gs.data();
+          if (data) {
+            let nodeGi = '';
+            for (let i = 0; i < gs.size(); i++) {
+              nodeGi += String.fromCharCode(data[i]);
+            }
+            if (nodeGi.toLowerCase() === giResult.value.toLowerCase()) {
+              return interp.makeTrue();
+            }
+          }
+        }
+      }
+      return interp.makeFalse();
+    }
+
+    // List case - match list of GIs against ancestors
+    const matchResult: { unmatched: ELObj } = { unmatched: interp.makeNil() };
+    if (!matchAncestors(args[0], node, matchResult)) {
+      return this.argError(interp, loc, ArgErrorMessages.notAList, 0, args[0]);
+    }
+
+    if (matchResult.unmatched.isNil()) {
+      return interp.makeTrue();
+    }
+    return interp.makeFalse();
+  }
+}
+
+// hierarchical-number-recursive - returns list of child numbers of matching ancestors
+// Following upstream DEFPRIMITIVE(HierarchicalNumberRecursive) in primitive.cxx
+export class HierarchicalNumberRecursivePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (gi), 1 optional (node)
+  constructor() { super(HierarchicalNumberRecursivePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get GI to search for
+    const giResult: { value: string } = { value: '' };
+    if (!convertGeneralName(args[0], node, giResult)) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    // Walk up the tree, collecting child numbers of matching ancestors
+    let result: ELObj = interp.makeNil();
+    const current = new NodePtr(node.node());
+    while (current.node()!.getParent(current) === AccessResult.accessOK) {
+      const nodeGiResult = current.node()!.getGi();
+      if (nodeGiResult.result === AccessResult.accessOK) {
+        const gs = nodeGiResult.str;
+        const data = gs.data();
+        if (data) {
+          let nodeGi = '';
+          for (let i = 0; i < gs.size(); i++) {
+            nodeGi += String.fromCharCode(data[i]);
+          }
+          if (nodeGi.toLowerCase() === giResult.value.toLowerCase()) {
+            // Found a matching ancestor - get its child number
+            const numRes = interp.childNumber(current);
+            if (numRes.result) {
+              // Build list in reverse (cons at front)
+              const pair = new PairObj(interp.makeInteger(numRes.value + 1), result);
+              result = pair;
+            }
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+}
+
+// inherited-attribute-string - get attribute value from node or ancestor
+// Following upstream DEFPRIMITIVE(InheritedAttributeString) in primitive.cxx
+export class InheritedAttributeStringPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (attr name), 1 optional (node)
+  constructor() { super(InheritedAttributeStringPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnOptSingletonNode, 1, args[1]);
+      }
+      if (!nodeRes.node.node()) {
+        return interp.makeFalse();
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get attribute name
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    // Search node and ancestors for the attribute
+    const current = new NodePtr(node.node());
+    do {
+      const value = { str: '' };
+      if (nodeAttributeString(current, sd.data, sd.length, interp, value)) {
+        // Found the attribute - return its value
+        const chars = new Uint32Array(value.str.length);
+        for (let i = 0; i < value.str.length; i++) {
+          chars[i] = value.str.charCodeAt(i);
+        }
+        return new StringObj(chars);
+      }
+    } while (current.node()!.getParent(current) === AccessResult.accessOK);
+
+    return interp.makeFalse();
+  }
+}
+
+// absolute-first-sibling? - test if node is the first sibling among ALL siblings (not just same GI)
+// Following upstream DEFPRIMITIVE(IsAbsoluteFirstSibling) in primitive.cxx
+export class IsAbsoluteFirstSiblingPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(IsAbsoluteFirstSiblingPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let nd: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      nd = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      nd = context.currentNode;
+    }
+
+    // Get first sibling
+    const p = new NodePtr();
+    if (nd.node()!.firstSibling(p) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    // Check if any earlier sibling is an element (has a GI)
+    while (!p.sameNode(nd)) {
+      const temResult = p.node()!.getGi();
+      if (temResult.result === AccessResult.accessOK) {
+        return interp.makeFalse();  // Found an earlier element sibling
+      }
+      if (p.assignNextChunkSibling() !== AccessResult.accessOK) {
+        break;
+      }
+    }
+    return interp.makeTrue();
+  }
+}
+
+// absolute-last-sibling? - test if node is the last sibling among ALL siblings (not just same GI)
+// Following upstream DEFPRIMITIVE(IsAbsoluteLastSibling) in primitive.cxx
+export class IsAbsoluteLastSiblingPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);
+  constructor() { super(IsAbsoluteLastSiblingPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    let nd: NodePtr;
+    if (argc > 0) {
+      const nodeRes = args[0].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+      }
+      nd = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      nd = context.currentNode;
+    }
+
+    // Check following siblings for any elements
+    const ndCopy = new NodePtr(nd.node());
+    while (ndCopy.assignNextChunkSibling() === AccessResult.accessOK) {
+      const temResult = ndCopy.node()!.getGi();
+      if (temResult.result === AccessResult.accessOK) {
+        return interp.makeFalse();  // Found a later element sibling
+      }
+    }
+    return interp.makeTrue();
+  }
+}
+
+// node-list-address - return an address object for a node
+// Following upstream DEFPRIMITIVE(NodeListAddress) in primitive.cxx
+export class NodeListAddressPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);  // 1 required (node)
+  constructor() { super(NodeListAddressPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nodeRes = args[0].optSingletonNodeList(context, interp);
+    if (!nodeRes.result || !nodeRes.node.node()) {
+      return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 0, args[0]);
+    }
+
+    // Return an address object for the resolved node
+    return new AddressObj(Address.Type.resolvedNode, nodeRes.node);
+  }
+}
+
+// string->number - convert a string to a number
+// Following upstream DEFPRIMITIVE(StringToNumber) in primitive.cxx
+export class StringToNumberPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (string), 1 optional (radix)
+  constructor() { super(StringToNumberPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    let radix = 10;
+    if (argc > 1) {
+      const rRes = args[1].exactIntegerValue();
+      if (!rRes.result) {
+        return this.argError(interp, loc, ArgErrorMessages.notAnExactInteger, 1, args[1]);
+      }
+      switch (rRes.value) {
+        case 2:
+        case 8:
+        case 10:
+        case 16:
+          radix = rRes.value;
+          break;
+        default:
+          interp.setNextLocation(loc);
+          interp.message(ArgErrorMessages.invalidRadix);
+          radix = 10;
+          break;
+      }
+    }
+
+    // Convert string to number
+    const str = stringDataToString(sd);
+    const num = parseInt(str, radix);
+    if (isNaN(num)) {
+      // Try parsing as a float
+      const floatNum = parseFloat(str);
+      if (isNaN(floatNum)) {
+        return interp.makeFalse();
+      }
+      return new RealObj(floatNum);
+    }
+    return interp.makeInteger(num);
+  }
+}
+
+// entity-generated-system-id - get an entity's generated system ID
+// Following upstream DEFPRIMITIVE(EntityGeneratedSystemId) in primitive.cxx
+export class EntityGeneratedSystemIdPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (entity name), 1 optional (node)
+  constructor() { super(EntityGeneratedSystemIdPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get grove root and entities
+    const rootPtr = new NodePtr();
+    if (node.node()!.getGroveRoot(rootPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const entitiesResult = rootPtr.node()!.getEntities();
+    if (entitiesResult.result !== AccessResult.accessOK || !entitiesResult.entities) {
+      return interp.makeFalse();
+    }
+
+    // Look up entity by name
+    const entityPtr = new NodePtr();
+    const nameStr = new GroveString(sd.data!, sd.length);
+    if (entitiesResult.entities.namedNode(nameStr, entityPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    // Get external ID and generated system ID
+    const extIdPtr = new NodePtr();
+    if (entityPtr.node()!.getExternalId(extIdPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const gsidResult = extIdPtr.node()!.getGeneratedSystemId();
+    if (gsidResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const gsData = gsidResult.str.data();
+    if (!gsData) return interp.makeFalse();
+    return new StringObj(gsData);
+  }
+}
+
+// entity-public-id - get an entity's public ID
+// Following upstream DEFPRIMITIVE(EntityPublicId) in primitive.cxx
+export class EntityPublicIdPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (entity name), 1 optional (node)
+  constructor() { super(EntityPublicIdPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get grove root and entities
+    const rootPtr = new NodePtr();
+    if (node.node()!.getGroveRoot(rootPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const entitiesResult = rootPtr.node()!.getEntities();
+    if (entitiesResult.result !== AccessResult.accessOK || !entitiesResult.entities) {
+      return interp.makeFalse();
+    }
+
+    // Look up entity by name
+    const entityPtr = new NodePtr();
+    const nameStr = new GroveString(sd.data!, sd.length);
+    if (entitiesResult.entities.namedNode(nameStr, entityPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    // Get external ID and public ID
+    const extIdPtr = new NodePtr();
+    if (entityPtr.node()!.getExternalId(extIdPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const pubIdResult = extIdPtr.node()!.getPublicId();
+    if (pubIdResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const pubData = pubIdResult.str.data();
+    if (!pubData) return interp.makeFalse();
+    return new StringObj(pubData);
+  }
+}
+
+// entity-notation - get an entity's notation name
+// Following upstream DEFPRIMITIVE(EntityNotation) in primitive.cxx
+export class EntityNotationPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 1, false);  // 1 required (entity name), 1 optional (node)
+  constructor() { super(EntityNotationPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    let node: NodePtr;
+    if (argc > 1) {
+      const nodeRes = args[1].optSingletonNodeList(context, interp);
+      if (!nodeRes.result || !nodeRes.node.node()) {
+        return this.argError(interp, loc, ArgErrorMessages.notASingletonNode, 1, args[1]);
+      }
+      node = nodeRes.node;
+    } else {
+      if (!context.currentNode) {
+        return this.noCurrentNodeError(interp, loc);
+      }
+      node = context.currentNode;
+    }
+
+    // Get grove root and entities
+    const rootPtr = new NodePtr();
+    if (node.node()!.getGroveRoot(rootPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const entitiesResult = rootPtr.node()!.getEntities();
+    if (entitiesResult.result !== AccessResult.accessOK || !entitiesResult.entities) {
+      return interp.makeFalse();
+    }
+
+    // Look up entity by name
+    const entityPtr = new NodePtr();
+    const nameStr = new GroveString(sd.data!, sd.length);
+    if (entitiesResult.entities.namedNode(nameStr, entityPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+
+    // Get notation and its name
+    const notationPtr = new NodePtr();
+    if (entityPtr.node()!.getNotation(notationPtr) !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const nameResult = notationPtr.node()!.getName();
+    if (nameResult.result !== AccessResult.accessOK) {
+      return interp.makeFalse();
+    }
+    const nameData = nameResult.str.data();
+    if (!nameData) return interp.makeFalse();
+    return new StringObj(nameData);
+  }
+}
+
+// process-element-with-id - process an element by its ID
+// Following upstream DEFPRIMITIVE(ProcessElementWithId) in primitive.cxx
+export class ProcessElementWithIdPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);  // 1 required (id string)
+  constructor() { super(ProcessElementWithIdPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result) {
+      return this.argError(interp, loc, ArgErrorMessages.notAString, 0, args[0]);
+    }
+
+    if (!context.currentNode) {
+      return this.noCurrentNodeError(interp, loc);
+    }
+
+    if (!context.processingMode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentProcessingMode);
+      return interp.makeError();
+    }
+
+    // Get grove root and elements
+    const rootPtr = new NodePtr();
+    if (context.currentNode.node()!.getGroveRoot(rootPtr) !== AccessResult.accessOK) {
+      return new EmptySosofoObj();
+    }
+    const elementsResult = rootPtr.node()!.getElements();
+    if (elementsResult.result !== AccessResult.accessOK || !elementsResult.elements) {
+      return new EmptySosofoObj();
+    }
+
+    // Look up element by ID
+    const elementPtr = new NodePtr();
+    const idStr = new GroveString(sd.data!, sd.length);
+    if (elementsResult.elements.namedNode(idStr, elementPtr) !== AccessResult.accessOK) {
+      return new EmptySosofoObj();
+    }
+
+    // Return a ProcessNodeSosofoObj - but we don't have that yet, use ProcessNodeListSosofoObj
+    const nl = new NodePtrNodeListObj(elementPtr);
+    return new ProcessNodeListSosofoObj(nl, context.processingMode as ProcessingMode);
+  }
+}
+
+// sgml-parse - stub for SGML parsing (complex - just return empty for now)
+// Following upstream DEFPRIMITIVE(SgmlParse) in primitive.cxx
+export class SgmlParsePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, true);  // 1 required (system-id), rest args for options
+  constructor() { super(SgmlParsePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // SGML parsing is a complex operation that requires a full parser
+    // For now, return false to indicate failure
+    // A full implementation would parse the document and return a grove
+    return interp.makeFalse();
+  }
+}
+
+// preced - return preceding siblings
+// Following upstream DEFPRIMITIVE(Preced) in primitive.cxx
+export class PrecedPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);  // 1 required (node or node-list)
+  constructor() { super(PrecedPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const nodeRes = args[0].optSingletonNodeList(context, interp);
+    if (!nodeRes.result) {
+      // Could be a node list for mapping, but for now just handle single node
+      const nl = args[0].asNodeList();
+      if (nl) {
+        // For simplicity, just return empty for now
+        // Full implementation would use MapNodeListObj
+        return interp.makeEmptyNodeList();
+      }
+      return this.argError(interp, loc, ArgErrorMessages.notANodeList, 0, args[0]);
+    }
+
+    // Get first sibling
+    if (!nodeRes.node.node()) {
+      return interp.makeEmptyNodeList();
+    }
+
+    const first = new NodePtr();
+    if (nodeRes.node.node()!.firstSibling(first) !== AccessResult.accessOK) {
+      return interp.makeEmptyNodeList();
+    }
+
+    // Build a list of preceding siblings
+    const nodes: NodePtr[] = [];
+    const current = first;
+    while (!current.sameNode(nodeRes.node)) {
+      nodes.push(new NodePtr(current.node()));
+      if (current.assignNextChunkSibling() !== AccessResult.accessOK) {
+        break;
+      }
+    }
+
+    if (nodes.length === 0) {
+      return interp.makeEmptyNodeList();
+    }
+
+    // Return as a node list using PairNodeListObj
+    let result: NodeListObj = new NodePtrNodeListObj(nodes[nodes.length - 1]);
+    for (let i = nodes.length - 2; i >= 0; i--) {
+      result = new PairNodeListObj(new NodePtrNodeListObj(nodes[i]), result);
+    }
+    return result;
+  }
+}
+
 // ============ Map of all primitives ============
 export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['cons', () => new ConsPrimitiveObj()],
@@ -4026,6 +4919,8 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['external-procedure', () => new ExternalProcedurePrimitiveObj()],
   ['literal', () => new LiteralPrimitiveObj()],
   ['number->string', () => new NumberToStringPrimitiveObj()],
+  ['format-number', () => new FormatNumberPrimitiveObj()],
+  ['format-number-list', () => new FormatNumberListPrimitiveObj()],
   ['attribute-string', () => new AttributeStringPrimitiveObj()],
   ['child-number', () => new ChildNumberPrimitiveObj()],
   ['current-node', () => new CurrentNodePrimitiveObj()],
@@ -4051,5 +4946,23 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['data', () => new DataPrimitiveObj()],
   ['node-list-reverse', () => new NodeListReversePrimitiveObj()],
   ['node-list-map', () => new NodeListMapPrimitiveObj()],
-  ['descendants', () => new DescendantsPrimitiveObj()]
+  ['descendants', () => new DescendantsPrimitiveObj()],
+  // Ancestor/hierarchical primitives
+  ['have-ancestor?', () => new IsHaveAncestorPrimitiveObj()],
+  ['hierarchical-number-recursive', () => new HierarchicalNumberRecursivePrimitiveObj()],
+  ['inherited-attribute-string', () => new InheritedAttributeStringPrimitiveObj()],
+  // Sibling and address primitives
+  ['absolute-first-sibling?', () => new IsAbsoluteFirstSiblingPrimitiveObj()],
+  ['absolute-last-sibling?', () => new IsAbsoluteLastSiblingPrimitiveObj()],
+  ['node-list-address', () => new NodeListAddressPrimitiveObj()],
+  ['preced', () => new PrecedPrimitiveObj()],
+  // Number and string conversion
+  ['string->number', () => new StringToNumberPrimitiveObj()],
+  // Entity primitives
+  ['entity-generated-system-id', () => new EntityGeneratedSystemIdPrimitiveObj()],
+  ['entity-public-id', () => new EntityPublicIdPrimitiveObj()],
+  ['entity-notation', () => new EntityNotationPrimitiveObj()],
+  // Processing primitives
+  ['process-element-with-id', () => new ProcessElementWithIdPrimitiveObj()],
+  ['sgml-parse', () => new SgmlParsePrimitiveObj()]
 ]);
