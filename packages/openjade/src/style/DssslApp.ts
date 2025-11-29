@@ -24,7 +24,8 @@ import {
   createExtendEntityManager,
   ExtendEntityManager,
   SOCatalogManager,
-  Vector
+  Vector,
+  ExternalInfoImpl
 } from '@openjade-js/opensp';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -195,15 +196,24 @@ export abstract class DssslApp extends Messenger implements GroveManager {
     // Following MessageReporter::dispatchMessage from upstream
     let output = '';
 
-    // Get location info if available - traverse origin chain to find entity name/file
+    // Get location info if available - traverse origin chain to find file/line info
     const loc = msg.loc;
     if (loc && loc.origin() && !loc.origin().isNull()) {
       let origin = loc.origin().pointer();
       let index = loc.index();
       let foundLocation = false;
 
-      // Traverse origin chain to find entity name or external info
+      // Traverse origin chain to find external info with file:line:column
       while (origin && !foundLocation) {
+        // Check for ExternalInfoImpl which has file:line:column tracking
+        const externalInfo = origin.externalInfo?.();
+        if (externalInfo && externalInfo instanceof ExternalInfoImpl) {
+          const locInfo = externalInfo.convertOffset(index);
+          output += locInfo.filename + ':' + locInfo.lineNumber + ':' + locInfo.columnNumber + ': ';
+          foundLocation = true;
+          break;
+        }
+
         // Try to get entity name from EntityOrigin
         const entityOrigin = origin.asEntityOrigin?.();
         if (entityOrigin) {
@@ -235,7 +245,7 @@ export abstract class DssslApp extends Messenger implements GroveManager {
         }
       }
 
-      // If we didn't find an entity name, still output the index
+      // If we didn't find location info, still output the index
       if (!foundLocation && index > 0) {
         output += '<unknown>:' + index + ': ';
       }

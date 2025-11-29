@@ -27,6 +27,82 @@ export class ExternalInfo {
   // RTTI support would go here
 }
 
+// StorageObjectLocation - result of converting an offset to file:line:column
+export interface StorageObjectLocation {
+  filename: string;
+  lineNumber: number;
+  columnNumber: number;
+  byteOffset: number;
+}
+
+// ExternalInfoImpl - tracks file location info including line positions
+export class ExternalInfoImpl extends ExternalInfo {
+  private filename_: string;
+  private lineStartOffsets_: number[] = [0]; // offset where each line starts (line 1 starts at 0)
+
+  constructor(filename: string) {
+    super();
+    this.filename_ = filename;
+  }
+
+  filename(): string {
+    return this.filename_;
+  }
+
+  // Record a newline at the given offset (call this as you read the file)
+  noteNewline(offset: number): void {
+    // The next line starts at offset + 1
+    this.lineStartOffsets_.push(offset + 1);
+  }
+
+  // Build line positions from content (alternative to noting newlines during read)
+  buildFromContent(content: Uint8Array | string): void {
+    this.lineStartOffsets_ = [0];
+    const data = typeof content === 'string'
+      ? new TextEncoder().encode(content)
+      : content;
+
+    for (let i = 0; i < data.length; i++) {
+      // Check for newline (LF = 10, CR = 13)
+      if (data[i] === 10) { // LF
+        this.lineStartOffsets_.push(i + 1);
+      } else if (data[i] === 13) { // CR
+        // Check for CRLF
+        if (i + 1 < data.length && data[i + 1] === 10) {
+          i++; // Skip the LF
+        }
+        this.lineStartOffsets_.push(i + 1);
+      }
+    }
+  }
+
+  // Convert a byte offset to line:column
+  convertOffset(offset: number): StorageObjectLocation {
+    // Binary search to find the line
+    let low = 0;
+    let high = this.lineStartOffsets_.length - 1;
+
+    while (low < high) {
+      const mid = Math.floor((low + high + 1) / 2);
+      if (this.lineStartOffsets_[mid] <= offset) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    const lineNumber = low + 1; // 1-based line numbers
+    const columnNumber = offset - this.lineStartOffsets_[low] + 1; // 1-based columns
+
+    return {
+      filename: this.filename_,
+      lineNumber,
+      columnNumber,
+      byteOffset: offset
+    };
+  }
+}
+
 export class NamedCharRef {
   private refStartIndex_: Index;
   private refEndType_: NamedCharRef.RefEndType;

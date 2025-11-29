@@ -10,7 +10,7 @@ import { EntityManager } from './EntityManager';
 import { EntityCatalog } from './EntityCatalog';
 import { ConstPtr, Ptr } from './Ptr';
 import { InputSource } from './InputSource';
-import { InputSourceOrigin, Location } from './Location';
+import { InputSourceOrigin, Location, ExternalInfoImpl } from './Location';
 import { CharsetInfo } from './CharsetInfo';
 import { Vector } from './Vector';
 import { Owner } from './Owner';
@@ -236,12 +236,21 @@ export class FileStorageObject extends StorageObject {
   private buffer_: Uint8Array | null;
   private position_: number;
   private systemId_: StringC;
+  private externalInfo_: ExternalInfoImpl;
 
   constructor(contents: Uint8Array, systemId: StringC) {
     super();
     this.buffer_ = contents;
     this.position_ = 0;
     this.systemId_ = systemId;
+
+    // Create ExternalInfoImpl with filename and build line positions
+    let filename = '';
+    for (let i = 0; i < systemId.size(); i++) {
+      filename += String.fromCodePoint(systemId.get(i));
+    }
+    this.externalInfo_ = new ExternalInfoImpl(filename);
+    this.externalInfo_.buildFromContent(contents);
   }
 
   read(buf: Uint8Array, maxBytes: number, result: { bytesRead: number }): Boolean {
@@ -270,6 +279,10 @@ export class FileStorageObject extends StorageObject {
   getSystemId(result: { id: StringC }): Boolean {
     result.id = this.systemId_;
     return true;
+  }
+
+  externalInfo(): ExternalInfoImpl {
+    return this.externalInfo_;
   }
 }
 
@@ -706,6 +719,11 @@ export class ExternalInputSource extends InputSource {
 
         this.so_ = this.sov_[this.soIndex_];
         if (this.so_) {
+          // Set external info on origin for file:line:column tracking
+          if (this.so_ instanceof FileStorageObject && this.origin_.pointer()) {
+            const fileStorageObj = this.so_ as FileStorageObject;
+            this.origin_.pointer()!.setExternalInfo(fileStorageObj.externalInfo());
+          }
           this.soIndex_++;
           break;
         } else {

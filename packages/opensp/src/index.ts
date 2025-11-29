@@ -56,6 +56,8 @@ export {
   InputSourceOrigin,
   EntityOrigin,
   ExternalInfo,
+  ExternalInfoImpl,
+  StorageObjectLocation,
   NamedCharRef,
   InputSourceOriginNamedCharRef
 } from './Location';
