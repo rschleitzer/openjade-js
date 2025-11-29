@@ -431,6 +431,10 @@ export class GroveString {
     return this.data_;
   }
 
+  offset(): number {
+    return this.offset_;
+  }
+
   assign(data: Uint32Array | null, size: number, offset: number = 0): void {
     this.data_ = data;
     this.offset_ = offset;
@@ -1845,7 +1849,10 @@ export class NodePtr {
     if (result.result !== AccessResult.accessOK) return null;
     const str = result.str;
     if (str.size() === 0 || !str.data()) return null;
-    return { data: str.data()!, size: str.size() };
+    // Apply the offset to get the correct slice of data
+    const offset = str.offset();
+    const data = str.data()!.subarray(offset, offset + str.size());
+    return { data, size: str.size() };
   }
 
   // Get element index for loop detection

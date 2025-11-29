@@ -71,13 +71,15 @@ export class ProcessContext {
 
   // Process all nodes in a node list
   processNodeList(nodeList: NodeListObj, mode: ProcessingMode | null): void {
-    // Iterate through node list and process each node
+    // Iterate through node list using chunk-based iteration
+    // This ensures we skip whole data chunks instead of iterating character by character
     let currentList: NodeListObj | null = nodeList;
     while (currentList) {
       const node = currentList.nodeListFirst(this.vm_, this.interpreter());
       if (!node || !node.toBoolean()) break;
-      this.processNode(node, mode);
-      currentList = currentList.nodeListRest(this.vm_, this.interpreter());
+      const chunkResult = currentList.nodeListChunkRest(this.vm_, this.interpreter());
+      this.processNode(node, mode, chunkResult.chunk);
+      currentList = chunkResult.list;
     }
   }
 
