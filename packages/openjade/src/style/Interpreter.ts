@@ -262,6 +262,8 @@ export class Unit {
   }
 
   private scale(val: number, valExp: number, factor: number, result: { value: number }): boolean {
+    // Port of Unit::scale from upstream Interpreter.cxx
+    // Computes: val * 10^valExp * factor
     if (factor <= 0) return false;
     let f = factor;
     while (valExp > 0) {
@@ -269,12 +271,17 @@ export class Unit {
       valExp--;
       f *= 10;
     }
-    const r = val * f;
+    // Check for overflow
+    if (val >= 0) {
+      if (val > Number.MAX_SAFE_INTEGER / f) return false;
+    } else {
+      if (-val > Number.MAX_SAFE_INTEGER / f) return false;
+    }
+    result.value = val * f;
     while (valExp < 0) {
-      result.value = Math.trunc(r / 10);
+      result.value = Math.trunc(result.value / 10);
       valExp++;
     }
-    result.value = r;
     return true;
   }
 

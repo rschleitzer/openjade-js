@@ -522,7 +522,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
 
   // Helper for starting simple flow objects
   private startSimpleFlowObj(name: string): void {
-    this.flushPendingElements();
     this.os().write('<' + name);
     this.outputIcs();
     this.os().write('>' + RE);
@@ -540,7 +539,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
 
   // Helper for simple/atomic flow objects
   private simpleFlowObj(name: string): void {
-    this.flushPendingElements();
     this.os().write('<' + name);
     this.outputIcs();
     this.os().write('/>' + RE);
@@ -641,7 +639,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   }
 
   override startParagraph(_nic: DisplayNIC): void {
-    this.flushPendingElements();
     this.os().write('<paragraph');
     this.displayNIC(_nic);
     this.outputIcs();
@@ -653,7 +650,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   }
 
   override startDisplayGroup(nic: DisplayGroupNIC): void {
-    this.flushPendingElements();
     this.os().write('<display-group');
     if (nic.hasCoalesceId) {
       this.os().write(' coalesce-id=' + quot + nic.coalesceId + quot);
@@ -684,7 +680,6 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   }
 
   override startLink(addr: Address): void {
-    this.flushPendingElements();
     this.os().write('<link');
     if (addr.type !== Address.Type.none) {
       this.os().write(' destination=' + quot);
