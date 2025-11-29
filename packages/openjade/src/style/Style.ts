@@ -391,16 +391,38 @@ export class StyleStack {
     interp: any,
     dependencies: number[]
   ): ELObj | null {
-    // Look up actual value of inherited characteristic
-    const index = ic.index();
-    const info = this.inheritedCInfo_[index];
-    if (info) {
-      if (info.cachedValue) {
-        dependencies.push(...info.dependencies);
-        return info.cachedValue;
+    // Following upstream StyleStack::actual in Style.cxx
+    const ind = ic.index();
+
+    // Check for circular dependency
+    for (let i = 0; i < dependencies.length; i++) {
+      if (dependencies[i] === ind) {
+        interp.setNextLocation(loc);
+        interp.message('actualLoop', ic.identifier()?.name());
+        return interp.makeError();
       }
     }
-    return null;
+    dependencies.push(ind);
+
+    let spec: InheritedC = ic;
+    let style: VarStyleObj | null = null;
+
+    if (ind < this.inheritedCInfo_.length) {
+      const p = this.inheritedCInfo_[ind];
+      if (!p) {
+        spec = ic;
+      } else if (p.cachedValue) {
+        dependencies.push(...p.dependencies);
+        return p.cachedValue;
+      } else {
+        style = p.style;
+        spec = p.spec || ic;
+      }
+    }
+
+    // Create VM for value computation - following upstream pattern
+    const vm = { interp, styleStack: this, specLevel: this.level_ } as any;
+    return spec.value(vm, style, dependencies);
   }
 
   inherited(
@@ -409,17 +431,49 @@ export class StyleStack {
     interp: any,
     dependencies: number[]
   ): ELObj | null {
-    // Look up inherited value at specified level
-    const index = ic.index();
-    let info = this.inheritedCInfo_[index];
-    while (info && info.specLevel >= specLevel) {
-      info = info.prev;
+    // Following upstream StyleStack::inherited in Style.cxx
+    const ind = ic.index();
+    let spec: InheritedC = ic;
+    let style: VarStyleObj | null = null;
+    let newSpecLevel = -1;
+
+    if (ind < this.inheritedCInfo_.length) {
+      let p = this.inheritedCInfo_[ind];
+      while (p !== null) {
+        if (p.specLevel < specLevel) {
+          break;
+        }
+        p = p.prev;
+      }
+      if (!p) {
+        spec = ic;
+      } else {
+        if (p.cachedValue) {
+          // Check if cache is still valid - following upstream cache validation
+          let cacheOk = true;
+          for (let i = 0; i < p.dependencies.length; i++) {
+            const d = p.dependencies[i];
+            if (d < this.inheritedCInfo_.length) {
+              const depInfo = this.inheritedCInfo_[d];
+              if (depInfo && depInfo.valLevel > p.valLevel) {
+                cacheOk = false;
+                break;
+              }
+            }
+          }
+          if (cacheOk) {
+            return p.cachedValue;
+          }
+        }
+        style = p.style;
+        spec = p.spec || ic;
+        newSpecLevel = p.specLevel;
+      }
     }
-    if (info && info.cachedValue) {
-      dependencies.push(...info.dependencies);
-      return info.cachedValue;
-    }
-    return null;
+
+    // Create VM for value computation - following upstream pattern
+    const vm = { interp, styleStack: this, specLevel: newSpecLevel } as any;
+    return spec.value(vm, style, dependencies);
   }
 
   push(style: StyleObj, vm: VM, fotb: FOTBuilder): void {

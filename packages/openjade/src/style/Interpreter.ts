@@ -59,10 +59,14 @@ import {
   FirstLineStartIndentC, LineSpacingC, FieldWidthC,
   ColorC, BackgroundColorC, LinesC, WritingModeC,
   createInheritedC, IgnoredInheritedC,
-  GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC
+  GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC,
+  GenericOptLengthSpecInheritedC
 } from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
-import { primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj, InheritedCPrimitiveObj, ActualCPrimitiveObj } from './primitive';
+import {
+  primitives, SosofoAppendPrimitiveObj, EmptySosofoPrimitiveObj, InheritedCPrimitiveObj, ActualCPrimitiveObj,
+  IfFirstPagePrimitiveObj, IfFrontPagePrimitiveObj, DebugPrimitiveObj, ReadEntityPrimitiveObj, AllElementNumberPrimitiveObj
+} from './primitive';
 
 // Default character for unmapped SDATA entities
 const defaultChar: Char = 0xfffd;
@@ -1768,6 +1772,29 @@ export class Interpreter {
     const apply = new ApplyPrimitiveObj();
     this.makePermanent(apply);
     this.lookup(Interpreter.makeStringC('apply')).setValue(apply);
+
+    // Install James Clark extension procedures
+    this.installExtensionPrimitives();
+  }
+
+  private installExtensionPrimitives(): void {
+    const jcPrefix = 'UNREGISTERED::James Clark//Procedure::';
+
+    // if-first-page - returns first argument on first page, second otherwise
+    // For now, always return second (non-first-page) since we don't track pages
+    this.installXPrimitive(jcPrefix, 'if-first-page', new IfFirstPagePrimitiveObj());
+
+    // if-front-page - similar to if-first-page for front matter
+    this.installXPrimitive(jcPrefix, 'if-front-page', new IfFrontPagePrimitiveObj());
+
+    // debug - outputs debug info, returns argument
+    this.installXPrimitive(jcPrefix, 'debug', new DebugPrimitiveObj());
+
+    // read-entity - read entity content as string
+    this.installXPrimitive(jcPrefix, 'read-entity', new ReadEntityPrimitiveObj());
+
+    // all-element-number - returns element number considering all elements
+    this.installXPrimitive(jcPrefix, 'all-element-number', new AllElementNumberPrimitiveObj());
   }
 
   private installPrimitive(name: string, value: PrimitiveObj): void {
@@ -1775,6 +1802,17 @@ export class Interpreter {
     const ident = this.lookup(Interpreter.makeStringC(name));
     ident.setValue(value);
     value.setIdentifier(ident);
+    // Also register as external procedure with standard pubid
+    const pubid = `ISO/IEC 10179:1996//Procedure::${name}`;
+    this.externalProcTable_.set(pubid, value);
+  }
+
+  // Install extension primitive (with custom pubid prefix) - following upstream installXPrimitive
+  private installXPrimitive(prefix: string, name: string, value: PrimitiveObj): void {
+    this.makePermanent(value);
+    value.setIdentifier(this.lookup(Interpreter.makeStringC(name)));
+    const pubid = `${prefix}${name}`;
+    this.externalProcTable_.set(pubid, value);
   }
 
   // Install extension flow object class
@@ -2217,6 +2255,11 @@ export class Interpreter {
     this.installInheritedC('end-margin', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setEndMargin(v)));
     this.installInheritedC('sideline-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setSidelineSep(v)));
     this.installInheritedC('marginalia-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMarginaliaSep(v)));
+
+    // Optional length spec characteristics (#f or length-spec)
+    this.installInheritedC('min-pre-line-spacing', new GenericOptLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMinPreLineSpacing(v)));
+    this.installInheritedC('min-post-line-spacing', new GenericOptLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMinPostLineSpacing(v)));
+    this.installInheritedC('min-leading', new GenericOptLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMinLeading(v)));
 
     // Boolean characteristics
     this.installInheritedC('border-present?', new GenericBoolInheritedC(null, this.nInheritedC_++, (f, v) => f.setBorderPresent(v), true));

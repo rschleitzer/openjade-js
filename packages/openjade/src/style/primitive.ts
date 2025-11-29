@@ -35,7 +35,7 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj } from './SosofoObj';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj, PageNumberSosofoObj, CurrentNodePageNumberSosofoObj } from './SosofoObj';
 import { Address } from './FOTBuilder';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
 import { InheritedC, StyleObj as StyleStyleObj } from './Style';
@@ -4911,6 +4911,92 @@ export class PrecedPrimitiveObj extends PrimitiveObjBase {
   }
 }
 
+// ============ James Clark Extension Primitives ============
+
+// if-first-page - returns first arg on first page, second arg otherwise
+// Stub implementation - always returns second arg (non-first-page behavior)
+export class IfFirstPagePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(IfFirstPagePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // For now, always return second argument (we're not on first page)
+    // Real implementation would check page context
+    return args[1];
+  }
+}
+
+// if-front-page - returns first arg on front page, second arg otherwise
+// Stub implementation - always returns second arg (non-front-page behavior)
+export class IfFrontPagePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(2, 0, false);
+  constructor() { super(IfFrontPagePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // For now, always return second argument (we're not on front page)
+    // Real implementation would check page context
+    return args[1];
+  }
+}
+
+// debug - outputs debug info, returns the argument
+export class DebugPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(DebugPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // Output debug message - following upstream
+    interp.message('debug', args[0]);
+    return args[0];
+  }
+}
+
+// read-entity - read entity content as string
+// Stub implementation - returns empty string
+export class ReadEntityPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, false);
+  constructor() { super(ReadEntityPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // TODO: Implement entity reading
+    // For now, return empty string
+    return interp.makeString('');
+  }
+}
+
+// all-element-number - returns element number considering all elements
+// Stub implementation - returns 1
+export class AllElementNumberPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 1, false);  // 0 required, 1 optional (node)
+  constructor() { super(AllElementNumberPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    // TODO: Implement proper element numbering
+    // For now, return 1
+    return interp.makeInteger(1);
+  }
+}
+
+// page-number-sosofo - returns a sosofo that outputs the current page number
+// Following upstream DEFPRIMITIVE(PageNumberSosofo) in primitive.cxx
+export class PageNumberSosofoPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  constructor() { super(PageNumberSosofoPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    return new PageNumberSosofoObj();
+  }
+}
+
+// current-node-page-number-sosofo - returns a sosofo that outputs the page number of the current node
+// Following upstream DEFPRIMITIVE(CurrentNodePageNumberSosofo) in primitive.cxx
+export class CurrentNodePageNumberSosofoPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(0, 0, false);
+  constructor() { super(CurrentNodePageNumberSosofoPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    if (!context.currentNode) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.noCurrentNode);
+      return interp.makeError();
+    }
+    return new CurrentNodePageNumberSosofoObj(context.currentNode);
+  }
+}
+
 // ============ Map of all primitives ============
 export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['cons', () => new ConsPrimitiveObj()],
@@ -5082,5 +5168,8 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   // Additional primitives
   ['element-number', () => new ElementNumberPrimitiveObj()],
   ['table-unit', () => new TableUnitPrimitiveObj()],
-  ['next-match', () => new NextMatchPrimitiveObj()]
+  ['next-match', () => new NextMatchPrimitiveObj()],
+  // Page number sosofos
+  ['page-number-sosofo', () => new PageNumberSosofoPrimitiveObj()],
+  ['current-node-page-number-sosofo', () => new CurrentNodePageNumberSosofoPrimitiveObj()]
 ]);

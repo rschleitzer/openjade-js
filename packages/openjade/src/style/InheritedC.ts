@@ -5,7 +5,7 @@ import { Location, StringC, Char } from '@openjade-js/opensp';
 import { ELObj, IntegerObj, StringObj, LengthObj, LengthSpecObj, SymbolObj, LengthSpec, ColorObj } from './ELObj';
 import { VM } from './Insn';
 import { InheritedC, VarStyleObj } from './Style';
-import { FOTBuilder, Symbol, Length, LengthSpec as FOTLengthSpec, DeviceRGBColor } from './FOTBuilder';
+import { FOTBuilder, Symbol, Length, LengthSpec as FOTLengthSpec, OptLengthSpec as FOTOptLengthSpec, DeviceRGBColor } from './FOTBuilder';
 import { Identifier, SyntacticKey } from './Identifier';
 import type { Interpreter } from './Interpreter';
 
@@ -885,6 +885,79 @@ export class GenericLengthSpecInheritedC extends LengthSpecInheritedC {
       this.setter_(fotb, converted.spec);
     }
     value.obj = null;
+  }
+}
+
+// Generic optional length spec inherited characteristic - uses setter callback
+// This is for characteristics that can be #f (no value) or a length-spec
+export type OptLengthSpecSetter = (fotb: FOTBuilder, value: FOTOptLengthSpec) => void;
+
+export class GenericOptLengthSpecInheritedC extends InheritedC {
+  private setter_: OptLengthSpecSetter;
+  private value_: FOTOptLengthSpec;
+
+  constructor(ident: Identifier | null, index: number, setter: OptLengthSpecSetter) {
+    super(ident, index);
+    this.setter_ = setter;
+    this.value_ = new FOTOptLengthSpec();
+  }
+
+  value(vm: VM, _style: VarStyleObj | null, _dependencies: number[]): ELObj | null {
+    if (!this.value_.hasLength) {
+      return vm.interp.makeFalse();
+    }
+    // Return a LengthSpecObj - need to convert from FOT LengthSpec to ELObj LengthSpec
+    const spec = new LengthSpec();
+    spec.addScalar(this.value_.length.length);
+    return new LengthSpecObj(spec);
+  }
+
+  set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.value_);
+    value.obj = null;
+  }
+
+  make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const copy = new GenericOptLengthSpecInheritedC(this.identifier(), this.index(), this.setter_);
+
+    // Check for #f (false) - means no length
+    if (!obj.isTrue()) {
+      copy.value_.hasLength = false;
+      return copy;
+    }
+
+    // Try to get length spec
+    const lengthSpec = obj.lengthSpec();
+    if (lengthSpec) {
+      const converted = lengthSpec.convert();
+      if (converted.result) {
+        copy.value_.hasLength = true;
+        copy.value_.length = converted.spec;
+        return copy;
+      }
+    }
+
+    // Also accept plain lengths
+    const q = obj.quantityValue();
+    if (q.type !== 0 && q.dim === 1) {
+      copy.value_.hasLength = true;
+      copy.value_.length.length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+      return copy;
+    }
+
+    this.invalidValue(loc, interp);
+    return null;
+  }
+
+  protected invalidValue(loc: Location, interp: Interpreter): void {
+    interp.setNextLocation(loc);
+    interp.message('invalidCharacteristicValue', this.identifier()?.name());
   }
 }
 

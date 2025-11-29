@@ -2731,7 +2731,11 @@ export class SchemeParser extends Messenger {
           return this.tokenRecover(allowed, tok);
         }
         inSrc.discardInitial();
-        this.extendToken();
+        // Only extend token if c2 is a name character (lexCategory <= lexOther)
+        // For single characters like #\  (space) or #\) (close paren), don't extend
+        if (this.interp_.lexCategory(c2) <= LexCategory.lexOther) {
+          this.extendToken();
+        }
         tok.value = Token.tokenChar;
         if (inSrc.currentTokenLength() === 1) {
           this.setCurrentToken();
