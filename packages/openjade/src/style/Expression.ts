@@ -14,7 +14,7 @@ import {
   QuantityType
 } from './ELObj';
 import { FlowObj, SequenceFlowObj, CompoundFlowObj } from './SosofoObj';
-import { StyleSpec as StyleSpecClass } from './Style';
+import { StyleSpec as StyleSpecClass, VarInheritedC } from './Style';
 import type { Interpreter } from './Interpreter';
 import {
   ProcessingMode,
@@ -2229,11 +2229,11 @@ export const InterpreterMessages = {
 
 function createVarInheritedC(
   inheritedC: InheritedC,
-  _code: InsnPtr,
-  _loc: Location
+  code: InsnPtr,
+  loc: Location
 ): InheritedC {
-  // TODO: Create VarInheritedC wrapper if needed, for now return the base InheritedC
-  return inheritedC;
+  // Wrap the base InheritedC in a VarInheritedC so the code gets evaluated at runtime
+  return new VarInheritedC(inheritedC, code, loc);
 }
 
 function createStyleSpec(

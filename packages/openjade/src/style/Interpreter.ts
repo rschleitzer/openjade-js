@@ -2218,8 +2218,9 @@ export class Interpreter {
 
   private installInheritedCs(): void {
     // Install inherited characteristics - port of Interpreter::installInheritedCs() from InheritedC.cxx
-    this.installInheritedC('font-size', new FontSizeC(null, this.nInheritedC_++));
-    this.installInheritedC('font-family-name', new FontFamilyNameC(null, this.nInheritedC_++));
+    // Default values match upstream formulas using unitsPerInch
+    this.installInheritedC('font-size', new FontSizeC(null, this.nInheritedC_++, Math.round((this.unitsPerInch_ * 10) / 72)));
+    this.installInheritedC('font-family-name', new FontFamilyNameC(null, this.nInheritedC_++, 'iso-serif'));
     this.installInheritedC('font-weight', new FontWeightC(null, this.nInheritedC_++));
     this.installInheritedC('font-posture', new FontPostureC(null, this.nInheritedC_++));
     this.installInheritedC('quadding', new QuaddingC(null, this.nInheritedC_++));
@@ -2228,7 +2229,7 @@ export class Interpreter {
     this.installInheritedC('start-indent', new StartIndentC(null, this.nInheritedC_++));
     this.installInheritedC('first-line-start-indent', new FirstLineStartIndentC(null, this.nInheritedC_++));
     this.installInheritedC('end-indent', new EndIndentC(null, this.nInheritedC_++));
-    this.installInheritedC('line-spacing', new LineSpacingC(null, this.nInheritedC_++));
+    this.installInheritedC('line-spacing', new LineSpacingC(null, this.nInheritedC_++, new LengthSpec(Math.round((this.unitsPerInch_ * 12) / 72))));
     this.installInheritedC('field-width', new FieldWidthC(null, this.nInheritedC_++));
     this.installInheritedC('color', new ColorC(null, this.nInheritedC_++));
     this.installInheritedC('background-color', new BackgroundColorC(null, this.nInheritedC_++));
@@ -2260,7 +2261,7 @@ export class Interpreter {
     this.installInheritedC('position-point-shift', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setPositionPointShift(v)));
     this.installInheritedC('start-margin', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setStartMargin(v)));
     this.installInheritedC('end-margin', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setEndMargin(v)));
-    this.installInheritedC('sideline-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setSidelineSep(v)));
+    this.installInheritedC('sideline-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setSidelineSep(v), new LengthSpec(Math.round((4 * this.unitsPerInch_) / 72))));
     this.installInheritedC('marginalia-sep', new GenericLengthSpecInheritedC(null, this.nInheritedC_++, (f, v) => f.setMarginaliaSep(v)));
 
     // Optional length spec characteristics (#f or length-spec)

@@ -165,8 +165,10 @@ export class ProcessContext {
     // Non-character node - apply processing rules
     const saveNode = this.vm_.currentNode;
     const saveMode = this.vm_.processingMode;
+    const saveStyleStack = this.vm_.styleStack;
     this.vm_.currentNode = nodePtr;
     this.vm_.processingMode = processingMode;
+    this.vm_.styleStack = this.currentStyleStack();
 
     const saveSpecificity = this.matchSpecificity_.clone();
     this.matchSpecificity_ = new ProcessingModeSpecificity();
@@ -255,6 +257,7 @@ export class ProcessContext {
     this.matchSpecificity_ = saveSpecificity;
     this.vm_.currentNode = saveNode;
     this.vm_.processingMode = saveMode;
+    this.vm_.styleStack = saveStyleStack;
   }
 
   // Process next matching rule

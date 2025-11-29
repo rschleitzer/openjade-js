@@ -75,15 +75,45 @@ export class VarInheritedC extends InheritedC {
     value: { obj: ELObj | null },
     dependencies: number[]
   ): void {
-    this.inheritedC_.set(vm, style, fotb, value, dependencies);
+    // Port of VarInheritedC::set from Style.cxx
+    // If no cached value, evaluate the code to get the value
+    if (!value.obj) {
+      // Set the current node context and evaluate with display from style
+      const prevNode = vm.currentNode;
+      if (style) {
+        vm.currentNode = style.node();
+      }
+      // Pass the style's display as the closure for variable lookup
+      const display = style?.display() || null;
+      value.obj = vm.eval(this.code_, display);
+      vm.currentNode = prevNode;
+    }
+    // If not an error, create a new InheritedC with the evaluated value and call set on it
+    const interp = (vm as any).interp;
+    if (value.obj && (!interp || !interp.isError(value.obj))) {
+      const newIC = this.inheritedC_.make(value.obj, this.loc_, interp);
+      if (newIC) {
+        newIC.set(vm, null, fotb, value, dependencies);
+      }
+    }
   }
 
   value(
     vm: VM,
     style: VarStyleObj | null,
-    dependencies: number[]
+    _dependencies: number[]
   ): ELObj | null {
-    return this.inheritedC_.value(vm, style, dependencies);
+    // Port of VarInheritedC::value from Style.cxx
+    // Evaluate the code to get the value
+    const prevNode = vm.currentNode;
+    if (style) {
+      vm.currentNode = style.node();
+    }
+    // Pass the style's display as the closure for variable lookup
+    const display = style?.display() || null;
+    const result = vm.eval(this.code_, display);
+    vm.currentNode = prevNode;
+    return result;
   }
 
   make(
