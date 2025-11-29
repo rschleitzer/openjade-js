@@ -593,7 +593,7 @@ export class StringObj extends ELObj {
 
   constructor(str?: StyleString | Uint32Array | { data: Uint32Array; length: number }) {
     super();
-    if (!str) {
+    if (str === null || str === undefined) {
       this.data_ = new Uint32Array(0);
     } else if (typeof str === 'string') {
       this.data_ = new Uint32Array(str.length);

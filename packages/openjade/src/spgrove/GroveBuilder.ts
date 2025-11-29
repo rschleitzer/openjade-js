@@ -1202,6 +1202,10 @@ class ElementNode extends ChunkNode {
     return AccessResult.accessOK;
   }
 
+  override getContent(ptr: NodeListPtr): AccessResult {
+    return this.children(ptr);
+  }
+
   override follow(ptr: NodeListPtr): AccessResult {
     const nextPtr = new NodePtr();
     const result = this.nextChunkSibling(nextPtr);

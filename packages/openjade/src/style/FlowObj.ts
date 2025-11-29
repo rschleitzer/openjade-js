@@ -1778,7 +1778,8 @@ export class EntityFlowObj extends CompoundFlowObj {
 }
 
 // UnknownFlowObj - placeholder for undeclared or unimplemented flow object classes
-export class UnknownFlowObj extends FlowObj {
+// Extends CompoundFlowObj to support content (most extension flow objects have content)
+export class UnknownFlowObj extends CompoundFlowObj {
   private name_: string = '';
 
   constructor(name?: string) {
@@ -1786,12 +1787,17 @@ export class UnknownFlowObj extends FlowObj {
     if (name) this.name_ = name;
   }
 
-  processInner(_context: ProcessContext): void {
-    // Unknown flow objects are ignored
-    console.error(`UnknownFlowObj: ignoring unknown flow object class '${this.name_}'`);
+  override processInner(context: ProcessContext): void {
+    // Unknown flow objects - process their content as a sequence
+    const content = this.getContent();
+    if (content) {
+      context.fotBuilder().startSequence();
+      content.process(context);
+      context.fotBuilder().endSequence();
+    }
   }
 
-  copy(_interp: Interpreter): FlowObj {
+  override copy(_interp: Interpreter): FlowObj {
     const copy = new UnknownFlowObj(this.name_);
     copy.style_ = this.style_;
     return copy;

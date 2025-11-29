@@ -216,6 +216,10 @@ export class LengthSpecInheritedC extends InheritedC {
   }
 
   make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    // Don't report error for ErrorObj - error was already reported elsewhere
+    if (interp.isError(obj)) {
+      return null;
+    }
     const lengthSpec = obj.lengthSpec();
     if (lengthSpec) {
       return new LengthSpecInheritedC(this.identifier(), this.index(), lengthSpec.clone());

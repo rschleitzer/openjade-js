@@ -1482,8 +1482,15 @@ export class Interpreter {
   message(msgType: string, ...args: any[]): void {
     if (this.messenger_) {
       // In TypeScript, we'd need to implement proper message handling
-      // For now, just log to console
-      console.error(`[${msgType}]`, ...args);
+      // For now, just log to console - convert StringC objects to strings
+      const formattedArgs = args.map(arg => {
+        if (arg && typeof arg === 'object' && 'ptr_' in arg && 'length_' in arg) {
+          // This is a StringC - convert to JavaScript string
+          return stringCToString(arg);
+        }
+        return arg;
+      });
+      console.error(`[${msgType}]`, ...formattedArgs);
     }
   }
 

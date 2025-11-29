@@ -37,10 +37,10 @@ import {
 } from './ELObj';
 import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj, PageNumberSosofoObj, CurrentNodePageNumberSosofoObj } from './SosofoObj';
 import { Address } from './FOTBuilder';
-import { InterpreterMessages, IdentifierImpl, ProcessingMode } from './Interpreter';
+import { InterpreterMessages, IdentifierImpl, ProcessingMode, Interpreter } from './Interpreter';
 import { InheritedC, StyleObj as StyleStyleObj } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
-import { Interpreter } from './ELObj';
+import { Interpreter as InterpreterInterface } from './ELObj';
 import { NodePtr, NodeListPtr, NamedNodeListPtr, GroveString, AccessResult, SdataMapper, PropertyValue, ComponentName } from '../grove/Node';
 
 // Signature helper
@@ -483,7 +483,7 @@ export class StringToSymbolPrimitiveObj extends PrimitiveObjBase {
     for (let i = 0; i < sd.length; i++) {
       str += String.fromCharCode(sd.data[i]);
     }
-    return interp.makeSymbol(str);
+    return interp.makeSymbol(Interpreter.makeStringC(str));
   }
 }
 
@@ -521,7 +521,7 @@ export class StringToKeywordPrimitiveObj extends PrimitiveObjBase {
     for (let i = 0; i < sd.length; i++) {
       str += String.fromCharCode(sd.data[i]);
     }
-    return interp.makeKeyword(str);
+    return interp.makeKeyword(Interpreter.makeStringC(str));
   }
 }
 
@@ -3974,7 +3974,7 @@ class ELObjPropertyValue extends PropertyValue {
     // Convert component name to symbol - choose rcsName or sdqlName based on rcs_
     const name = this.rcs_ ? ComponentName.rcsName(value) : ComponentName.sdqlName(value);
     if (name) {
-      this.obj = this.interp_.makeSymbol(name);
+      this.obj = this.interp_.makeSymbol(Interpreter.makeStringC(name));
     } else {
       this.obj = this.interp_.makeFalse();
     }
@@ -4006,6 +4006,7 @@ export class NodePropertyPrimitiveObj extends PrimitiveObjBase {
     if (!str) {
       return this.argError(interp, loc, 'notAStringOrSymbol', 0, args[0]);
     }
+    const strData = str.stringData();
 
     // arg[1] is the node
     const nodeRes = args[1].optSingletonNodeList(context, interp);
@@ -4050,9 +4051,6 @@ export class NodePropertyPrimitiveObj extends PrimitiveObjBase {
       }
     }
     const propName = new StringClass<number>(propChars, propChars.length);
-
-    // Debug logging
-    // console.log('[node-property] Looking up property:', propNameStr);
 
     // Special case for 'tokens' property on model-group nodes
     // Following upstream hack for duplicate rcsname
