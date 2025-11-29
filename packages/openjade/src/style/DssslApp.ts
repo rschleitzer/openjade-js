@@ -9,6 +9,10 @@ import {
   Messenger,
   Message,
   MessageFormatter,
+  MessageType,
+  MessageBuilder,
+  MessageFragment,
+  OtherMessageArg,
   Location,
   InputSource,
   InputSourceOrigin,
@@ -34,6 +38,98 @@ class SimpleMessageFormatter extends MessageFormatter {
   getMessageText(_frag: any, _text: StringC): boolean {
     // Return false - we don't have message text
     return false;
+  }
+}
+
+// String message builder for formatting message arguments
+class StringMessageBuilder extends MessageBuilder {
+  private result_: string = '';
+
+  appendNumber(n: number): void {
+    this.result_ += n.toString();
+  }
+
+  appendOrdinal(n: number): void {
+    const suffix = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
+    this.result_ += n.toString() + suffix;
+  }
+
+  appendChars(chars: Char[] | null, size: number): void {
+    if (chars) {
+      for (let i = 0; i < size; i++) {
+        this.result_ += String.fromCodePoint(chars[i]);
+      }
+    }
+  }
+
+  appendOther(_arg: OtherMessageArg | null): void {
+    // Ignore other args
+  }
+
+  appendFragment(fragment: MessageFragment): void {
+    if (fragment && (fragment as any).text) {
+      this.result_ += (fragment as any).text();
+    }
+  }
+
+  appendString(s: string): void {
+    this.result_ += s;
+  }
+
+  getString(): string {
+    return this.result_;
+  }
+}
+
+// Format a message by substituting %1, %2, etc. with arguments
+function formatMessage(msg: Message): string {
+  const type = msg.type;
+  if (!type) return '(no message type)';
+
+  const template = type.text();
+  if (!template) return `message:${type.number()}`;
+
+  // Parse template and substitute %N with arguments
+  let result = '';
+  let i = 0;
+  while (i < template.length) {
+    if (template[i] === '%' && i + 1 < template.length) {
+      const nextChar = template[i + 1];
+      if (nextChar >= '1' && nextChar <= '9') {
+        const argIndex = parseInt(nextChar) - 1;
+        if (argIndex < msg.args.size()) {
+          const arg = msg.args.get(argIndex);
+          if (arg && arg.pointer()) {
+            const builder = new StringMessageBuilder();
+            arg.pointer().append(builder);
+            result += builder.getString();
+          }
+        }
+        i += 2;
+        continue;
+      }
+    }
+    result += template[i];
+    i++;
+  }
+  return result;
+}
+
+// Get severity string for message type
+function getSeverityString(severity: number): string {
+  switch (severity) {
+    case MessageType.Severity.info:
+      return 'I';
+    case MessageType.Severity.warning:
+      return 'W';
+    case MessageType.Severity.error:
+      return 'E';
+    case MessageType.Severity.quantityError:
+      return 'Q';
+    case MessageType.Severity.idrefError:
+      return 'X';
+    default:
+      return '?';
   }
 }
 
@@ -95,9 +191,66 @@ export abstract class DssslApp extends Messenger implements GroveManager {
 
   // Messenger interface - override
   override dispatchMessage(msg: Message): void {
-    // Default: print to console
-    const typeText = msg.type?.text?.() || 'message';
-    console.error(`[${typeText}]`);
+    // Format message like upstream openjade: location:severity:message
+    // Following MessageReporter::dispatchMessage from upstream
+    let output = '';
+
+    // Get location info if available - traverse origin chain to find entity name/file
+    const loc = msg.loc;
+    if (loc && loc.origin() && !loc.origin().isNull()) {
+      let origin = loc.origin().pointer();
+      let index = loc.index();
+      let foundLocation = false;
+
+      // Traverse origin chain to find entity name or external info
+      while (origin && !foundLocation) {
+        // Try to get entity name from EntityOrigin
+        const entityOrigin = origin.asEntityOrigin?.();
+        if (entityOrigin) {
+          const entityDecl = entityOrigin.entityDecl?.();
+          if (entityDecl) {
+            const name = entityDecl.name?.();
+            if (name && name.length_ > 0) {
+              output += stringCToString(name);
+              output += ':' + index;
+              output += ': ';
+              foundLocation = true;
+              break;
+            }
+          }
+        }
+
+        // Try parent location
+        const parentLoc = origin.parent?.();
+        if (parentLoc && parentLoc.origin() && !parentLoc.origin().isNull()) {
+          // If this is an entity origin, add ref length to index
+          if (entityOrigin) {
+            index = parentLoc.index() + (origin.refLength?.() || 0);
+          } else {
+            index += parentLoc.index();
+          }
+          origin = parentLoc.origin().pointer();
+        } else {
+          break;
+        }
+      }
+
+      // If we didn't find an entity name, still output the index
+      if (!foundLocation && index > 0) {
+        output += '<unknown>:' + index + ': ';
+      }
+    }
+
+    // Add severity prefix
+    if (msg.type) {
+      const severity = msg.type.severity();
+      output += getSeverityString(severity) + ': ';
+    }
+
+    // Format and append the message text with argument substitution
+    output += formatMessage(msg);
+
+    console.error(output);
   }
 
   // GroveManager interface
