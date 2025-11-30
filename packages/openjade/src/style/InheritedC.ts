@@ -134,7 +134,7 @@ export class LengthInheritedC extends InheritedC {
   make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const q = obj.quantityValue();
     if (q.type !== 0 && q.dim === 1) {
-      const length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+      const length = q.type === 1 ? q.longVal : Math.trunc(q.doubleVal);
       return new LengthInheritedC(this.identifier(), this.index(), length);
     }
     this.invalidValue(loc, interp);
@@ -300,7 +300,7 @@ export class FontSizeC extends LengthInheritedC {
   override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const q = obj.quantityValue();
     if (q.type !== 0 && q.dim === 1) {
-      const length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+      const length = q.type === 1 ? q.longVal : Math.trunc(q.doubleVal);
       return new FontSizeC(this.identifier(), this.index(), length);
     }
     this.invalidValue(loc, interp);
@@ -857,7 +857,7 @@ export class GenericLengthInheritedC extends LengthInheritedC {
   override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
     const q = obj.quantityValue();
     if (q.type !== 0 && q.dim === 1) {
-      const length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+      const length = q.type === 1 ? q.longVal : Math.trunc(q.doubleVal);
       return new GenericLengthInheritedC(this.identifier(), this.index(), this.setter_, length);
     }
     this.invalidValue(loc, interp);
