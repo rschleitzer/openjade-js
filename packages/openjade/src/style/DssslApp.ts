@@ -194,7 +194,7 @@ export abstract class DssslApp extends Messenger implements GroveManager {
   override dispatchMessage(msg: Message): void {
     // Format message like upstream openjade: location:severity:message
     // Following MessageReporter::dispatchMessage from upstream
-    let output = '';
+    let output = 'openjade:';
 
     // Get location info if available - traverse origin chain to find file/line info
     const loc = msg.loc;
