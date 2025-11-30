@@ -35,8 +35,8 @@ import {
   StyleObj,
   LanguageObj
 } from './ELObj';
-import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj, PageNumberSosofoObj, CurrentNodePageNumberSosofoObj } from './SosofoObj';
-import { Address } from './FOTBuilder';
+import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj, PageNumberSosofoObj, CurrentNodePageNumberSosofoObj, PageTypeSosofoObj } from './SosofoObj';
+import { Address, HF } from './FOTBuilder';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode, Interpreter } from './Interpreter';
 import { InheritedC, StyleObj as StyleStyleObj, DeviceRGBColorSpaceObj, DeviceGrayColorSpaceObj, DeviceCMYKColorSpaceObj } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
@@ -4979,26 +4979,30 @@ export class PrecedPrimitiveObj extends PrimitiveObjBase {
 // ============ James Clark Extension Primitives ============
 
 // if-first-page - returns first arg on first page, second arg otherwise
-// Stub implementation - always returns second arg (non-first-page behavior)
 export class IfFirstPagePrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(2, 0, false);
   constructor() { super(IfFirstPagePrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
-    // For now, always return second argument (we're not on first page)
-    // Real implementation would check page context
-    return args[1];
+    const sosofo0 = args[0].asSosofo();
+    const sosofo1 = args[1].asSosofo();
+    if (!sosofo0 || !sosofo1) {
+      return interp.makeError();
+    }
+    return new PageTypeSosofoObj(HF.firstHF, sosofo0, sosofo1);
   }
 }
 
 // if-front-page - returns first arg on front page, second arg otherwise
-// Stub implementation - always returns second arg (non-front-page behavior)
 export class IfFrontPagePrimitiveObj extends PrimitiveObjBase {
   static readonly signature_ = sig(2, 0, false);
   constructor() { super(IfFrontPagePrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
-    // For now, always return second argument (we're not on front page)
-    // Real implementation would check page context
-    return args[1];
+    const sosofo0 = args[0].asSosofo();
+    const sosofo1 = args[1].asSosofo();
+    if (!sosofo0 || !sosofo1) {
+      return interp.makeError();
+    }
+    return new PageTypeSosofoObj(HF.frontHF, sosofo0, sosofo1);
   }
 }
 

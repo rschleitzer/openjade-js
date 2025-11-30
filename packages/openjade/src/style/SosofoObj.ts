@@ -28,6 +28,7 @@ export interface ProcessContext {
   pushPrincipalPort(port: FOTBuilder): void;
   popPrincipalPort(): void;
   setPageType(n: number): void;
+  getPageType(): { has: boolean; value: number };
   // Table support
   startTable(): void;
   endTable(): void;
@@ -580,8 +581,14 @@ export class PageTypeSosofoObj extends SosofoObj {
   }
 
   process(context: ProcessContext): void {
-    // Simplified: always process match
-    this.match_.process(context);
+    const pageTypeResult = context.getPageType();
+    if (pageTypeResult.has) {
+      if (pageTypeResult.value & this.pageTypeFlag_) {
+        this.match_.process(context);
+      } else {
+        this.noMatch_.process(context);
+      }
+    }
   }
 
   override traceSubObjects(collector: Collector): void {
