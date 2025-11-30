@@ -18,7 +18,7 @@ import {
   InsnPtr as ELObjInsnPtr
 } from './ELObj';
 import { Collector, CollectorObject } from './Collector';
-import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj } from './SosofoObj';
+import { SosofoObj, AppendSosofoObj, SetNonInheritedCsSosofoObj, ProcessChildrenSosofoObj } from './SosofoObj';
 import { StyleObj, VarStyleObj, StyleSpec as StyleStyleSpec, InheritedC as StyleInheritedC, StyleStack } from './Style';
 import { NodePtr } from '../grove/Node';
 
@@ -1950,7 +1950,8 @@ export class SetContentInsn extends InsnBase {
 
   execute(vm: VM): Insn | null {
     const copy = this.flowObj_.copy(vm.interp) as CompoundFlowObj;
-    copy.setContent(vm.top() as SosofoObj);
+    const content = vm.top() as SosofoObj;
+    copy.setContent(content);
     vm.setTop(copy as unknown as ELObj);
     return this.next_;
   }
@@ -1978,7 +1979,8 @@ export class SetDefaultContentInsn extends InsnBase {
     }
     vm.needStack(1);
     const copy = this.flowObj_.copy(vm.interp) as CompoundFlowObj;
-    // copy.setContent(new ProcessChildrenSosofoObj(vm.processingMode));
+    // Cast to any to bridge local ProcessingMode interface to Interpreter.ProcessingMode
+    copy.setContent(new ProcessChildrenSosofoObj(vm.processingMode as any));
     vm.push(copy as unknown as ELObj);
     return this.next_;
   }
