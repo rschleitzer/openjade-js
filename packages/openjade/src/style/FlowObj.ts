@@ -101,12 +101,20 @@ function setDisplayNIC(
       case SyntacticKey.keyKeep:
         // TODO: Convert enum value
         return true;
-      case SyntacticKey.keyBreakBefore:
-        // TODO: Convert enum value
+      case SyntacticKey.keyBreakBefore: {
+        const sym = obj.asSymbol();
+        if (sym) {
+          nic.breakBefore = sym.cValue();
+        }
         return true;
-      case SyntacticKey.keyBreakAfter:
-        // TODO: Convert enum value
+      }
+      case SyntacticKey.keyBreakAfter: {
+        const sym = obj.asSymbol();
+        if (sym) {
+          nic.breakAfter = sym.cValue();
+        }
         return true;
+      }
       case SyntacticKey.keyIsMayViolateKeepBefore:
         nic.mayViolateKeepBefore = obj.isTrue();
         return true;
