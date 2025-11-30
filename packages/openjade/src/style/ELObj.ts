@@ -1283,6 +1283,7 @@ export abstract class ColorObj extends ELObj {
 // Abstract color space object
 export abstract class ColorSpaceObj extends ELObj {
   override asColorSpace(): ColorSpaceObj { return this; }
+  abstract makeColor(argc: number, argv: ELObj[], interp: Interpreter, loc: Location): ELObj | null;
 }
 
 // Abstract style object

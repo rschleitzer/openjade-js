@@ -438,7 +438,10 @@ export const InterpreterMessages = {
   noCurrentNode: 'noCurrentNode',
   undefinedQuantity: 'undefinedQuantity',
   noNodePropertyValue: 'noNodePropertyValue',
-  notInCharacteristicValue: 'notInCharacteristicValue'
+  notInCharacteristicValue: 'notInCharacteristicValue',
+  unknownColorSpaceFamily: 'unknownColorSpaceFamily',
+  colorSpaceNoArgs: 'colorSpaceNoArgs',
+  colorArgError: 'colorArgError'
 } as const;
 
 // Re-export SyntacticKey from Identifier.ts for convenience

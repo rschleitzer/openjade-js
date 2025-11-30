@@ -38,7 +38,7 @@ import {
 import { AppendSosofoObj, EmptySosofoObj, LiteralSosofoObj, ProcessChildrenSosofoObj, ProcessChildrenTrimSosofoObj, ProcessNodeListSosofoObj, NextMatchSosofoObj, PageNumberSosofoObj, CurrentNodePageNumberSosofoObj } from './SosofoObj';
 import { Address } from './FOTBuilder';
 import { InterpreterMessages, IdentifierImpl, ProcessingMode, Interpreter } from './Interpreter';
-import { InheritedC, StyleObj as StyleStyleObj } from './Style';
+import { InheritedC, StyleObj as StyleStyleObj, DeviceRGBColorSpaceObj, DeviceGrayColorSpaceObj, DeviceCMYKColorSpaceObj } from './Style';
 import { PrimitiveObj, EvalContext, VM, InsnPtr, InterpreterMessages as InsnMessages } from './Insn';
 import { Interpreter as InterpreterInterface } from './ELObj';
 import { NodePtr, NodeListPtr, NamedNodeListPtr, GroveString, AccessResult, SdataMapper, PropertyValue, ComponentName } from '../grove/Node';
@@ -2065,6 +2065,72 @@ export class IsColorSpacePrimitiveObj extends PrimitiveObjBase {
   constructor() { super(IsColorSpacePrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
     return args[0].asColorSpace() ? interp.makeTrue() : interp.makeFalse();
+  }
+}
+
+// color-space
+export class ColorSpacePrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, true);
+  constructor() { super(ColorSpacePrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const sd = args[0].stringData();
+    if (!sd.result || !sd.data) {
+      interp.setNextLocation(loc);
+      interp.message(ArgErrorMessages.notAString, 0);
+      return interp.makeError();
+    }
+    let str = '';
+    const n = Math.min(sd.length, 43);
+    for (let i = 0; i < n; i++) {
+      str += String.fromCharCode(sd.data[i]);
+    }
+    if (str === 'ISO/IEC 10179:1996//Color-Space Family::Dev') {
+      let suffix = '';
+      for (let i = 40; i < sd.length; i++) {
+        suffix += String.fromCharCode(sd.data[i]);
+      }
+      let res: ELObj;
+      if (suffix === 'Device RGB') {
+        res = new DeviceRGBColorSpaceObj();
+      } else if (suffix === 'Device Gray') {
+        res = new DeviceGrayColorSpaceObj();
+      } else if (suffix === 'Device CMYK') {
+        res = new DeviceCMYKColorSpaceObj();
+      } else {
+        interp.setNextLocation(loc);
+        interp.message(InterpreterMessages.unknownColorSpaceFamily);
+        return interp.makeError();
+      }
+      if (argc > 1) {
+        interp.setNextLocation(loc);
+        interp.message(InterpreterMessages.colorSpaceNoArgs);
+      }
+      return res;
+    }
+    interp.setNextLocation(loc);
+    interp.message(InterpreterMessages.unknownColorSpaceFamily);
+    return interp.makeError();
+  }
+}
+
+// color
+export class ColorPrimitiveObj extends PrimitiveObjBase {
+  static readonly signature_ = sig(1, 0, true);
+  constructor() { super(ColorPrimitiveObj.signature_); }
+  primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
+    const colorSpace = args[0].asColorSpace();
+    if (!colorSpace) {
+      interp.setNextLocation(loc);
+      interp.message(ArgErrorMessages.notAColorSpace, 0);
+      return interp.makeError();
+    }
+    const result = colorSpace.makeColor(argc - 1, args.slice(1), interp, loc);
+    if (!result) {
+      interp.setNextLocation(loc);
+      interp.message(InterpreterMessages.colorArgError);
+      return interp.makeError();
+    }
+    return result;
   }
 }
 
@@ -5110,6 +5176,8 @@ export const primitives: Map<string, () => PrimitiveObj> = new Map([
   ['address?', () => new IsAddressPrimitiveObj()],
   ['color?', () => new IsColorPrimitiveObj()],
   ['color-space?', () => new IsColorSpacePrimitiveObj()],
+  ['color', () => new ColorPrimitiveObj()],
+  ['color-space', () => new ColorSpacePrimitiveObj()],
   ['glyph-id?', () => new IsGlyphIdPrimitiveObj()],
   ['language?', () => new IsLanguagePrimitiveObj()],
   ['empty-sosofo', () => new EmptySosofoPrimitiveObj()],
