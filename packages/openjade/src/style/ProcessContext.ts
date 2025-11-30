@@ -146,7 +146,7 @@ export class ProcessContext {
     }
     if (this.processNodeCount_ <= 5 || this.processNodeCount_ % 1000 === 0) {
     }
-    if (this.processNodeCount_ > 100000) {
+    if (this.processNodeCount_ > 10000000) {
       throw new Error('Infinite loop detected in processNode');
     }
     if (!processingMode) {

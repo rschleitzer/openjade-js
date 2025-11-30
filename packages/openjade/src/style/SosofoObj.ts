@@ -464,13 +464,27 @@ export class SetNonInheritedCsSosofoObj extends SosofoObj {
 
   private resolve(context: ProcessContext): ELObj | null {
     const vm = context.vm();
+
+    // Save and set node context - upstream EvalContext::CurrentNodeSetter
     const savedNode = vm.currentNode;
     vm.currentNode = this.node_;
+
+    // Save and set style stack context - upstream ProcessContext.cxx line 668-673
+    const saveStyleStack = vm.styleStack;
+    vm.styleStack = context.currentStyleStack();
+    const saveSpecLevel = vm.specLevel;
+    vm.specLevel = vm.styleStack ? vm.styleStack.level() : 0;
+    const saveActualDependencies = vm.actualDependencies;
+    vm.actualDependencies = [];
 
     // Evaluate the code with display and a copy of the flow object
     const flowObjCopy = this.flowObj_.copy(vm.interp as any);
     const obj = vm.eval(this.code_, this.display_, flowObjCopy as unknown as ELObj);
 
+    // Restore context
+    vm.styleStack = saveStyleStack;
+    vm.specLevel = saveSpecLevel;
+    vm.actualDependencies = saveActualDependencies;
     vm.currentNode = savedNode;
 
     if (vm.interp.isError(obj)) {

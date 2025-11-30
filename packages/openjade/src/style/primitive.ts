@@ -250,8 +250,8 @@ export class AppendPrimitiveObj extends PrimitiveObjBase {
   constructor() { super(AppendPrimitiveObj.signature_); }
   primitiveCall(argc: number, args: ELObj[], context: EvalContext, interp: Interpreter, loc: Location): ELObj {
     if (argc === 0) return interp.makeNil();
-    const tail = interp.makePair(interp.makeNil(), interp.makeNil());
-    let head = tail;
+    let tail = interp.makePair(interp.makeNil(), interp.makeNil());
+    const head = tail;
     for (let i = 0; i < argc - 1; i++) {
       for (let p = args[i]; !p.isNil();) {
         const tem = p.asPair();
@@ -260,6 +260,7 @@ export class AppendPrimitiveObj extends PrimitiveObjBase {
         }
         const newTail = interp.makePair(tem.car(), interp.makeNil());
         tail.setCdr(newTail);
+        tail = newTail;  // Advance tail to the new pair
         p = tem.cdr();
       }
     }
