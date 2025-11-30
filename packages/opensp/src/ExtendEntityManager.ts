@@ -997,9 +997,13 @@ export class ExternalInputSource extends InputSource {
 }
 
 // Factory function to create a standard entity manager
+// internalCharsetIsDocCharset:
+//   - true (default for nsgmls): internal charset equals document charset
+//   - false (used by jade/openjade): internal charset is Unicode, respects SP_ENCODING
 export function createExtendEntityManager(
   charset: CharsetInfo,
-  fileReader?: (path: string) => Uint8Array | null
+  fileReader?: (path: string) => Uint8Array | null,
+  internalCharsetIsDocCharset: boolean = true
 ): ExtendEntityManager {
   const storageManager = new FileStorageManager(charset, fileReader);
   const codingSystem = new Utf8CodingSystem();
@@ -1008,6 +1012,6 @@ export function createExtendEntityManager(
     storageManager,
     codingSystem,
     charset,
-    true // internalCharsetIsDocCharset
+    internalCharsetIsDocCharset
   );
 }

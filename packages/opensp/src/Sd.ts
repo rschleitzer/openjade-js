@@ -243,8 +243,11 @@ export class Sd extends Resource {
     this.entityManager_ = entityManager;
     const mgr = entityManager.pointer()!;
     this.internalCharsetIsDocCharset_ = mgr.internalCharsetIsDocCharset();
-    // Initialize with a new CharsetInfo (will be set later with setDocCharsetDesc)
-    this.docCharset_ = mgr.charset() as any as CharsetInfo;
+    // In upstream C++, docCharset_ is initialized by COPY from entityManager->charset().
+    // In JavaScript, we need to explicitly create a copy to avoid shared references.
+    // We create a new CharsetInfo with the same descriptor.
+    const srcCharset = mgr.charset() as any as CharsetInfo;
+    this.docCharset_ = new CharsetInfo((srcCharset as any).desc_);
     this.scopeInstance_ = false;
     this.www_ = false;
     this.netEnable_ = Sd.NetEnable.netEnableNo;
@@ -273,8 +276,11 @@ export class Sd extends Resource {
     if (this.internalCharsetIsDocCharset_) {
       this.internalCharsetPtr_ = null;
     } else {
-      // Store reference to the same CharsetInfo object
-      this.internalCharsetPtr_ = this.docCharset_;
+      // When internalCharsetIsDocCharset is false, internalCharsetPtr_ should point
+      // to the entity manager's charset (full Unicode), while docCharset_ will be
+      // modified by setDocCharsetDesc to match the SGML declaration's charset.
+      // In upstream C++: internalCharsetPtr_ = &entityManager->charset();
+      this.internalCharsetPtr_ = mgr.charset() as any as CharsetInfo;
     }
   }
 

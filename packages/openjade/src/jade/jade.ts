@@ -359,36 +359,34 @@ function main(): number {
 
   const entityManager = createExtendEntityManager(charset, fileReader);
 
-  // Set up catalog manager
+  // Set up catalog manager - port of EntityApp::entityManager() from EntityApp.cxx
+  // The upstream uses SGML_CATALOG_FILES_DEFAULT which is compiled in at build time.
+  // MacPorts sets it to /opt/local/share/sgml/catalog which chains to openjade's catalog.
+  // For our port, we add the bundled DSSSL catalog as a fallback after user catalogs.
   const catalogSysids = new Vector<StringC>();
-
-  // Add built-in DSSSL catalog
-  // Note: We intentionally do NOT load the document directory's catalog here,
-  // because it might have an SGMLDECL that specifies XML-style syntax which
-  // is incompatible with DSSSL stylesheets. The DSSSL catalog provides
-  // all the PUBLIC identifiers needed for DSSSL processing.
-  const builtinCatalog = path.join(__dirname, '..', '..', 'dsssl', 'catalog');
-  if (fs.existsSync(builtinCatalog)) {
-    catalogSysids.push_back(makeStringC(builtinCatalog));
-  }
 
   // Add user-specified catalogs (these are explicitly requested by -c option)
   for (const cat of parsed.catalogs) {
     catalogSysids.push_back(makeStringC(cat));
   }
 
-  if (catalogSysids.size() > 0) {
-    // Enable document directory catalog loading - each parser gets its own catalog
-    // with its own SGMLDECL setting based on its directory's catalog
-    const catalogManager = SOCatalogManager.make(
-      catalogSysids,
-      parsed.catalogs.length,
-      charset,
-      charset,
-      true  // useDocCatalog - each parser gets its own catalog
-    );
-    (entityManager as ExtendEntityManager).setCatalogManager(catalogManager);
+  // Add bundled DSSSL catalog as fallback (like SGML_CATALOG_FILES_DEFAULT in upstream)
+  // This provides the DSSSL DTD public ID mappings needed for parsing stylesheets
+  const builtinCatalog = path.join(__dirname, '..', '..', 'dsssl', 'catalog');
+  if (fs.existsSync(builtinCatalog)) {
+    catalogSysids.push_back(makeStringC(builtinCatalog));
   }
+
+  // Always create catalog manager with useDocCatalog=true (like upstream)
+  // This ensures each file's directory is searched for a catalog
+  const catalogManager = SOCatalogManager.make(
+    catalogSysids,
+    parsed.catalogs.length,  // Number of user catalogs that must exist
+    charset,
+    charset,
+    true  // useDocCatalog - look for catalog in each file's directory
+  );
+  (entityManager as ExtendEntityManager).setCatalogManager(catalogManager);
 
   // Create JadeApp
   const app = new JadeApp();
