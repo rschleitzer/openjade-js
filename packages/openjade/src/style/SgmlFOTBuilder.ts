@@ -699,13 +699,11 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
       this.os().write(' destination=' + quot);
       switch (addr.type) {
         case Address.Type.resolvedNode:
-          this.os().write('#');
           if (addr.node) {
             this.outputElementName(addr.node);
           }
           break;
         case Address.Type.idref:
-          this.os().write('#');
           this.os().write(addr.params[0]);
           break;
         case Address.Type.html:
