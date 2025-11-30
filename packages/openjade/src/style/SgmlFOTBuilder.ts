@@ -547,6 +547,10 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   // === Atomic Flow Objects ===
 
   override characters(s: Uint32Array, n: number): void {
+    // Port from upstream: don't flush pending elements for empty text
+    if (n === 0) {
+      return;
+    }
     this.flushPendingElements();
     this.os().write('<text>');
     this.outputDataStr(s, n);
