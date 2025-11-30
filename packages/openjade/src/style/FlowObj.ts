@@ -114,9 +114,51 @@ function setDisplayNIC(
         nic.mayViolateKeepAfter = obj.isTrue();
         return true;
       case SyntacticKey.keySpaceBefore:
-      case SyntacticKey.keySpaceAfter:
-        // TODO: Convert display space
+      case SyntacticKey.keySpaceAfter: {
+        // Get reference to the appropriate DisplaySpace
+        const ds = keyRef.value === SyntacticKey.keySpaceBefore
+          ? nic.spaceBefore
+          : nic.spaceAfter;
+        // Try as DisplaySpaceObj first
+        const dso = obj.asDisplaySpace();
+        if (dso) {
+          // Copy all fields from the DisplaySpace object
+          const srcDs = dso.displaySpace();
+          ds.nominal.length = srcDs.nominal.length;
+          ds.nominal.displaySizeFactor = srcDs.nominal.displaySizeFactor;
+          ds.min.length = srcDs.min.length;
+          ds.min.displaySizeFactor = srcDs.min.displaySizeFactor;
+          ds.max.length = srcDs.max.length;
+          ds.max.displaySizeFactor = srcDs.max.displaySizeFactor;
+          ds.priority = srcDs.priority;
+          ds.conditional = srcDs.conditional;
+          ds.force = srcDs.force;
+        } else {
+          // Try to convert to LengthSpec
+          const ls = obj.lengthSpec();
+          if (ls) {
+            const converted = ls.convert();
+            if (converted.result) {
+              ds.nominal.length = converted.spec.length;
+              ds.nominal.displaySizeFactor = converted.spec.displaySizeFactor;
+              ds.min.length = converted.spec.length;
+              ds.min.displaySizeFactor = converted.spec.displaySizeFactor;
+              ds.max.length = converted.spec.length;
+              ds.max.displaySizeFactor = converted.spec.displaySizeFactor;
+            }
+          } else {
+            // Also try quantityValue for plain lengths
+            const q = obj.quantityValue();
+            if (q.type !== 0 && q.dim === 1) {
+              const length = q.type === 1 ? q.longVal : Math.round(q.doubleVal);
+              ds.nominal.length = length;
+              ds.min.length = length;
+              ds.max.length = length;
+            }
+          }
+        }
         return true;
+      }
       default:
         break;
     }

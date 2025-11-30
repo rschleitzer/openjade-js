@@ -262,7 +262,8 @@ export abstract class FlowObj extends SosofoObj {
 
   pushStyle(context: ProcessContext, _level: { value: number }): void {
     // Push style onto the style stack - port of FlowObj::pushStyle from FlowObj.cxx
-    if (this.style_ && typeof (this.style_ as any).appendIter === 'function') {
+    // Upstream just checks if (style_) - no extra typeof check
+    if (this.style_) {
       context.currentStyleStack().push(this.style_, context.vm(), context.fotBuilder());
     } else {
       context.currentStyleStack().pushEmpty();
@@ -271,7 +272,7 @@ export abstract class FlowObj extends SosofoObj {
 
   popStyle(context: ProcessContext, _level: number): void {
     // Pop style from the style stack - port of FlowObj::popStyle from FlowObj.cxx
-    if (this.style_ && typeof (this.style_ as any).appendIter === 'function') {
+    if (this.style_) {
       context.currentStyleStack().pop();
     } else {
       context.currentStyleStack().popEmpty();

@@ -554,7 +554,9 @@ export class StyleStack {
 
   pushEnd(vm: VM, fotb: FOTBuilder): void {
     // Compute values for all pushed specs
-    if (!this.popList_) return;
+    if (!this.popList_) {
+      return;
+    }
     for (const index of this.popList_.list) {
       const info = this.inheritedCInfo_[index];
       if (info && !info.cachedValue) {

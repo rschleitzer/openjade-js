@@ -333,20 +333,20 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
 
   // Display non-inherited characteristics
   private displayNIC(nic: DisplayNIC): void {
-    if (nic.positionPreference !== Symbol.symbolFalse) {
-      this.os().write(' position-preference=' + quot + symbolName(nic.positionPreference) + quot);
+    if (nic.keepWithPrevious) {
+      this.os().write(' keep-with-previous=' + quot + trueString + quot);
     }
     if (nic.keepWithNext) {
       this.os().write(' keep-with-next=' + quot + trueString + quot);
-    }
-    if (nic.keepWithPrevious) {
-      this.os().write(' keep-with-previous=' + quot + trueString + quot);
     }
     if (nic.mayViolateKeepBefore) {
       this.os().write(' may-violate-keep-before=' + quot + trueString + quot);
     }
     if (nic.mayViolateKeepAfter) {
       this.os().write(' may-violate-keep-after=' + quot + trueString + quot);
+    }
+    if (nic.positionPreference !== Symbol.symbolFalse) {
+      this.os().write(' position-preference=' + quot + symbolName(nic.positionPreference) + quot);
     }
     if (nic.keep !== Symbol.symbolFalse) {
       this.os().write(' keep=' + quot + symbolName(nic.keep) + quot);
@@ -357,25 +357,33 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
     if (nic.breakAfter !== Symbol.symbolFalse) {
       this.os().write(' break-after=' + quot + symbolName(nic.breakAfter) + quot);
     }
-    // Space before
-    if (nic.spaceBefore.nominal.length || nic.spaceBefore.nominal.displaySizeFactor) {
-      this.os().write(' space-before=' + quot + formatLengthSpec(nic.spaceBefore.nominal) + quot);
-      if (!nic.spaceBefore.conditional) {
-        this.os().write(' space-before-conditional=' + quot + falseString + quot);
+    this.displaySpaceNIC('space-before', nic.spaceBefore);
+    this.displaySpaceNIC('space-after', nic.spaceAfter);
+  }
+
+  // Display space non-inherited characteristics - matches upstream displaySpaceNIC
+  private displaySpaceNIC(name: string, ds: { nominal: LengthSpec; min: LengthSpec; max: LengthSpec; priority: number; conditional: boolean; force: boolean }): void {
+    // In C++, LengthSpec has operator long() returning length, so ds.nominal || ds.min || ds.max
+    // is equivalent to ds.nominal.length || ds.min.length || ds.max.length
+    if (ds.nominal.length || ds.min.length || ds.max.length) {
+      this.os().write(' ' + name + '=' + quot + formatLengthSpec(ds.nominal));
+      // Output min,max if they differ from nominal
+      if (ds.min.length !== ds.nominal.length
+          || ds.min.displaySizeFactor !== ds.nominal.displaySizeFactor
+          || ds.max.length !== ds.nominal.length
+          || ds.max.displaySizeFactor !== ds.nominal.displaySizeFactor) {
+        this.os().write(',' + formatLengthSpec(ds.min) + ',' + formatLengthSpec(ds.max));
       }
-      if (nic.spaceBefore.priority) {
-        this.os().write(' space-before-priority=' + quot + nic.spaceBefore.priority + quot);
-      }
+      this.os().write(quot);
     }
-    // Space after
-    if (nic.spaceAfter.nominal.length || nic.spaceAfter.nominal.displaySizeFactor) {
-      this.os().write(' space-after=' + quot + formatLengthSpec(nic.spaceAfter.nominal) + quot);
-      if (!nic.spaceAfter.conditional) {
-        this.os().write(' space-after-conditional=' + quot + falseString + quot);
-      }
-      if (nic.spaceAfter.priority) {
-        this.os().write(' space-after-priority=' + quot + nic.spaceAfter.priority + quot);
-      }
+    // These are output OUTSIDE the main if block (per upstream)
+    if (ds.force) {
+      this.os().write(' ' + name + '-priority=' + quot + 'force' + quot);
+    } else if (ds.priority) {
+      this.os().write(' ' + name + '-priority=' + quot + ds.priority + quot);
+    }
+    if (!ds.conditional) {
+      this.os().write(' ' + name + '-conditional=' + quot + falseString + quot);
     }
   }
 
