@@ -416,10 +416,11 @@ export class Sd extends Resource {
   execToInternal(s: string): StringC;
   execToInternal(input: number | string): Char | StringC {
     if (typeof input === 'string') {
-      return this.internalCharset().execToDesc(input);
+      // Always return StringC for string input
+      return this.internalCharset().execToDescString(input);
     } else {
-      // Convert number to single character string
-      return this.internalCharset().execToDesc(String.fromCharCode(input));
+      // Single number returns Char
+      return this.internalCharset().execToDesc(String.fromCharCode(input)) as Char;
     }
   }
 

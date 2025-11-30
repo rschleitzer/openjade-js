@@ -48,6 +48,15 @@ export class CharsetInfo {
     }
   }
 
+  // Get string descriptor - always returns StringC even for single char
+  execToDescString(s: string): StringC {
+    const result = new StringOf<Char>();
+    for (let i = 0; i < s.length; i++) {
+      result.append([this.execToDesc_[s.charCodeAt(i)]], 1);
+    }
+    return result;
+  }
+
   descToUniv(from: WideChar, to: { value: UnivChar }): Boolean;
   descToUniv(from: WideChar, to: { value: UnivChar }, alsoMax: { value: WideChar }): Boolean;
   descToUniv(from: WideChar, to: { value: UnivChar }, alsoMax?: { value: WideChar }): Boolean {

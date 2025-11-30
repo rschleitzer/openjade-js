@@ -186,6 +186,12 @@ export class Parser extends ParserState {
       sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFENTITY, !this.options().typeValid);
       sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFNOTATION, !this.options().typeValid);
     }
+    // Preserve omittag option from ParserOptions when set to true
+    // This allows forcing OMITTAG YES even when document's SGML declaration says NO
+    // BUT don't override in WWW (XML) mode - XML doesn't have tag omission
+    if (this.options().omittag && !sd.www()) {
+      sd.setBooleanFeature(Sd.BooleanFeature.fOMITTAG, true);
+    }
     if (this.options().fullyDeclared) {
       sd.setBooleanFeature(Sd.BooleanFeature.fIMPLYDEFATTLIST, false);
       sd.setImplydefElement(Sd.ImplydefElement.implydefElementNo);

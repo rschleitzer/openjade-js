@@ -557,6 +557,17 @@ export abstract class DssslApp extends Messenger implements GroveManager {
       }
     }
 
+    // Set entityType to document so that a new Sd is created with our options applied.
+    // Disable validation and enable omittag for DSSSL spec parsing.
+    // The upstream uses ArcEngine which handles architectural forms differently.
+    // Without ArcEngine, we get false positive validation errors.
+    // TODO: Implement proper ArcEngine support
+    specParams.entityType = SgmlParser.Params.EntityType.document;
+    const specOptions = new ParserOptions();
+    specOptions.typeValid = 0; // Disable validation
+    specOptions.omittag = true; // Allow tag omission (DSSSL DTD uses "- o" for external-specification)
+    specParams.options = specOptions;
+
     const specParser = new SgmlParser(specParams);
 
     // Parse the DSSSL specification

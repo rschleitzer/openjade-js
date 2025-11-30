@@ -332,3 +332,7 @@ export { SgmlParser } from './SgmlParser';
 
 // nsgmls tool exports
 export { StringSet, SgmlsEventHandler } from './nsgmls';
+
+// Architecture processing (HyTime/IS10744)
+export { ArcEngine, ArcDirector, SelectOneArcDirector, ArcProcessor } from './ArcEngine';
+export { ArcEngineMessages } from './ArcEngineMessages';

@@ -412,7 +412,7 @@ export class SOEntityCatalog extends EntityCatalog {
     result: StringC
   ): Boolean {
     if (this.haveSgmlDecl_) {
-      return this.expandCatalogSystemId(
+      const ret = this.expandCatalogSystemId(
         this.sgmlDecl_,
         this.sgmlDeclLoc_,
         this.sgmlDeclBaseNumber_,
@@ -423,6 +423,7 @@ export class SOEntityCatalog extends EntityCatalog {
         mgr,
         result
       );
+      return ret;
     }
     return false;
   }
@@ -550,7 +551,6 @@ export class SOEntityCatalog extends EntityCatalog {
       this.sgmlDeclBaseNumber_ = this.haveCurrentBase_ ? this.base_.size() : 0;
       this.sgmlDeclCatalogPath_.assign(this.currentCatalogPath_.data(), this.currentCatalogPath_.size());
       this.haveSgmlDecl_ = true;
-
     }
   }
 
