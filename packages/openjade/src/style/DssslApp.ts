@@ -209,7 +209,13 @@ export abstract class DssslApp extends Messenger implements GroveManager {
         const externalInfo = origin.externalInfo?.();
         if (externalInfo && externalInfo instanceof ExternalInfoImpl) {
           const locInfo = externalInfo.convertOffset(index);
-          output += locInfo.filename + ':' + locInfo.lineNumber + ':' + locInfo.columnNumber + ': ';
+          // Make the path relative to the current working directory
+          let displayPath = locInfo.filename;
+          const cwd = process.cwd();
+          if (displayPath.startsWith(cwd + '/') || displayPath.startsWith(cwd + path.sep)) {
+            displayPath = displayPath.substring(cwd.length + 1);
+          }
+          output += displayPath + ':' + locInfo.lineNumber + ':' + locInfo.columnNumber + ': ';
           foundLocation = true;
           break;
         }
