@@ -4,7 +4,7 @@
 import { Location, Char, StringC, String as StringOf, InputSource, Messenger, Message, Xchar } from '@openjade-js/opensp';
 import { Interpreter, LexCategory, SyntacticKey, ProcessingMode, IdentifierImpl, Unit, RuleType, Environment } from './Interpreter';
 import { ELObj, PairObj, SymbolObj, NilObj, CharObj, StringObj, IntegerObj, RealObj, VectorObj, LangObj, Identifier } from './ELObj';
-import { Pattern } from './Pattern';
+import { Pattern, Element } from './Pattern';
 import {
   MakeExpression,
   Owner,
@@ -836,7 +836,18 @@ export class SchemeParser extends Messenger {
     if (!this.parseRuleBody(expr, ruleType)) {
       return false;
     }
-    // Create default pattern and add rule
+    // Create default pattern with empty GI (matches any element)
+    const emptyGi: StringC = new StringOf<Char>(null, 0);
+    const elem = new Element(emptyGi);
+    const pattern = new Pattern([elem]);
+    this.defMode_.addRule(
+      false,   // root = false
+      [pattern],
+      expr.value!,
+      ruleType.value,
+      loc,
+      this.interp_
+    );
     return true;
   }
 

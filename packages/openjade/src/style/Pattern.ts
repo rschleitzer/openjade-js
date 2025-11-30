@@ -488,7 +488,8 @@ export class Pattern {
 
     for (let i = 0; i < Pattern.nSpecificity; i++) {
       if (specA[i] !== specB[i]) {
-        return specA[i] - specB[i];
+        // Higher specificity should come first (return -1 if a > b)
+        return specA[i] > specB[i] ? -1 : 1;
       }
     }
     return 0;
