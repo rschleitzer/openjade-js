@@ -755,10 +755,10 @@ export class LeaderFlowObj extends CompoundFlowObj {
   }
 
   override processInner(context: ProcessContext): void {
-    // Leader is processed differently - the content defines the pattern
     const fotb = context.fotBuilder();
-    // TODO: Implement leader processing with pattern
+    fotb.startLeader(this.nic_);
     super.processInner(context);
+    fotb.endLeader();
   }
 
   override hasNonInheritedC(ident: Identifier): boolean {
