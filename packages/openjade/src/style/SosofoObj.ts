@@ -414,10 +414,15 @@ export class SetNonInheritedCsSosofoObj extends SosofoObj {
 
   process(context: ProcessContext): void {
     context.startFlowObj();
+    // Upstream: push the flow object's style BEFORE resolving and processing
+    let styleLevel = 0;
+    this.flowObj_.pushStyle(context, { value: styleLevel });
     const obj = this.resolve(context);
     if (obj) {
       (obj as FlowObj).processInner(context);
     }
+    // Upstream: pop the flow object's style after processing
+    this.flowObj_.popStyle(context, styleLevel);
     context.endFlowObj();
   }
 

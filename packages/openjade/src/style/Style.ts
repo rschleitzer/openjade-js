@@ -203,26 +203,19 @@ export class VarStyleObj extends BasicStyleObj {
   }
 
   appendIterForce(iter: StyleObjIter): void {
-    if (this.use_) {
-      const basicUse = this.use_ as BasicStyleObj;
-      if (basicUse.appendIterForce) {
-        basicUse.appendIterForce(iter);
-      }
-    }
-    if (this.styleSpec_) {
+    // Upstream: only add forceSpecs, do NOT recurse into use_
+    if (this.styleSpec_ && this.styleSpec_.forceSpecs.length > 0) {
       iter.append(this.styleSpec_.forceSpecs, this);
     }
   }
 
   appendIterNormal(iter: StyleObjIter): void {
-    if (this.styleSpec_) {
+    // Upstream: add specs, then call use_->appendIter (NOT appendIterNormal!)
+    if (this.styleSpec_ && this.styleSpec_.specs.length > 0) {
       iter.append(this.styleSpec_.specs, this);
     }
     if (this.use_) {
-      const basicUse = this.use_ as BasicStyleObj;
-      if (basicUse.appendIterNormal) {
-        basicUse.appendIterNormal(iter);
-      }
+      this.use_.appendIter(iter);
     }
   }
 
@@ -253,6 +246,8 @@ export class OverriddenStyleObj extends StyleObj {
   }
 
   appendIter(iter: StyleObjIter): void {
+    // Upstream: force from basic, then full override, then normal from basic
+    this.basic_.appendIterForce(iter);
     this.override_.appendIter(iter);
     this.basic_.appendIterNormal(iter);
   }
@@ -536,13 +531,22 @@ export class StyleStack {
       while (this.inheritedCInfo_.length <= index) {
         this.inheritedCInfo_.push(null);
       }
+      const info = this.inheritedCInfo_[index];
+      // Upstream: Only add if there's no existing spec at this level
+      // If there's already a spec at the same level, just check for ambiguity (skip for now)
+      if (info && info.valLevel === this.level_) {
+        // Already have a spec at this level - don't add again
+        // Upstream would check for ambiguity here via compareSpecificity
+        spec = iter.next(styleRef);
+        continue;
+      }
       const newInfo = new InheritedCInfo(
         spec,
         styleRef.obj,
         this.level_,
         this.level_,
         rule,
-        this.inheritedCInfo_[index]
+        info
       );
       this.inheritedCInfo_[index] = newInfo;
       if (this.popList_) {
