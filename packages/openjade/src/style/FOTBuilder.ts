@@ -762,7 +762,39 @@ enum SavedActionType {
   endMarginalia,
   startMultiMode,
   endMultiMode,
-  // ... add more as needed
+  // Inherited characteristics
+  setFontSize,
+  setFontFamilyName,
+  setFontWeight,
+  setFontPosture,
+  setStartIndent,
+  setEndIndent,
+  setFirstLineStartIndent,
+  setLastLineEndIndent,
+  setLineSpacing,
+  setFieldWidth,
+  setPositionPointShift,
+  setStartMargin,
+  setEndMargin,
+  setLines,
+  setQuadding,
+  setDisplayAlignment,
+  setColor,
+  setBackgroundColor,
+  setPageWidth,
+  setPageHeight,
+  setLeftMargin,
+  setRightMargin,
+  setTopMargin,
+  setBottomMargin,
+  setHeaderMargin,
+  setFooterMargin,
+  setLanguage,
+  setCountry,
+  setInputWhitespaceTreatment,
+  setFillingDirection,
+  setWritingMode,
+  pageNumber,
 }
 
 interface SavedAction {
@@ -849,7 +881,103 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
         case SavedActionType.endLineField:
           builder.endLineField();
           break;
-        // ... handle more actions as needed
+        // Inherited characteristics
+        case SavedActionType.setFontSize:
+          builder.setFontSize(action.data);
+          break;
+        case SavedActionType.setFontFamilyName:
+          builder.setFontFamilyName(action.data);
+          break;
+        case SavedActionType.setFontWeight:
+          builder.setFontWeight(action.data);
+          break;
+        case SavedActionType.setFontPosture:
+          builder.setFontPosture(action.data);
+          break;
+        case SavedActionType.setStartIndent:
+          builder.setStartIndent(action.data);
+          break;
+        case SavedActionType.setEndIndent:
+          builder.setEndIndent(action.data);
+          break;
+        case SavedActionType.setFirstLineStartIndent:
+          builder.setFirstLineStartIndent(action.data);
+          break;
+        case SavedActionType.setLastLineEndIndent:
+          builder.setLastLineEndIndent(action.data);
+          break;
+        case SavedActionType.setLineSpacing:
+          builder.setLineSpacing(action.data);
+          break;
+        case SavedActionType.setFieldWidth:
+          builder.setFieldWidth(action.data);
+          break;
+        case SavedActionType.setPositionPointShift:
+          builder.setPositionPointShift(action.data);
+          break;
+        case SavedActionType.setStartMargin:
+          builder.setStartMargin(action.data);
+          break;
+        case SavedActionType.setEndMargin:
+          builder.setEndMargin(action.data);
+          break;
+        case SavedActionType.setLines:
+          builder.setLines(action.data);
+          break;
+        case SavedActionType.setQuadding:
+          builder.setQuadding(action.data);
+          break;
+        case SavedActionType.setDisplayAlignment:
+          builder.setDisplayAlignment(action.data);
+          break;
+        case SavedActionType.setColor:
+          builder.setColor(action.data);
+          break;
+        case SavedActionType.setBackgroundColor:
+          builder.setBackgroundColor(action.data);
+          break;
+        case SavedActionType.setPageWidth:
+          builder.setPageWidth(action.data);
+          break;
+        case SavedActionType.setPageHeight:
+          builder.setPageHeight(action.data);
+          break;
+        case SavedActionType.setLeftMargin:
+          builder.setLeftMargin(action.data);
+          break;
+        case SavedActionType.setRightMargin:
+          builder.setRightMargin(action.data);
+          break;
+        case SavedActionType.setTopMargin:
+          builder.setTopMargin(action.data);
+          break;
+        case SavedActionType.setBottomMargin:
+          builder.setBottomMargin(action.data);
+          break;
+        case SavedActionType.setHeaderMargin:
+          builder.setHeaderMargin(action.data);
+          break;
+        case SavedActionType.setFooterMargin:
+          builder.setFooterMargin(action.data);
+          break;
+        case SavedActionType.setLanguage:
+          builder.setLanguage(action.data);
+          break;
+        case SavedActionType.setCountry:
+          builder.setCountry(action.data);
+          break;
+        case SavedActionType.setInputWhitespaceTreatment:
+          builder.setInputWhitespaceTreatment(action.data);
+          break;
+        case SavedActionType.setFillingDirection:
+          builder.setFillingDirection(action.data);
+          break;
+        case SavedActionType.setWritingMode:
+          builder.setWritingMode(action.data);
+          break;
+        case SavedActionType.pageNumber:
+          builder.pageNumber();
+          break;
       }
     }
     this.actions_ = [];
@@ -949,6 +1077,135 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
 
   override endMultiMode(): void {
     this.actions_.push({ type: SavedActionType.endMultiMode });
+  }
+
+  // Inherited characteristics
+  override setFontSize(size: Length): void {
+    this.actions_.push({ type: SavedActionType.setFontSize, data: size });
+  }
+
+  override setFontFamilyName(name: StyleString): void {
+    this.actions_.push({ type: SavedActionType.setFontFamilyName, data: name });
+  }
+
+  override setFontWeight(weight: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setFontWeight, data: weight });
+  }
+
+  override setFontPosture(posture: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setFontPosture, data: posture });
+  }
+
+  override setStartIndent(indent: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setStartIndent, data: indent });
+  }
+
+  override setEndIndent(indent: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setEndIndent, data: indent });
+  }
+
+  override setFirstLineStartIndent(indent: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setFirstLineStartIndent, data: indent });
+  }
+
+  override setLastLineEndIndent(indent: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setLastLineEndIndent, data: indent });
+  }
+
+  override setLineSpacing(spacing: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setLineSpacing, data: spacing });
+  }
+
+  override setFieldWidth(width: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setFieldWidth, data: width });
+  }
+
+  override setPositionPointShift(shift: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setPositionPointShift, data: shift });
+  }
+
+  override setStartMargin(margin: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setStartMargin, data: margin });
+  }
+
+  override setEndMargin(margin: LengthSpec): void {
+    this.actions_.push({ type: SavedActionType.setEndMargin, data: margin });
+  }
+
+  override setLines(lines: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setLines, data: lines });
+  }
+
+  override setQuadding(quadding: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setQuadding, data: quadding });
+  }
+
+  override setDisplayAlignment(alignment: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setDisplayAlignment, data: alignment });
+  }
+
+  override setColor(color: DeviceRGBColor): void {
+    this.actions_.push({ type: SavedActionType.setColor, data: color });
+  }
+
+  override setBackgroundColor(color: DeviceRGBColor): void {
+    this.actions_.push({ type: SavedActionType.setBackgroundColor, data: color });
+  }
+
+  override setPageWidth(width: Length): void {
+    this.actions_.push({ type: SavedActionType.setPageWidth, data: width });
+  }
+
+  override setPageHeight(height: Length): void {
+    this.actions_.push({ type: SavedActionType.setPageHeight, data: height });
+  }
+
+  override setLeftMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setLeftMargin, data: margin });
+  }
+
+  override setRightMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setRightMargin, data: margin });
+  }
+
+  override setTopMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setTopMargin, data: margin });
+  }
+
+  override setBottomMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setBottomMargin, data: margin });
+  }
+
+  override setHeaderMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setHeaderMargin, data: margin });
+  }
+
+  override setFooterMargin(margin: Length): void {
+    this.actions_.push({ type: SavedActionType.setFooterMargin, data: margin });
+  }
+
+  override setLanguage(lang: Letter2): void {
+    this.actions_.push({ type: SavedActionType.setLanguage, data: lang });
+  }
+
+  override setCountry(country: Letter2): void {
+    this.actions_.push({ type: SavedActionType.setCountry, data: country });
+  }
+
+  override setInputWhitespaceTreatment(treatment: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setInputWhitespaceTreatment, data: treatment });
+  }
+
+  override setFillingDirection(direction: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setFillingDirection, data: direction });
+  }
+
+  override setWritingMode(mode: Symbol): void {
+    this.actions_.push({ type: SavedActionType.setWritingMode, data: mode });
+  }
+
+  override pageNumber(): void {
+    this.actions_.push({ type: SavedActionType.pageNumber });
   }
 
   override asSaveFOTBuilder(): SaveFOTBuilder | null {
