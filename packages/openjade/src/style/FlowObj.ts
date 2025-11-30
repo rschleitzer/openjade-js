@@ -55,6 +55,37 @@ function uint32ArrayToString(data: Uint32Array | number[], length: number): stri
   return result;
 }
 
+// Helper to deep copy LengthSpec
+function copyLengthSpec(src: LengthSpec): LengthSpec {
+  return new LengthSpec(src.length, src.displaySizeFactor);
+}
+
+// Helper to deep copy DisplaySpace
+function copyDisplaySpace(src: DisplaySpace): DisplaySpace {
+  const copy = new DisplaySpace();
+  copy.nominal = copyLengthSpec(src.nominal);
+  copy.min = copyLengthSpec(src.min);
+  copy.max = copyLengthSpec(src.max);
+  copy.priority = src.priority;
+  copy.conditional = src.conditional;
+  copy.force = src.force;
+  return copy;
+}
+
+// Helper to deep copy DisplayNIC (base properties)
+function copyDisplayNIC(dest: DisplayNIC, src: DisplayNIC): void {
+  dest.spaceBefore = copyDisplaySpace(src.spaceBefore);
+  dest.spaceAfter = copyDisplaySpace(src.spaceAfter);
+  dest.positionPreference = src.positionPreference;
+  dest.keep = src.keep;
+  dest.breakBefore = src.breakBefore;
+  dest.breakAfter = src.breakAfter;
+  dest.keepWithPrevious = src.keepWithPrevious;
+  dest.keepWithNext = src.keepWithNext;
+  dest.mayViolateKeepBefore = src.mayViolateKeepBefore;
+  dest.mayViolateKeepAfter = src.mayViolateKeepAfter;
+}
+
 // Helper to check if identifier matches a display NIC property
 function isDisplayNIC(ident: Identifier): boolean {
   const keyRef = { value: SyntacticKey.notKey };
@@ -233,7 +264,9 @@ export class DisplayGroupFlowObj extends CompoundFlowObj {
     const copy = new DisplayGroupFlowObj();
     copy.style_ = this.style_;
     copy.content_ = this.content_;
-    Object.assign(copy.nic_, this.nic_);
+    copyDisplayNIC(copy.nic_, this.nic_);
+    copy.nic_.hasCoalesceId = this.nic_.hasCoalesceId;
+    copy.nic_.coalesceId = this.nic_.coalesceId;
     return copy;
   }
 }
@@ -266,7 +299,7 @@ export class ParagraphFlowObj extends CompoundFlowObj {
     const copy = new ParagraphFlowObj();
     copy.style_ = this.style_;
     copy.content_ = this.content_;
-    Object.assign(copy.nic_, this.nic_);
+    copyDisplayNIC(copy.nic_, this.nic_);
     return copy;
   }
 }
