@@ -988,11 +988,21 @@ export class GenericSymbolInheritedC extends SymbolInheritedC {
   }
 
   override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    // Handle boolean false
+    if (obj === interp.makeFalse()) {
+      return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, Symbol.symbolFalse);
+    }
+    // Handle symbol
     const symObj = obj.asSymbol();
     if (symObj) {
-      // Try to convert symbol to FOT symbol using the interpreter
-      const fotSym = (interp as any).convertToFOTSymbol?.(symObj) ?? this.sym_;
-      return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, fotSym);
+      const fotSym = symObj.cValue();
+      if (fotSym !== Symbol.symbolFalse) {
+        return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, fotSym);
+      }
+    }
+    // Handle boolean true
+    if (obj === interp.makeTrue()) {
+      return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, Symbol.symbolTrue);
     }
     this.invalidValue(loc, interp);
     return null;

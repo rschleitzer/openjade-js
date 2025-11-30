@@ -132,6 +132,37 @@ export enum Symbol {
 
 export const nSymbols = Symbol.symbolColumnMajor + 1;
 
+// Symbol names matching the order in Symbol enum (starting at index 2)
+const symbolNameTable: string[] = [
+  'not-applicable', 'ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed',
+  'ultra-light', 'extra-light', 'light', 'semi-light', 'medium',
+  'semi-expanded', 'expanded', 'extra-expanded', 'ultra-expanded',
+  'semi-bold', 'bold', 'extra-bold', 'ultra-bold',
+  'upright', 'oblique', 'back-slanted-oblique', 'italic', 'back-slanted-italic',
+  'start', 'end', 'center', 'justify',
+  'spread-inside', 'spread-outside', 'page-inside', 'page-outside',
+  'wrap', 'asis', 'asis-wrap', 'asis-truncate', 'none',
+  'before', 'through', 'after',
+  'top-to-bottom', 'left-to-right', 'bottom-to-top', 'right-to-left',
+  'inside', 'outside', 'horizontal', 'vertical', 'escapement', 'line-progression',
+  'math', 'ordinary', 'operator', 'binary', 'relation', 'opening', 'closing', 'punctuation', 'inner', 'space',
+  'page', 'page-region', 'column-set', 'column', 'max', 'max-uniform',
+  'miter', 'round', 'bevel', 'butt', 'square',
+  'loose', 'normal', 'kern', 'tight', 'touch',
+  'preserve', 'collapse', 'ignore',
+  'relative', 'display', 'inline', 'border', 'background', 'both',
+  'base', 'font', 'top', 'bottom', 'spread', 'solid', 'outline',
+  'with', 'against', 'force', 'independent', 'pile', 'sup-out', 'sub-out',
+  'lead-edge', 'trail-edge', 'explicit', 'row-major', 'column-major'
+];
+
+export function symbolName(sym: Symbol): string | null {
+  if (sym < 2 || sym >= nSymbols) {
+    return null;
+  }
+  return symbolNameTable[sym - 2];
+}
+
 export type PublicId = string | null;
 export type Letter2 = number;
 export type Length = number;

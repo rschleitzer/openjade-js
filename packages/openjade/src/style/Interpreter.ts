@@ -29,7 +29,8 @@ import {
   FunctionObj,
   Signature,
   LanguageObj,
-  LangObj
+  LangObj,
+  UnresolvedLengthObj
 } from './ELObj';
 import { Identifier, SyntacticKey, InterpreterLike } from './Identifier';
 import {
@@ -46,7 +47,9 @@ import {
   Symbol as FOTSymbol,
   GlyphId,
   LengthSpec as FOTLengthSpec,
-  Address
+  Address,
+  nSymbols,
+  symbolName
 } from './FOTBuilder';
 import { NodePtr, GroveString, AccessResult, ComponentName } from '../grove/Node';
 import { Environment } from './Expression';
@@ -1761,7 +1764,14 @@ export class Interpreter {
   private installCValueSymbols(): void {
     this.cValueSymbols_[0] = this.makeFalse();
     this.cValueSymbols_[1] = this.makeTrue();
-    // TODO: Install other FOTBuilder symbols
+    for (let i = 2; i < nSymbols; i++) {
+      const name = symbolName(i as FOTSymbol);
+      if (name) {
+        const sym = this.makeSymbol(Interpreter.makeStringC(name));
+        sym.setCValue(i as FOTSymbol);
+        this.cValueSymbols_[i] = sym;
+      }
+    }
   }
 
   private installPortNames(): void {
@@ -1856,7 +1866,8 @@ export class Interpreter {
       ['in', 1, 1],
       ['pt', 1, 72],
       ['pica', 1, 6],
-      ['pc', 1, 6]
+      ['pc', 1, 6],
+      ['pi', 1, 6]  // pi = pica
     ];
 
     const nUnits = this.dsssl2() ? units.length : units.length - 1;
@@ -2778,32 +2789,16 @@ export class Interpreter {
     if (i < str.length) {
       const unitResult = this.scanUnitStr(str, i);
       if (!unitResult) return null;
-      // Resolve the quantity using the unit
       const unit = unitResult.unit;
       const unitExp = unitResult.exp;
-      // Use unit to resolve the quantity to a LengthObj or QuantityObj
-      // The 'exp' is the decimal exponent of the value (e.g., 0 for 12, -1 for 1.2)
-      // The 'unitExp' is the power of the unit (e.g., 1 for pt, 2 for pt^2)
+      // Port from upstream Interpreter.cxx: for unit^1, create UnresolvedLengthObj
+      // to be resolved later when the value is actually needed
       if (unitExp === 1) {
-        // Simple case: unit^1
-        const resolved = unit.resolveQuantity(true, this, n, exp);
-        if (resolved) {
-          return resolved;
-        }
+        return new UnresolvedLengthObj(n, exp, unit);
       } else {
-        // Handle unit with exponent (e.g., pt^2 for area)
-        // Convert to double and call resolveQuantityDouble
-        let x = n;
-        let e = exp;
-        while (e > 0) { x *= 10.0; e--; }
-        while (e < 0) { x /= 10.0; e++; }
-        const resolved = unit.resolveQuantityDouble(true, this, x, unitExp);
-        if (resolved) {
-          return resolved;
-        }
+        // For non-unit^1 exponents (e.g., pt^2), fall back to float
+        return this.convertNumberFloatStr(str);
       }
-      // Fall back to float if resolution fails
-      return this.convertNumberFloatStr(str);
     }
 
     if (hadDecimalPoint) {
