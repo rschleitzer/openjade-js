@@ -472,10 +472,12 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
       this.os().write('&gt;');
     } else if (c === 0x22) { // "
       this.os().write('&quot;');
-    } else if (c < 0x20 || c === 0x7F) {
-      this.os().write('&#' + c + ';');
-    } else {
+    } else if (c < 0x80) {
+      // ASCII characters (except already handled special chars)
       this.os().put(c);
+    } else {
+      // Non-ASCII characters: output as numeric character reference
+      this.os().write('&#' + c + ';');
     }
   }
 
