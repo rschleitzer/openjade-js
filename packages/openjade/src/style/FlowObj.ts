@@ -1331,8 +1331,22 @@ export class SimplePageSequenceFlowObj extends CompoundFlowObj {
     const fotb = context.fotBuilder();
     const hfFotb: (FOTBuilder | null)[] = new Array(HF.nHF).fill(null);
     fotb.startSimplePageSequence(hfFotb);
-    // TODO: Implement full header/footer processing with page types
-    // For now, just end header/footer and process main content
+    // Process header/footer for each page type
+    const nPageTypes = 1 << SimplePageSequenceFlowObj.nPageTypeBits;
+    for (let i = 0; i < nPageTypes; i++) {
+      context.setPageType(i);
+      for (let j = 0; j < SimplePageSequenceFlowObj.nParts; j++) {
+        const sosofo = this.hf_[j];
+        if (sosofo) {
+          const port = hfFotb[i | (j << SimplePageSequenceFlowObj.nPageTypeBits)];
+          if (port) {
+            context.pushPrincipalPort(port);
+            sosofo.process(context);
+            context.popPrincipalPort();
+          }
+        }
+      }
+    }
     fotb.endSimplePageSequenceHeaderFooter();
     super.processInner(context);
     fotb.endSimplePageSequence();

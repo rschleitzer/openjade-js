@@ -975,13 +975,15 @@ export class SerialFOTBuilder extends FOTBuilder {
   }
 
   override endSimplePageSequenceHeaderFooter(): void {
-    // Collect all header/footer SaveFOTBuilders
+    // Collect all header/footer SaveFOTBuilders in reverse order of push
+    // (pop removes from end, so first pop gets the last pushed)
+    // This matches upstream's IList::get which removes from head
+    // where items were inserted at head in reverse index order
     const hf: SaveFOTBuilder[] = [];
     for (let k = 0; k < HF.nHF; k++) {
       hf.push(this.save_.pop()!);
     }
-    // Reverse to get correct order
-    hf.reverse();
+    // NO reverse - the pop order already matches headerFooter indices
 
     // Output all header/footer parts (in same order as upstream for compatibility)
     for (let i = 0; i < (1 << 2); i++) {

@@ -24,6 +24,10 @@ export interface ProcessContext {
   vm(): VM;
   startFlowObj(): void;
   endFlowObj(): void;
+  // Port management
+  pushPrincipalPort(port: FOTBuilder): void;
+  popPrincipalPort(): void;
+  setPageType(n: number): void;
   // Table support
   startTable(): void;
   endTable(): void;
