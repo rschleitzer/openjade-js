@@ -26,6 +26,7 @@ export interface OutputCharStream {
   write(s: string): void;
   put(c: number): void;
   flush(): void;
+  close?(): void;
 }
 
 // Simple string-based output stream
@@ -79,11 +80,7 @@ export class FileOutputStream implements OutputCharStream {
 
   flush(): void {
     if (this.fs_ && this.buffer_.length > 0) {
-      let content = this.buffer_.join('');
-      // Following upstream RecordOutputCharStream::outputBuf:
-      // Translate RE (\r) to platform newline (\n on Unix)
-      // and ignore RS (\n) - but since we're on Unix, just convert CR to LF
-      content = content.replace(/\r/g, '\n');
+      const content = this.buffer_.join('');
       this.fs_.writeFileSync(this.filename_, content, 'utf8');
       this.buffer_ = [];
     }
@@ -91,6 +88,53 @@ export class FileOutputStream implements OutputCharStream {
 
   close(): void {
     this.flush();
+  }
+}
+
+// Record output stream wrapper - handles RS/RE translation like upstream RecordOutputCharStream
+// Converts CR (RE = 0x0D) to LF (platform newline), strips LF (RS = 0x0A).
+// This handles: CRLF pairs → LF, lone CR → LF, lone LF → stripped
+export class RecordOutputStream implements OutputCharStream {
+  private os_: OutputCharStream;
+
+  constructor(os: OutputCharStream) {
+    this.os_ = os;
+  }
+
+  write(s: string): void {
+    // Convert CR to LF, strip original LF (following upstream RecordOutputCharStream::outputBuf)
+    let result = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 0x0D) {
+        // CR (RE) → convert to LF
+        result += '\n';
+      } else if (c === 0x0A) {
+        // LF (RS) → ignore/strip
+      } else {
+        result += s[i];
+      }
+    }
+    this.os_.write(result);
+  }
+
+  put(c: number): void {
+    if (c === 0x0D) {
+      // CR (RE) → convert to LF
+      this.os_.put(0x0A);
+    } else if (c === 0x0A) {
+      // LF (RS) → ignore/strip
+    } else {
+      this.os_.put(c);
+    }
+  }
+
+  flush(): void {
+    this.os_.flush();
+  }
+
+  close(): void {
+    this.os_.close?.();
   }
 }
 
@@ -105,7 +149,7 @@ enum ReState {
 interface OpenFile {
   systemId: string;
   saveOs: OutputCharStream;
-  os: FileOutputStream | null;
+  os: OutputCharStream | null;
 }
 
 // Helper function to output numeric character reference
@@ -417,7 +461,8 @@ export class TransformFOTBuilder extends FOTBuilder {
     };
 
     if (sysIdStr.length > 0) {
-      openFile.os = new FileOutputStream(sysIdStr);
+      // Wrap FileOutputStream with RecordOutputStream for RS/RE handling
+      openFile.os = new RecordOutputStream(new FileOutputStream(sysIdStr));
       this.os_ = openFile.os;
     }
 

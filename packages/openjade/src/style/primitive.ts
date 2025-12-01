@@ -3412,8 +3412,9 @@ function nodeData(nd: NodePtr, mapper: SdataMapper, chunk: boolean, chars: Char[
     const data = str.data();
     if (data) {
       const len = chunk ? str.size() : 1;
+      const offset = str.offset();
       for (let i = 0; i < len; i++) {
-        chars.push(data[i]);
+        chars.push(data[offset + i]);
       }
     }
     return;
@@ -3425,8 +3426,9 @@ function nodeData(nd: NodePtr, mapper: SdataMapper, chunk: boolean, chars: Char[
     const str = tokensResult.str;
     const data = str.data();
     if (data) {
+      const offset = str.offset();
       for (let i = 0; i < str.size(); i++) {
-        chars.push(data[i]);
+        chars.push(data[offset + i]);
       }
     }
     return;
@@ -3447,8 +3449,9 @@ function nodeData(nd: NodePtr, mapper: SdataMapper, chunk: boolean, chars: Char[
     const str = tokenResult.str;
     const data = str.data();
     if (data) {
+      const offset = str.offset();
       for (let i = 0; i < str.size(); i++) {
-        chars.push(data[i]);
+        chars.push(data[offset + i]);
       }
     }
   }

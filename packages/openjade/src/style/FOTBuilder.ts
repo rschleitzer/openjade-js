@@ -756,6 +756,8 @@ enum SavedActionType {
   endDisplayGroup,
   startScroll,
   endScroll,
+  startNode,
+  endNode,
   startLink,
   endLink,
   startMarginalia,
@@ -838,6 +840,12 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
           break;
         case SavedActionType.endScroll:
           builder.endScroll();
+          break;
+        case SavedActionType.startNode:
+          builder.startNode(action.data.node, action.data.mode);
+          break;
+        case SavedActionType.endNode:
+          builder.endNode();
           break;
         case SavedActionType.startLink:
           builder.startLink(action.data);
@@ -1053,6 +1061,14 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
 
   override endScroll(): void {
     this.actions_.push({ type: SavedActionType.endScroll });
+  }
+
+  override startNode(node: NodePtr, mode: StringC): void {
+    this.actions_.push({ type: SavedActionType.startNode, data: { node, mode } });
+  }
+
+  override endNode(): void {
+    this.actions_.push({ type: SavedActionType.endNode });
   }
 
   override startLink(addr: Address): void {

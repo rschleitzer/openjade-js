@@ -2,7 +2,7 @@
 // See the file copying.txt for copying permission.
 
 import { Char, StringC } from '@openjade-js/opensp';
-import { NodePtr, GroveString, AccessResult, ComponentName } from '../grove/Node';
+import { NodePtr, GroveString, AccessResult } from '../grove/Node';
 import {
   SerialFOTBuilder,
   FOTBuilder,
@@ -235,12 +235,11 @@ function formatColor(color: DeviceRGBColor): string {
 }
 
 // Check if a node is an element
+// Following upstream: use getGi() to determine if node is an element
 function nodeIsElement(node: NodePtr | null): boolean {
   if (!node || !node.node()) return false;
-  // Check node class
-  const classResult = node.node()!.getClassName();
-  if (classResult.result !== AccessResult.accessOK) return false;
-  return classResult.name === ComponentName.Id.idElement;
+  const giResult = node.node()!.getGi();
+  return giResult.result === AccessResult.accessOK;
 }
 
 // SgmlFOTBuilder - outputs flow object tree as SGML per fot.dtd
@@ -678,6 +677,7 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
   }
 
   override startLineField(_nic: InlineNIC): void {
+    this.flushPendingElements();
     this.startSimpleFlowObj('line-field');
   }
 
@@ -1262,7 +1262,7 @@ export class SgmlFOTBuilder extends SerialFOTBuilder {
     }
     // Check if node is already pending
     for (let i = 0; i < this.pendingElements_.length; i++) {
-      if (this.pendingElements_[i] === node) {
+      if (this.pendingElements_[i].sameNode(node)) {
         return;
       }
     }
