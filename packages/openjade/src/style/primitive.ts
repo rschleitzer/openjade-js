@@ -4871,14 +4871,10 @@ export class ElementNumberPrimitiveObj extends PrimitiveObjBase {
       return false;
     };
 
-    // Start counting from root's first child (document element)
+    // Start counting from document element
     const docElemPtr = new NodePtr();
-    if (rootPtr.node()!.firstChild(docElemPtr) === AccessResult.accessOK) {
-      do {
-        if (countElements(docElemPtr)) {
-          break;
-        }
-      } while (docElemPtr.assignNextChunkSibling() === AccessResult.accessOK);
+    if (rootPtr.node()!.getDocumentElement(docElemPtr) === AccessResult.accessOK) {
+      countElements(docElemPtr);
     }
 
     return interp.makeInteger(count);
