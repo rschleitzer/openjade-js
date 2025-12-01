@@ -2324,18 +2324,16 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
   }
 
   override endLeader(): void {
-    this.leaderDepth_--;
-    if (this.leaderDepth_ === 0) {
-      this.currentOs_ = this.preLeaderOs_;
+    if (--this.leaderDepth_ === 0) {
       if (this.leaderSaveOutputFormat_) {
         this.outputFormat_ = this.leaderSaveOutputFormat_;
         this.leaderSaveOutputFormat_ = null;
       }
-      this.inlinePrepare();
-      this.syncCharFormat();
-      // Output leader dots
-      this.os('{\\field{\\*\\fldinst {}}}{\\fldrslt {...}}}');
+      this.currentOs_ = this.preLeaderOs_;
+      // MS Word doesn't mind if tabs aren't set at the beginning of the paragraph.
+      this.os(`\\tqr\\tldot\\tx${this.displaySize_ - this.paraFormat_.rightIndent}\\tab `);
     }
+    this.end();
   }
 
   // ============================================================================
