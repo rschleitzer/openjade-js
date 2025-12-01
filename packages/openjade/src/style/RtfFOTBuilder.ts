@@ -1227,9 +1227,10 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
           c === 0x5f) {  // _
         this.os(String.fromCharCode(c));
       } else {
-        // Encode non-alphanumeric as _XX
+        // Encode non-alphanumeric as _N_ (decimal)
         this.os('_');
-        this.os(c.toString(16).padStart(2, '0'));
+        this.os(c.toString());
+        this.os('_');
       }
     }
   }
