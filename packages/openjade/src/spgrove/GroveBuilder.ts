@@ -292,6 +292,17 @@ class DataChunk extends LocChunk {
     return this.data_;
   }
 
+  // Extend the chunk by appending more data
+  extendData(additionalData: Uint32Array, additionalLen: number): void {
+    const newData = new Uint32Array(this.size + additionalLen);
+    newData.set(this.data_);
+    for (let i = 0; i < additionalLen; i++) {
+      newData[this.size + i] = additionalData[i];
+    }
+    this.data_ = newData;
+    this.size += additionalLen;
+  }
+
   override setNodePtrFirst(ptr: NodePtr, node: BaseNode): AccessResult {
     ptr.assign(new DataNode(node.grove(), this, 0));
     return AccessResult.accessOK;
@@ -1369,21 +1380,35 @@ class DataNode extends ChunkNode {
   static add(grove: GroveImpl, event: DataEvent): void {
     const dataLen = event.dataLength();
     if (dataLen > 0) {
-      const origin = event.location().origin();
-      if (origin && origin.pointer()) {
-        grove.setLocOrigin(origin.pointer()!);
+      const pendingChunk = grove.pendingData();
+      const locOrigin = event.location().origin();
+      const locOriginPtr = locOrigin ? locOrigin.pointer() : null;
+
+      // Check if we can extend the pending chunk (following upstream logic)
+      // Conditions: have pending data, same location origin, contiguous index
+      if (pendingChunk &&
+          locOriginPtr === grove.currentLocOrigin() &&
+          event.location().index() === pendingChunk.locIndex + pendingChunk.size) {
+        // Extend the existing pending chunk
+        const eventData = event.data();
+        pendingChunk.extendData(eventData, dataLen);
+      } else {
+        // Create new chunk
+        if (locOriginPtr) {
+          grove.setLocOrigin(locOriginPtr);
+        }
+        const chunk = grove.allocChunk(DataChunk);
+        chunk.size = dataLen;
+        chunk.locIndex = event.location().index();
+        // Copy data
+        const eventData = event.data();
+        const data = new Uint32Array(dataLen);
+        for (let i = 0; i < dataLen; i++) {
+          data[i] = eventData[i];
+        }
+        chunk.setData(data);
+        grove.appendDataSibling(chunk);
       }
-      const chunk = grove.allocChunk(DataChunk);
-      chunk.size = dataLen;
-      chunk.locIndex = event.location().index();
-      // Copy data
-      const eventData = event.data();
-      const data = new Uint32Array(dataLen);
-      for (let i = 0; i < dataLen; i++) {
-        data[i] = eventData[i];
-      }
-      chunk.setData(data);
-      grove.appendDataSibling(chunk);
     }
   }
 }
