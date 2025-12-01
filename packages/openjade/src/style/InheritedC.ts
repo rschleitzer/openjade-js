@@ -5,7 +5,7 @@ import { Location, StringC, Char } from '@openjade-js/opensp';
 import { ELObj, IntegerObj, StringObj, LengthObj, LengthSpecObj, SymbolObj, LengthSpec, ColorObj } from './ELObj';
 import { VM } from './Insn';
 import { InheritedC, VarStyleObj } from './Style';
-import { FOTBuilder, Symbol, Length, LengthSpec as FOTLengthSpec, OptLengthSpec as FOTOptLengthSpec, DeviceRGBColor } from './FOTBuilder';
+import { FOTBuilder, Symbol, Length, LengthSpec as FOTLengthSpec, OptLengthSpec as FOTOptLengthSpec, DeviceRGBColor, Letter2 } from './FOTBuilder';
 import { Identifier, SyntacticKey } from './Identifier';
 import type { Interpreter } from './Interpreter';
 
@@ -1005,6 +1005,101 @@ export class GenericSymbolInheritedC extends SymbolInheritedC {
       return new GenericSymbolInheritedC(this.identifier(), this.index(), this.setter_, Symbol.symbolTrue);
     }
     this.invalidValue(loc, interp);
+    return null;
+  }
+}
+
+// Letter2 inherited characteristic (2-letter language/country code)
+export class Letter2InheritedC extends InheritedC {
+  protected code_: Letter2;
+
+  constructor(ident: Identifier | null, index: number, code: Letter2 = 0) {
+    super(ident, index);
+    this.code_ = code;
+  }
+
+  value(vm: VM, _style: VarStyleObj | null, _dependencies: number[]): ELObj | null {
+    if (this.code_) {
+      // Convert Letter2 back to 2-character string
+      const char1 = String.fromCharCode((this.code_ >> 8) & 0xff);
+      const char2 = String.fromCharCode(this.code_ & 0xff);
+      return vm.interp.makeString(char1 + char2);
+    }
+    return vm.interp.makeFalse();
+  }
+
+  set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    _fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    value.obj = null;
+  }
+
+  make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const code = this.convertLetter2(obj, loc, interp);
+    if (code !== null) {
+      return new Letter2InheritedC(this.identifier(), this.index(), code);
+    }
+    return null;
+  }
+
+  // Convert ELObj to Letter2 code
+  protected convertLetter2(obj: ELObj, loc: Location, interp: Interpreter): Letter2 | null {
+    const strObj = obj.convertToString();
+    if (strObj) {
+      const data = strObj.stringData();
+      if (data.length === 2 &&
+          data.data[0] >= 0x41 && data.data[0] <= 0x5A &&  // A-Z
+          data.data[1] >= 0x41 && data.data[1] <= 0x5A) {  // A-Z
+        return (data.data[0] << 8) | data.data[1];
+      }
+      if (data.length === 0) {
+        return 0;
+      }
+    }
+    if (obj === interp.makeFalse()) {
+      return 0;
+    }
+    this.invalidValue(loc, interp);
+    return null;
+  }
+
+  protected invalidValue(loc: Location, interp: Interpreter): void {
+    interp.setNextLocation(loc);
+    interp.message('invalidCharacteristicValue', this.identifier()?.name());
+  }
+}
+
+// Generic Letter2 inherited characteristic - uses setter callback
+export type Letter2Setter = (fotb: FOTBuilder, value: Letter2) => void;
+
+export class GenericLetter2InheritedC extends Letter2InheritedC {
+  private setter_: Letter2Setter;
+
+  constructor(ident: Identifier | null, index: number, setter: Letter2Setter, defaultValue: Letter2 = 0) {
+    super(ident, index, defaultValue);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.code_);
+    value.obj = null;
+  }
+
+  override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const code = this.convertLetter2(obj, loc, interp);
+    if (code !== null) {
+      return new GenericLetter2InheritedC(this.identifier(), this.index(), this.setter_, code);
+    }
     return null;
   }
 }

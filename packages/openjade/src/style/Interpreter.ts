@@ -63,7 +63,7 @@ import {
   ColorC, BackgroundColorC, LinesC, WritingModeC,
   createInheritedC, IgnoredInheritedC,
   GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC,
-  GenericOptLengthSpecInheritedC
+  GenericOptLengthSpecInheritedC, GenericLetter2InheritedC
 } from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
 import {
@@ -2308,11 +2308,14 @@ export class Interpreter {
     this.installInheritedC('box-type', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setBoxType(v), FOTSymbol.symbolBorder));
     this.installInheritedC('cell-row-alignment', new GenericSymbolInheritedC(null, this.nInheritedC_++, (f, v) => f.setCellRowAlignment(v), FOTSymbol.symbolStart));
 
+    // Letter2 characteristics (2-letter language/country codes)
+    this.installInheritedC('language', new GenericLetter2InheritedC(null, this.nInheritedC_++, (f, v) => f.setLanguage(v)));
+    this.installInheritedC('country', new GenericLetter2InheritedC(null, this.nInheritedC_++, (f, v) => f.setCountry(v)));
+
     // Additional commonly used characteristics that aren't directly supported - use IgnoredInheritedC
     const ignoredChars = [
       'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
       'heading-level', 'keep?', 'break-before?', 'break-after?',
-      'language', 'country',
       'cell-after-row-border', 'cell-after-column-border'
     ];
     for (const name of ignoredChars) {
