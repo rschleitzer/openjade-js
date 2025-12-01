@@ -1640,6 +1640,10 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
 
   override setMinLeading(spec: OptLengthSpec): void {
     this.specFormat_.lineSpacingAtLeast = spec.hasLength;
+    // Also update all stack entries to preserve inherited value when popping
+    for (const f of this.specFormatStack_) {
+      f.lineSpacingAtLeast = spec.hasLength;
+    }
   }
 
   override setQuadding(quadding: Symbol): void {

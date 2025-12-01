@@ -153,7 +153,8 @@ class JadeApp extends DssslApp {
       }
 
       case OutputType.rtfType: {
-        // RTF output
+        // RTF output - upstream uses twips (1/20 point = 1/1440 inch)
+        this.unitsPerInch_ = 20 * 72;  // 1440 twips per inch
         const rtfOutputStream = new FileOutputStream(this.outputFilename_);
         const rtfBuilder = makeRtfFOTBuilder(
           (s: string) => rtfOutputStream.write(s),
