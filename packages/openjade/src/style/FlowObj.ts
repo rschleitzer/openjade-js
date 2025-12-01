@@ -1134,12 +1134,48 @@ export class TableRowFlowObj extends CompoundFlowObj {
 export class TableCellFlowObj extends CompoundFlowObj {
   private nic_: TableCellNIC;
   private hasColumnNumber_: boolean = false;
+  private nStylesPushed_: number = 0;
 
   constructor(missing: boolean = false) {
     super();
     this.nic_ = new TableCellNIC();
     if (missing) {
       this.nic_.missing = true;
+    }
+  }
+
+  override pushStyle(context: ProcessContext, level: { value: number }): void {
+    // Start a table row if not already in one
+    if (!context.inTableRow()) {
+      context.startTableRow(null);
+    }
+    // Get column number
+    const columnNumber = this.hasColumnNumber_ ? this.nic_.columnIndex : context.currentTableColumn();
+    // Push column style if available
+    const columnStyle = context.tableColumnStyle(columnNumber, this.nic_.nColumnsSpanned);
+    if (columnStyle) {
+      context.currentStyleStack().push(columnStyle, context.vm(), context.fotBuilder());
+      context.fotBuilder().startSequence();
+      this.nStylesPushed_++;
+    }
+    // Push row style if available
+    const rowStyle = context.tableRowStyle();
+    if (rowStyle) {
+      context.currentStyleStack().push(rowStyle, context.vm(), context.fotBuilder());
+      context.fotBuilder().startSequence();
+      this.nStylesPushed_++;
+    }
+    // Call parent pushStyle
+    super.pushStyle(context, level);
+  }
+
+  override popStyle(context: ProcessContext, level: number): void {
+    // Call parent popStyle first
+    super.popStyle(context, level);
+    // Pop the styles we pushed
+    for (let i = 0; i < this.nStylesPushed_; i++) {
+      context.fotBuilder().endSequence();
+      context.currentStyleStack().pop();
     }
   }
 

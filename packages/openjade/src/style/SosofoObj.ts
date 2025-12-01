@@ -37,6 +37,8 @@ export interface ProcessContext {
   addTableColumn(colIndex: number, span: number, style: StyleObj | null): void;
   currentTableColumn(): number;
   noteTableCell(colIndex: number, colSpan: number, rowSpan: number): void;
+  tableColumnStyle(columnIndex: number, span: number): StyleObj | null;
+  tableRowStyle(): StyleObj | null;
   startTableRow(style: StyleObj | null): void;
   inTableRow(): boolean;
   endTableRow(): void;
