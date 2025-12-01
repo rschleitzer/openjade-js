@@ -1208,7 +1208,39 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
   }
 
   private flushPendingElements(): void {
-    // Bookmark handling would go here
+    for (const node of this.pendingElements_) {
+      const idResult = node.node()?.getId();
+      if (idResult && idResult.result === AccessResult.accessOK && idResult.str.size() > 0) {
+        const g = node.node()?.groveIndex() ?? 0;
+        const chars: number[] = [];
+        for (let i = 0; i < idResult.str.size(); i++) {
+          chars.push(idResult.str.get(i));
+        }
+        this.os('{\\*\\bkmkstart ');
+        this.outputBookmarkNameFromId(g, chars, chars.length);
+        this.os('}');
+        this.os('{\\*\\bkmkend ');
+        this.outputBookmarkNameFromId(g, chars, chars.length);
+        this.os('}');
+      } else {
+        const elemResult = node.node()?.elementIndex();
+        if (elemResult && elemResult.result === AccessResult.accessOK) {
+          // For element index-based bookmarks, output insertion character followed by bookmark data
+          // Upstream uses INSERTION_CHAR which is typically a special marker
+          // For now, just output the bookmark directly
+          const g = node.node()?.groveIndex() ?? 0;
+          this.os('{\\*\\bkmkstart ');
+          this.outputBookmarkNameFromIndex(g, elemResult.index);
+          this.os('}');
+          this.os('{\\*\\bkmkend ');
+          this.outputBookmarkNameFromIndex(g, elemResult.index);
+          this.os('}');
+        }
+      }
+    }
+    this.nPendingElementsNonEmpty_ = 0;
+    this.pendingElements_.length = 0;
+    this.pendingElementLevels_.length = 0;
   }
 
   // Output bookmark name from ID string
@@ -2305,9 +2337,21 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
 
   override startNode(node: NodePtr, mode: StringC): void {
     this.nodeLevel_++;
+    // Only add to pending elements if no mode specified
+    if (mode.size() === 0) {
+      this.pendingElements_.push(node);
+      this.pendingElementLevels_.push(this.nodeLevel_);
+    }
   }
 
   override endNode(): void {
+    // Remove pending element if there were no flow objects associated with the node
+    if (this.pendingElements_.length > 0 &&
+        this.pendingElementLevels_[this.pendingElementLevels_.length - 1] === this.nodeLevel_ &&
+        this.nPendingElementsNonEmpty_ < this.pendingElements_.length) {
+      this.pendingElementLevels_.pop();
+      this.pendingElements_.pop();
+    }
     this.nodeLevel_--;
   }
 
