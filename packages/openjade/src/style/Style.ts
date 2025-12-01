@@ -446,7 +446,9 @@ export class StyleStack {
     }
 
     // Create VM for value computation - following upstream pattern
-    const vm = { interp, styleStack: this, specLevel: this.level_ } as any;
+    const vm = new VM(interp);
+    vm.styleStack = this;
+    vm.specLevel = this.level_;
     return spec.value(vm, style, dependencies);
   }
 
@@ -497,7 +499,9 @@ export class StyleStack {
     }
 
     // Create VM for value computation - following upstream pattern
-    const vm = { interp, styleStack: this, specLevel: newSpecLevel } as any;
+    const vm = new VM(interp);
+    vm.styleStack = this;
+    vm.specLevel = newSpecLevel;
     return spec.value(vm, style, dependencies);
   }
 
@@ -557,18 +561,23 @@ export class StyleStack {
   }
 
   pushEnd(vm: VM, fotb: FOTBuilder): void {
-    // Compute values for all pushed specs
+    // Following upstream StyleStack::pushEnd in Style.cxx
     if (!this.popList_) {
       return;
     }
+    vm.styleStack = this;
     for (const index of this.popList_.list) {
       const info = this.inheritedCInfo_[index];
-      if (info && !info.cachedValue) {
-        const value = { obj: null as ELObj | null };
+      if (info) {
+        // Set specLevel for inherited characteristic lookup
+        vm.specLevel = info.specLevel;
+        // Always call set() - it handles caching internally
+        const value = { obj: info.cachedValue };
         info.spec.set(vm, info.style, fotb, value, info.dependencies);
         info.cachedValue = value.obj;
       }
     }
+    vm.styleStack = null;
   }
 
   pop(): void {
