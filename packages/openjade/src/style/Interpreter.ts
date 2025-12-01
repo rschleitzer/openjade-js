@@ -53,7 +53,7 @@ import {
 } from './FOTBuilder';
 import { NodePtr, GroveString, AccessResult, ComponentName } from '../grove/Node';
 import { Environment } from './Expression';
-import { Pattern, MatchContext, Element } from './Pattern';
+import { Pattern, MatchContext, Element, AttributeQualifier, AttributeHasValueQualifier } from './Pattern';
 import { StyleObj, VarStyleObj, StyleSpec, InheritedC, VarInheritedC } from './Style';
 import { FlowObj, SosofoObj, AppendSosofoObj, EmptySosofoObj } from './SosofoObj';
 import {
@@ -3143,16 +3143,181 @@ export class Interpreter {
   // Pattern conversion
   // Converts a DSSSL pattern expression (e.g., element name symbol) to a Pattern object
   convertToPattern(obj: ELObj, loc: Location, pattern: { value: Pattern }): boolean {
+    const elements: Element[] = [];
+    if (!this.convertToPatternInner(obj, loc, elements)) {
+      return false;
+    }
+    // Empty pattern is invalid - need at least one element
+    if (elements.length === 0) {
+      return false;
+    }
+    pattern.value = new Pattern(elements);
+    return true;
+  }
+
+  // Inner pattern conversion - handles both simple and complex patterns
+  private convertToPatternInner(obj: ELObj, loc: Location, elements: Element[]): boolean {
     // Simple case: symbol representing element name (e.g., "p" in "(element p ...)")
     if (obj instanceof SymbolObj) {
       const nameObj = obj.name();
       const gi = stringToStringC(nameObj.toStyleString());
-      const elem = new Element(gi);
-      pattern.value = new Pattern([elem]);
+      elements.push(new Element(gi));
       return true;
     }
-    // TODO: Handle more complex patterns (lists, qualifiers, etc.)
-    return false;
+
+    // String representing element name
+    const str = obj.convertToString();
+    if (str) {
+      const strData = str.stringData();
+      if (strData.length === 0) {
+        this.setNextLocation(loc);
+        this.message('patternEmptyGi');
+        return false;
+      }
+      const gi = new StringOf<Char>(Array.from(strData.data.slice(0, strData.length)), strData.length);
+      elements.push(new Element(gi));
+      return true;
+    }
+
+    // #t means match any element (empty GI)
+    if (obj === this.makeTrue()) {
+      elements.push(new Element(new StringOf<Char>(null, 0)));
+      return true;
+    }
+
+    // List pattern: (parent child) or (grandparent parent child)
+    // In DSSSL, elements are listed outer-to-inner (parent first, child last)
+    // Pattern expects inner-to-outer, so we insert at HEAD (unshift) to reverse order
+    let curElement: Element | null = null;
+    while (!obj.isNil()) {
+      const pair = obj.asPair();
+      if (!pair) {
+        this.setNextLocation(loc);
+        this.message('patternNotList');
+        return false;
+      }
+      const head = pair.car();
+      obj = pair.cdr();
+
+      // #t means match any element
+      if (head === this.makeTrue()) {
+        curElement = new Element(new StringOf<Char>(null, 0));
+        elements.unshift(curElement);  // Insert at head to get child-first order
+        continue;
+      }
+
+      // Symbol or string for element name
+      if (head instanceof SymbolObj) {
+        const nameObj = head.name();
+        const gi = stringToStringC(nameObj.toStyleString());
+        curElement = new Element(gi);
+        elements.unshift(curElement);  // Insert at head to get child-first order
+        continue;
+      }
+
+      const headStr = head.convertToString();
+      if (headStr) {
+        const strData = headStr.stringData();
+        if (strData.length === 0) {
+          this.setNextLocation(loc);
+          this.message('patternEmptyGi');
+          return false;
+        }
+        const gi = new StringOf<Char>(Array.from(strData.data.slice(0, strData.length)), strData.length);
+        curElement = new Element(gi);
+        elements.unshift(curElement);  // Insert at head to get child-first order
+        continue;
+      }
+
+      // Empty list as attribute list - skip
+      if (head.isNil()) {
+        continue;
+      }
+
+      // Attribute qualifier list - applies to most recent element
+      if (head.asPair()) {
+        if (!curElement) {
+          this.setNextLocation(loc);
+          this.message('patternBadGi', head);
+          return false;
+        }
+        if (!this.patternAddAttributeQualifiers(head, loc, curElement)) {
+          return false;
+        }
+        continue;
+      }
+
+      // Other qualifiers not yet implemented
+      this.setNextLocation(loc);
+      this.message('patternBadMember', head);
+      return false;
+    }
+
+    return true;
+  }
+
+  // Add attribute qualifiers to a pattern element
+  private patternAddAttributeQualifiers(obj: ELObj, loc: Location, elem: Element): boolean {
+    while (!obj.isNil()) {
+      const pair = obj.asPair();
+      if (!pair) {
+        this.setNextLocation(loc);
+        this.message('patternBadAttributeQualifier');
+        return false;
+      }
+      const attrSpec = pair.car();
+      obj = pair.cdr();
+
+      // Attribute spec should be a list (name value) or just (name)
+      const attrPair = attrSpec.asPair();
+      if (!attrPair) {
+        this.setNextLocation(loc);
+        this.message('patternBadAttributeQualifier');
+        return false;
+      }
+
+      const attrName = attrPair.car();
+      const attrRest = attrPair.cdr();
+
+      // Get attribute name
+      let nameStr: StringC;
+      if (attrName instanceof SymbolObj) {
+        nameStr = stringToStringC(attrName.name().toStyleString());
+      } else {
+        const nameStrObj = attrName.convertToString();
+        if (!nameStrObj) {
+          this.setNextLocation(loc);
+          this.message('patternBadAttributeQualifier');
+          return false;
+        }
+        const strData = nameStrObj.stringData();
+        nameStr = new StringOf<Char>(Array.from(strData.data.slice(0, strData.length)), strData.length);
+      }
+
+      // Check if there's a value
+      if (attrRest.isNil()) {
+        // Just attribute name - means attribute must be present
+        elem.addQualifier(new AttributeHasValueQualifier(nameStr));
+      } else {
+        const valuePair = attrRest.asPair();
+        if (!valuePair) {
+          this.setNextLocation(loc);
+          this.message('patternBadAttributeQualifier');
+          return false;
+        }
+        const attrValue = valuePair.car();
+        const valueStrObj = attrValue.convertToString();
+        if (!valueStrObj) {
+          this.setNextLocation(loc);
+          this.message('patternBadAttributeQualifier');
+          return false;
+        }
+        const strData = valueStrObj.stringData();
+        const valueStr = new StringOf<Char>(Array.from(strData.data.slice(0, strData.length)), strData.length);
+        elem.addQualifier(new AttributeQualifier(nameStr, valueStr));
+      }
+    }
+    return true;
   }
 
   // Extension installation
