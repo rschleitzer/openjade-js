@@ -5,7 +5,7 @@
 // Faithful port from upstream openjade/jade/RtfFOTBuilder.cxx
 
 import { Char, StringC } from '@openjade-js/opensp';
-import { NodePtr } from '../grove/Node';
+import { NodePtr, AccessResult } from '../grove/Node';
 import {
   SerialFOTBuilder,
   FOTBuilder,
@@ -1211,8 +1211,107 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
     // Bookmark handling would go here
   }
 
+  // Output bookmark name from ID string
+  private outputBookmarkNameFromId(groveIndex: number, chars: number[], size: number): void {
+    this.os('ID');
+    if (groveIndex) {
+      this.os(groveIndex.toString());
+    }
+    this.os('_');
+    for (let i = 0; i < size; i++) {
+      const c = chars[i];
+      // Only output alphanumeric and underscore characters
+      if ((c >= 0x30 && c <= 0x39) ||  // 0-9
+          (c >= 0x41 && c <= 0x5a) ||  // A-Z
+          (c >= 0x61 && c <= 0x7a) ||  // a-z
+          c === 0x5f) {  // _
+        this.os(String.fromCharCode(c));
+      } else {
+        // Encode non-alphanumeric as _XX
+        this.os('_');
+        this.os(c.toString(16).padStart(2, '0'));
+      }
+    }
+  }
+
+  // Output bookmark name from element index
+  private outputBookmarkNameFromIndex(groveIndex: number, elementIndex: number): void {
+    this.os(this.rtfVersion_ >= RTFVersion.word97 ? '_' : 'E_');
+    if (groveIndex) {
+      this.os(groveIndex.toString());
+      this.os('_');
+    }
+    this.os(elementIndex.toString());
+  }
+
+  // Helper to output idref-based hyperlink button
+  private idrefButton(groveIndex: number, chars: number[], size: number): void {
+    this.os('{\\field');
+    this.os('{\\*\\fldinst   ');  // trailing spaces required!
+    this.os(this.rtfVersion_ >= RTFVersion.word97 ? 'HYPERLINK  \\\\l ' : 'GOTOBUTTON ');
+    this.outputBookmarkNameFromId(groveIndex, chars, size);
+    if (this.rtfVersion_ >= RTFVersion.word97) {
+      this.os('}{\\fldrslt');
+    }
+    this.os(' ');
+  }
+
   private doStartLink(addr: Address): void {
-    // Hyperlink handling would go here
+    switch (addr.type) {
+      case Address.Type.resolvedNode: {
+        const node = addr.node?.node();
+        if (!node) {
+          this.os('{{');
+          break;
+        }
+        const idResult = node.getId();
+        if (idResult.result === AccessResult.accessOK && idResult.str.size() > 0) {
+          // Node has an ID - use it
+          const chars: number[] = [];
+          for (let i = 0; i < idResult.str.size(); i++) {
+            chars.push(idResult.str.get(i));
+          }
+          this.idrefButton(node.groveIndex(), chars, chars.length);
+        } else {
+          // Try element index
+          const elemResult = node.elementIndex();
+          if (elemResult.result === AccessResult.accessOK) {
+            this.os('{\\field');
+            this.os('{\\*\\fldinst   ');  // trailing spaces required!
+            this.os(this.rtfVersion_ >= RTFVersion.word97 ? 'HYPERLINK  \\\\l ' : 'GOTOBUTTON ');
+            this.outputBookmarkNameFromIndex(node.groveIndex(), elemResult.index);
+            this.os(' ');
+            if (this.rtfVersion_ >= RTFVersion.word97) {
+              this.os('}{\\fldrslt ');
+            }
+          } else {
+            this.os('{{');
+          }
+        }
+        break;
+      }
+      case Address.Type.idref: {
+        const id = addr.params[0];
+        // Convert StyleString to char array
+        const chars: number[] = [];
+        let size = 0;
+        if (typeof id === 'string') {
+          for (let i = 0; i < id.length; i++) {
+            const c = id.charCodeAt(i);
+            if (c === 0x20) break;  // Space terminates ID (multiple IDs)
+            chars.push(c);
+            size++;
+          }
+        }
+        const groveIdx = addr.node?.node()?.groveIndex() ?? 0;
+        this.idrefButton(groveIdx, chars, size);
+        break;
+      }
+      default:
+        this.os('{{');
+        break;
+    }
+    this.saveOutputFormat_ = { ...this.outputFormat_ };
   }
 
   // ============================================================================
