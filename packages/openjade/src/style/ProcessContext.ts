@@ -8,7 +8,8 @@ import { Collector } from './Collector';
 import { VM, InsnPtr } from './Insn';
 import { StyleObj, StyleStack, VarStyleObj } from './Style';
 import { FOTBuilder, SaveFOTBuilder, ConcreteSaveFOTBuilder, CharacterNIC } from './FOTBuilder';
-import { SosofoObj, FlowObj } from './SosofoObj';
+import { SosofoObj, FlowObj, EmptySosofoObj } from './SosofoObj';
+import { TableCellFlowObj } from './FlowObj';
 import { Interpreter, ProcessingMode, ProcessingModeRule, ProcessingModeSpecificity, ProcessingModeMatchContext } from './Interpreter';
 
 // Re-import ProcessingMode from Insn to use as compatible type
@@ -710,8 +711,26 @@ export class ProcessContext {
 
   endTableRow(): void {
     const table = this.tableStack_[this.tableStack_.length - 1];
-    table.inTableRow = false;
-    table.rowStyle = null;
+    if (table) {
+      // Fill in blank cells
+      const covered = table.covered;
+      for (let i = 0; i < table.nColumns + 1; i++) {
+        if (i >= covered.length || !covered[i]) {
+          table.currentColumn = i;
+          const content = new EmptySosofoObj();
+          // The last cell is a dummy one (missing=true)
+          const cell = new TableCellFlowObj(i >= table.nColumns);
+          cell.setContent(content);
+          cell.process(this);
+        }
+        // cell.process() will cover it
+        if (i < table.nColumns && i < covered.length) {
+          covered[i]--;
+        }
+      }
+      table.inTableRow = false;
+      table.rowStyle = null;
+    }
     this.currentFOTBuilder().endTableRow();
   }
 
