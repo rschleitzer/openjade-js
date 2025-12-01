@@ -527,36 +527,30 @@ export class Pattern {
     node: NodePtr,
     context: MatchContext
   ): boolean {
-    if (!node) return false;
-
+    // Port of upstream Pattern::matchAncestors1 from Pattern.cxx
     const elem = ancestors[index];
-    let repeatCount = 0;
+    let tem: NodePtr | null = node;
 
-    // Try to match current element
-    let currentNode: NodePtr = node;
-    while (currentNode) {
-      if (elem.matches(currentNode, context)) {
-        repeatCount++;
-        if (repeatCount >= elem.minRepeat()) {
-          // Check if we can match rest of ancestors
-          const parent = currentNode.parent();
-          if (Pattern.matchAncestors(ancestors, index + 1, parent, context)) {
-            return true;
-          }
-        }
-        if (repeatCount >= elem.maxRepeat()) {
-          break;
-        }
-      } else if (repeatCount >= elem.minRepeat() && elem.minRepeat() === 0) {
-        // Optional element, try matching with parent
-        const parent = currentNode.parent();
-        if (Pattern.matchAncestors(ancestors, index + 1, parent, context)) {
-          return true;
-        }
+    // First, must match minRepeat times, moving to parent each time
+    for (let i = 0; i < elem.minRepeat(); i++) {
+      if (!tem || !elem.matches(tem, context)) {
+        return false;
       }
-      currentNode = currentNode.parent();
+      tem = tem.parent();
     }
 
-    return repeatCount >= elem.minRepeat() && index === ancestors.length - 1;
+    // Then try to match remaining ancestors at current position
+    let repeatCount = elem.minRepeat();
+    for (;;) {
+      if (Pattern.matchAncestors(ancestors, index + 1, tem, context)) {
+        return true;
+      }
+      // Failed to match rest, try one more match of current element if allowed
+      if (repeatCount >= elem.maxRepeat() || !tem || !elem.matches(tem, context)) {
+        return false;
+      }
+      repeatCount++;
+      tem = tem.parent();
+    }
   }
 }
