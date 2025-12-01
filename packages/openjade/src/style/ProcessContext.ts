@@ -696,6 +696,7 @@ export class ProcessContext {
     table.rowConnectableLevel = this.connectableStackLevel_;
     table.currentColumn = 0;
     this.coverSpannedRows();
+    this.currentFOTBuilder().startTableRow();
   }
 
   inTable(): boolean {
@@ -711,6 +712,7 @@ export class ProcessContext {
     const table = this.tableStack_[this.tableStack_.length - 1];
     table.inTableRow = false;
     table.rowStyle = null;
+    this.currentFOTBuilder().endTableRow();
   }
 
   private coverSpannedRows(): void {

@@ -944,11 +944,23 @@ export class TableFlowObj extends CompoundFlowObj {
 
   override processInner(context: ProcessContext): void {
     const fotb = context.fotBuilder();
-    // TODO: fotb.startTable(this.nic_);
     context.startTable();
+    fotb.startTable(this.nic_);
+    // Output table borders with default border-present=false
+    fotb.setBorderPresent(false);
+    fotb.tableBeforeRowBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableAfterRowBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableBeforeColumnBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableAfterColumnBorder();
     super.processInner(context);
+    if (context.inTableRow()) {
+      context.endTableRow();
+    }
     context.endTable();
-    // TODO: fotb.endTable();
+    fotb.endTable();
   }
 
   override hasNonInheritedC(ident: Identifier): boolean {
@@ -1121,21 +1133,37 @@ export class TableRowFlowObj extends CompoundFlowObj {
 // Table cell flow object
 export class TableCellFlowObj extends CompoundFlowObj {
   private nic_: TableCellNIC;
+  private hasColumnNumber_: boolean = false;
 
-  constructor() {
+  constructor(missing: boolean = false) {
     super();
     this.nic_ = new TableCellNIC();
+    if (missing) {
+      this.nic_.missing = true;
+    }
   }
 
   override processInner(context: ProcessContext): void {
+    const fotb = context.fotBuilder();
     // Get column index from context if not specified
-    if (this.nic_.columnIndex === 0) {
+    if (!this.hasColumnNumber_) {
       this.nic_.columnIndex = context.currentTableColumn();
     }
-    context.noteTableCell(this.nic_.columnIndex, this.nic_.nColumnsSpanned, this.nic_.nRowsSpanned);
-    // TODO: fotb.startTableCell(this.nic_);
+    fotb.startTableCell(this.nic_);
+    if (!this.nic_.missing) {
+      context.noteTableCell(this.nic_.columnIndex, this.nic_.nColumnsSpanned, this.nic_.nRowsSpanned);
+    }
+    // Output cell borders with default border-present=false
+    fotb.setBorderPresent(false);
+    fotb.tableCellBeforeRowBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableCellAfterRowBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableCellBeforeColumnBorder();
+    fotb.setBorderPresent(false);
+    fotb.tableCellAfterColumnBorder();
     super.processInner(context);
-    // TODO: fotb.endTableCell();
+    fotb.endTableCell();
   }
 
   override hasNonInheritedC(ident: Identifier): boolean {
@@ -1162,9 +1190,14 @@ export class TableCellFlowObj extends CompoundFlowObj {
     if (ident.syntacticKey(keyRef)) {
       switch (keyRef.value) {
         case SyntacticKey.keyColumnIndex:
-        case SyntacticKey.keyColumnNumber:
-          this.nic_.columnIndex = obj.asInteger() ?? 0;
+        case SyntacticKey.keyColumnNumber: {
+          const n = obj.asInteger() ?? 0;
+          if (n > 0) {
+            this.nic_.columnIndex = n - 1; // Convert from 1-based to 0-based
+            this.hasColumnNumber_ = true;
+          }
           break;
+        }
         case SyntacticKey.keyRowNumber:
           // Row number - currently not stored but accepted
           break;
@@ -1189,6 +1222,7 @@ export class TableCellFlowObj extends CompoundFlowObj {
     copy.style_ = this.style_;
     copy.content_ = this.content_;
     Object.assign(copy.nic_, this.nic_);
+    copy.hasColumnNumber_ = this.hasColumnNumber_;
     return copy;
   }
 }

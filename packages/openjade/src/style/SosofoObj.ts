@@ -38,6 +38,7 @@ export interface ProcessContext {
   currentTableColumn(): number;
   noteTableCell(colIndex: number, colSpan: number, rowSpan: number): void;
   startTableRow(style: StyleObj | null): void;
+  inTableRow(): boolean;
   endTableRow(): void;
 }
 
