@@ -502,9 +502,12 @@ export class Pattern {
   }
 
   private static computeTrivial(ancestors: Element[]): boolean {
-    for (const elem of ancestors) {
-      if (!elem.trivial()) return false;
-    }
+    // Pattern is trivial only if:
+    // 1. It has exactly one element (no ancestors)
+    // 2. That element itself is trivial (no qualifiers)
+    if (ancestors.length === 0) return true;
+    if (!ancestors[0].trivial()) return false;
+    if (ancestors.length > 1) return false;  // Multiple ancestors = not trivial
     return true;
   }
 
