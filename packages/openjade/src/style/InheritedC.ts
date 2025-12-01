@@ -890,6 +890,26 @@ export class GenericLengthSpecInheritedC extends LengthSpecInheritedC {
     }
     value.obj = null;
   }
+
+  override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    // Don't report error for ErrorObj - error was already reported elsewhere
+    if (interp.isError(obj)) {
+      return null;
+    }
+    const lengthSpec = obj.lengthSpec();
+    if (lengthSpec) {
+      return new GenericLengthSpecInheritedC(this.identifier(), this.index(), this.setter_, lengthSpec.clone());
+    }
+    // Also accept plain lengths
+    const q = obj.quantityValue();
+    if (q.type !== 0 && q.dim === 1) {
+      const spec = new LengthSpec();
+      spec.addScalar(q.type === 1 ? q.longVal : Math.round(q.doubleVal));
+      return new GenericLengthSpecInheritedC(this.identifier(), this.index(), this.setter_, spec);
+    }
+    this.invalidValue(loc, interp);
+    return null;
+  }
 }
 
 // Generic optional length spec inherited characteristic - uses setter callback
