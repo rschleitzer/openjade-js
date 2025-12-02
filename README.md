@@ -7,9 +7,9 @@ A faithful 1:1 port of OpenSP and OpenJade from C++ to TypeScript, preserving al
 OpenJade-JS is a mechanical translation of two critical SGML/DSSSL tools to TypeScript:
 
 - **OpenSP**: An SGML parser implementing ISO 8879:1986 (Standard Generalized Markup Language)
-- **OpenJade**: A DSSSL (Document Style Semantics and Specification Language) engine for document transformation
+- **OpenJade**: An implementation of the DSSSL (Document Style Semantics and Specification Language) style language
 
-This project maintains 100% compatibility with the original C++ implementations while enabling these tools to run in JavaScript/TypeScript environments.
+This project aims to achieve 100% compatibility with the original C++ implementations while enabling these tools to run in JavaScript/TypeScript environments.
 
 ## Why?
 
@@ -39,11 +39,6 @@ openjade-js/
 │           ├── grove/
 │           ├── style/
 │           └── spgrove/
-├── tools/
-│   └── porter/              # C++ to TypeScript converter
-│       ├── convert.py
-│       ├── patterns/
-│       └── tests/
 └── upstream/                # Git submodules (original C++ source)
     ├── opensp/
     └── openjade/
@@ -115,23 +110,6 @@ npm install
 
 # Build packages
 npm run build
-```
-
-### Running the Porter
-
-The `porter` tool converts C++ source files to TypeScript:
-
-```bash
-cd tools/porter
-
-# Analyze source files
-python convert.py --analyze ../../upstream/opensp
-
-# Convert a specific file
-python convert.py \
-  --header ../../upstream/opensp/include/StringC.h \
-  --impl ../../upstream/opensp/lib/StringC.cxx \
-  --output ../../packages/opensp/src/StringC.ts
 ```
 
 ## Testing
@@ -206,19 +184,6 @@ This project maintains the original licenses from OpenSP and OpenJade. See LICEN
 - **James Clark**: Original author of SP, OpenSP, Jade, and OpenJade
 - **OpenJade Contributors**: All contributors to the original C++ projects
 - **SGML/DSSSL Community**: For decades of standardization work
-
-## Status
-
-🚧 **Work in Progress** 🚧
-
-Current progress:
-- [ ] Core type system (StringC, Vector, IList)
-- [ ] SGML parser core
-- [ ] Entity manager
-- [ ] Message system
-- [ ] onsgmls tool
-- [ ] DSSSL engine
-- [ ] OpenJade tools
 
 ## Resources
 
