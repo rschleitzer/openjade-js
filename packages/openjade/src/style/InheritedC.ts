@@ -832,6 +832,38 @@ export class GenericBoolInheritedC extends BoolInheritedC {
   }
 }
 
+// Generic integer (long) inherited characteristic - uses setter callback
+export type IntegerSetter = (fotb: FOTBuilder, value: number) => void;
+
+export class GenericIntegerInheritedC extends IntegerInheritedC {
+  private setter_: IntegerSetter;
+
+  constructor(ident: Identifier | null, index: number, setter: IntegerSetter, defaultValue: number = 0) {
+    super(ident, index, defaultValue);
+    this.setter_ = setter;
+  }
+
+  override set(
+    _vm: VM,
+    _style: VarStyleObj | null,
+    fotb: FOTBuilder,
+    value: { obj: ELObj | null },
+    _dependencies: number[]
+  ): void {
+    this.setter_(fotb, this.n_);
+    value.obj = null;
+  }
+
+  override make(obj: ELObj, loc: Location, interp: Interpreter): InheritedC | null {
+    const n = obj.asInteger();
+    if (n !== null) {
+      return new GenericIntegerInheritedC(this.identifier(), this.index(), this.setter_, n);
+    }
+    this.invalidValue(loc, interp);
+    return null;
+  }
+}
+
 // Generic length inherited characteristic - uses setter callback
 export type LengthSetter = (fotb: FOTBuilder, value: Length) => void;
 

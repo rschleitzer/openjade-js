@@ -62,7 +62,7 @@ import {
   FirstLineStartIndentC, LineSpacingC, FieldWidthC,
   ColorC, BackgroundColorC, LinesC, WritingModeC,
   createInheritedC, IgnoredInheritedC,
-  GenericBoolInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC,
+  GenericBoolInheritedC, GenericIntegerInheritedC, GenericLengthInheritedC, GenericLengthSpecInheritedC, GenericSymbolInheritedC,
   GenericOptLengthSpecInheritedC, GenericLetter2InheritedC
 } from './InheritedC';
 import { FormattingInstructionFlowObj, EntityFlowObj, UnknownFlowObj, createFlowObj } from './FlowObj';
@@ -2312,10 +2312,15 @@ export class Interpreter {
     this.installInheritedC('language', new GenericLetter2InheritedC(null, this.nInheritedC_++, (f, v) => f.setLanguage(v)));
     this.installInheritedC('country', new GenericLetter2InheritedC(null, this.nInheritedC_++, (f, v) => f.setCountry(v)));
 
+    // Extension characteristics (supported by specific backends like RTF)
+    this.installInheritedC('heading-level', new GenericIntegerInheritedC(null, this.nInheritedC_++, (f, v) => f.setHeadingLevel(v), 0));
+    this.installInheritedC('widow-count', new GenericIntegerInheritedC(null, this.nInheritedC_++, (f, v) => f.setWidowCount(v), 2));
+    this.installInheritedC('orphan-count', new GenericIntegerInheritedC(null, this.nInheritedC_++, (f, v) => f.setOrphanCount(v), 2));
+
     // Additional commonly used characteristics that aren't directly supported - use IgnoredInheritedC
     const ignoredChars = [
       'space-before', 'space-after', 'keep-with-next?', 'keep-with-previous?',
-      'heading-level', 'keep?', 'break-before?', 'break-after?',
+      'keep?', 'break-before?', 'break-after?',
       'cell-after-row-border', 'cell-after-column-border'
     ];
     for (const name of ignoredChars) {

@@ -105,6 +105,179 @@ const rightBorder = 3;
 const widowControl = 0x01;
 const orphanControl = 0x02;
 
+// Helper to create Letter2 (2-character language/country code as number)
+function letter2(c1: string, c2: string): number {
+  return (c1.charCodeAt(0) << 8) | c2.charCodeAt(0);
+}
+
+// Convert language/country to Windows LCID and charset mask
+function convertLanguage(language: number, country: number): { lang: number; langCharsets: number } {
+  if (language === 0) {
+    return { lang: DEFAULT_LANG, langCharsets: 0x1f };
+  }
+  switch (language) {
+    case letter2('B', 'G'):
+      return { lang: 0x402, langCharsets: 0x4 };
+    case letter2('C', 'A'):
+      return { lang: 0x403, langCharsets: 0x3 };
+    case letter2('C', 'S'):
+      return { lang: 0x405, langCharsets: 0x13 };
+    case letter2('D', 'A'):
+      return { lang: 0x406, langCharsets: 0x13 };
+    case letter2('D', 'E'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('D', 'E'): return { lang: 0x407, langCharsets };
+        case letter2('C', 'H'): return { lang: 0x807, langCharsets };
+        case letter2('A', 'T'): return { lang: 0xc07, langCharsets };
+        case letter2('L', 'U'): return { lang: 0x1007, langCharsets };
+        case letter2('L', 'I'): return { lang: 0x1407, langCharsets };
+      }
+      return { lang: 0x407, langCharsets };
+    }
+    case letter2('E', 'L'):
+      return { lang: 0x408, langCharsets: 0x8 };
+    case letter2('E', 'N'): {
+      const langCharsets = 0x1f;
+      switch (country) {
+        case letter2('U', 'S'): return { lang: 0x409, langCharsets };
+        case letter2('G', 'B'): return { lang: 0x809, langCharsets };
+        case letter2('A', 'U'): return { lang: 0xc09, langCharsets };
+        case letter2('C', 'A'): return { lang: 0x1009, langCharsets };
+        case letter2('N', 'Z'): return { lang: 0x1409, langCharsets };
+        case letter2('I', 'E'): return { lang: 0x1809, langCharsets };
+        case letter2('Z', 'A'): return { lang: 0x1c09, langCharsets };
+        case letter2('J', 'M'): return { lang: 0x2009, langCharsets };
+        case letter2('C', 'B'): return { lang: 0x2409, langCharsets };
+        case letter2('B', 'Z'): return { lang: 0x2809, langCharsets };
+        case letter2('T', 'T'): return { lang: 0x2c09, langCharsets };
+      }
+      return { lang: 0x409, langCharsets };
+    }
+    case letter2('E', 'S'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('E', 'S'): return { lang: 0x40a, langCharsets };
+        case letter2('M', 'X'): return { lang: 0x80a, langCharsets };
+        case letter2('G', 'T'): return { lang: 0x100a, langCharsets };
+        case letter2('C', 'R'): return { lang: 0x140a, langCharsets };
+        case letter2('P', 'A'): return { lang: 0x180a, langCharsets };
+        case letter2('D', 'O'): return { lang: 0x1c0a, langCharsets };
+        case letter2('V', 'E'): return { lang: 0x200a, langCharsets };
+        case letter2('C', 'O'): return { lang: 0x240a, langCharsets };
+        case letter2('P', 'E'): return { lang: 0x280a, langCharsets };
+        case letter2('A', 'R'): return { lang: 0x2c0a, langCharsets };
+        case letter2('E', 'C'): return { lang: 0x300a, langCharsets };
+        case letter2('C', 'L'): return { lang: 0x340a, langCharsets };
+        case letter2('U', 'Y'): return { lang: 0x380a, langCharsets };
+        case letter2('P', 'Y'): return { lang: 0x3c0a, langCharsets };
+        case letter2('B', 'O'): return { lang: 0x400a, langCharsets };
+        case letter2('S', 'V'): return { lang: 0x440a, langCharsets };
+        case letter2('H', 'N'): return { lang: 0x480a, langCharsets };
+        case letter2('N', 'I'): return { lang: 0x4c0a, langCharsets };
+        case letter2('P', 'R'): return { lang: 0x500a, langCharsets };
+      }
+      return { lang: 0x40a, langCharsets };
+    }
+    case letter2('F', 'I'):
+      return { lang: 0x40b, langCharsets: 0x13 };
+    case letter2('F', 'R'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('F', 'R'): return { lang: 0x40c, langCharsets };
+        case letter2('B', 'E'): return { lang: 0x80c, langCharsets };
+        case letter2('C', 'A'): return { lang: 0xc0c, langCharsets };
+        case letter2('C', 'H'): return { lang: 0x100c, langCharsets };
+        case letter2('L', 'U'): return { lang: 0x140c, langCharsets };
+      }
+      return { lang: 0x40c, langCharsets };
+    }
+    case letter2('H', 'U'):
+      return { lang: 0x40e, langCharsets: 0x12 };
+    case letter2('I', 'S'):
+      return { lang: 0x40f, langCharsets: 0x3 };
+    case letter2('I', 'T'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('I', 'T'): return { lang: 0x410, langCharsets };
+        case letter2('C', 'H'): return { lang: 0x810, langCharsets };
+      }
+      return { lang: 0x410, langCharsets };
+    }
+    case letter2('N', 'L'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('N', 'L'): return { lang: 0x413, langCharsets };
+        case letter2('B', 'E'): return { lang: 0x813, langCharsets };
+      }
+      return { lang: 0x413, langCharsets };
+    }
+    case letter2('N', 'O'):
+      return { lang: 0x414, langCharsets: 0x13 };
+    case letter2('P', 'L'):
+      return { lang: 0x415, langCharsets: 0x12 };
+    case letter2('P', 'T'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('B', 'R'): return { lang: 0x416, langCharsets };
+        case letter2('P', 'T'): return { lang: 0x816, langCharsets };
+      }
+      return { lang: 0x416, langCharsets };
+    }
+    case letter2('R', 'O'):
+      return { lang: 0x418, langCharsets: 0x12 };
+    case letter2('R', 'U'):
+      return { lang: 0x419, langCharsets: 0x4 };
+    case letter2('H', 'R'): {
+      const langCharsets = 0x12;
+      switch (country) {
+        case letter2('H', 'R'): return { lang: 0x41a, langCharsets };
+        case letter2('S', 'P'): return { lang: 0x81a, langCharsets };
+      }
+      return { lang: 0x41a, langCharsets };
+    }
+    case letter2('S', 'K'):
+      return { lang: 0x41b, langCharsets: 0x12 };
+    case letter2('S', 'Q'):
+      return { lang: 0x41c, langCharsets: 0x12 };
+    case letter2('S', 'V'): {
+      const langCharsets = 0x13;
+      switch (country) {
+        case letter2('S', 'E'): return { lang: 0x41d, langCharsets };
+        case letter2('F', 'I'): return { lang: 0x81d, langCharsets };
+      }
+      return { lang: 0x41d, langCharsets };
+    }
+    case letter2('T', 'R'):
+      return { lang: 0x41f, langCharsets: 0x12 };
+    case letter2('I', 'D'):
+      return { lang: 0x421, langCharsets: 0x13 };
+    case letter2('U', 'K'):
+      return { lang: 0x422, langCharsets: 0x4 };
+    case letter2('B', 'E'):
+      return { lang: 0x423, langCharsets: 0x4 };
+    case letter2('S', 'L'):
+      return { lang: 0x424, langCharsets: 0x12 };
+    case letter2('E', 'T'):
+      return { lang: 0x425, langCharsets: 0x12 };
+    case letter2('L', 'V'):
+      return { lang: 0x426, langCharsets: 0x12 };
+    case letter2('L', 'T'):
+      return { lang: 0x427, langCharsets: 0x12 };
+    case letter2('V', 'I'):
+      return { lang: 0x42a, langCharsets: 0x13 };
+    case letter2('E', 'U'):
+      return { lang: 0x42d, langCharsets: 0x13 };
+    case letter2('A', 'F'):
+      return { lang: 0x436, langCharsets: 0x1f };
+    case letter2('F', 'O'):
+      return { lang: 0x438, langCharsets: 0x13 };
+    case letter2('J', 'A'):
+      return { lang: 0x411, langCharsets: (1 << jisCharset) };
+  }
+  return { lang: DEFAULT_LANG, langCharsets: 0x1f };
+}
+
 // ============================================================================
 // Windows Charset Data (matching upstream exactly)
 // ============================================================================
@@ -1070,7 +1243,19 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
       changed = true;
     }
 
-    // Language handling would go here (convertLanguage)
+    // Language handling
+    if (this.outputFormat_.country !== this.specFormat_.country ||
+        this.outputFormat_.language !== this.specFormat_.language) {
+      this.outputFormat_.country = this.specFormat_.country;
+      this.outputFormat_.language = this.specFormat_.language;
+      const result = convertLanguage(this.outputFormat_.language, this.outputFormat_.country);
+      if (result.lang !== this.outputFormat_.lang) {
+        this.outputFormat_.lang = result.lang;
+        this.outputFormat_.langCharsets = result.langCharsets;
+        this.os(`\\lang${result.lang}`);
+        changed = true;
+      }
+    }
 
     // Font family and charset handling
     const charsetOk = ((1 << this.outputFormat_.charset) & this.outputFormat_.langCharsets) !== 0;
@@ -1838,6 +2023,26 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
 
   override setCountry(country: Letter2): void {
     this.specFormat_.country = country;
+  }
+
+  override setHeadingLevel(n: number): void {
+    this.specFormat_.headingLevel = (n >= 1 && n <= 9) ? n : 0;
+  }
+
+  override setWidowCount(n: number): void {
+    if (n > 1) {
+      this.specFormat_.widowOrphanControl |= widowControl;
+    } else {
+      this.specFormat_.widowOrphanControl &= orphanControl;
+    }
+  }
+
+  override setOrphanCount(n: number): void {
+    if (n > 1) {
+      this.specFormat_.widowOrphanControl |= orphanControl;
+    } else {
+      this.specFormat_.widowOrphanControl &= widowControl;
+    }
   }
 
   // ============================================================================

@@ -523,6 +523,7 @@ export abstract class FOTBuilder {
   setWritingMode(_mode: Symbol): void {}
   setLanguage(_lang: Letter2): void {}
   setCountry(_country: Letter2): void {}
+  setHeadingLevel(_level: number): void {}
 
   // Page number related
   currentNodePageNumber(_node: NodePtr): void {}
@@ -793,6 +794,9 @@ enum SavedActionType {
   setFooterMargin,
   setLanguage,
   setCountry,
+  setHeadingLevel,
+  setWidowCount,
+  setOrphanCount,
   setInputWhitespaceTreatment,
   setFillingDirection,
   setWritingMode,
@@ -973,6 +977,15 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
           break;
         case SavedActionType.setCountry:
           builder.setCountry(action.data);
+          break;
+        case SavedActionType.setHeadingLevel:
+          builder.setHeadingLevel(action.data);
+          break;
+        case SavedActionType.setWidowCount:
+          builder.setWidowCount(action.data);
+          break;
+        case SavedActionType.setOrphanCount:
+          builder.setOrphanCount(action.data);
           break;
         case SavedActionType.setInputWhitespaceTreatment:
           builder.setInputWhitespaceTreatment(action.data);
@@ -1206,6 +1219,18 @@ export class ConcreteSaveFOTBuilder extends SaveFOTBuilder {
 
   override setCountry(country: Letter2): void {
     this.actions_.push({ type: SavedActionType.setCountry, data: country });
+  }
+
+  override setHeadingLevel(level: number): void {
+    this.actions_.push({ type: SavedActionType.setHeadingLevel, data: level });
+  }
+
+  override setWidowCount(count: number): void {
+    this.actions_.push({ type: SavedActionType.setWidowCount, data: count });
+  }
+
+  override setOrphanCount(count: number): void {
+    this.actions_.push({ type: SavedActionType.setOrphanCount, data: count });
   }
 
   override setInputWhitespaceTreatment(treatment: Symbol): void {
