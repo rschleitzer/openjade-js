@@ -1222,21 +1222,10 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
         this.os('{\\*\\bkmkend ');
         this.outputBookmarkNameFromId(g, chars, chars.length);
         this.os('}');
-      } else {
-        const elemResult = node.node()?.elementIndex();
-        if (elemResult && elemResult.result === AccessResult.accessOK) {
-          // For element index-based bookmarks, output insertion character followed by bookmark data
-          // Upstream uses INSERTION_CHAR which is typically a special marker
-          // For now, just output the bookmark directly
-          const g = node.node()?.groveIndex() ?? 0;
-          this.os('{\\*\\bkmkstart ');
-          this.outputBookmarkNameFromIndex(g, elemResult.index);
-          this.os('}');
-          this.os('{\\*\\bkmkend ');
-          this.outputBookmarkNameFromIndex(g, elemResult.index);
-          this.os('}');
-        }
       }
+      // Note: Index-based bookmarks are only needed for elements that are link targets
+      // but don't have explicit IDs. Since we don't track link target registration,
+      // we only output ID-based bookmarks which is sufficient for proper linking.
     }
     this.nPendingElementsNonEmpty_ = 0;
     this.pendingElements_.length = 0;
