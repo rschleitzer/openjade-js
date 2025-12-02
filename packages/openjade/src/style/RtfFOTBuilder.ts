@@ -1770,6 +1770,11 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
     this.specFormat_.lineSpacing = this.computeLengthSpec(spec);
   }
 
+  override setPositionPointShift(spec: LengthSpec): void {
+    this.specFormat_.positionPointShiftSpec = spec;
+    this.specFormat_.positionPointShift = halfPoints(this.computeLengthSpec(spec));
+  }
+
   override setMinLeading(spec: OptLengthSpec): void {
     this.specFormat_.lineSpacingAtLeast = spec.hasLength;
     // Also update all stack entries to preserve inherited value when popping
@@ -2447,19 +2452,29 @@ export class RtfFOTBuilder extends SerialFOTBuilder {
   }
 
   override startSubscript(): void {
-    this.os(`\\\\s\\\\do${this.specFormat_.subscriptDepth}(`);
+    this.start();
+    this.inlinePrepare();
+    this.enterMathMode();
+    this.os(`\\s\\do${this.specFormat_.subscriptDepth}(`);
   }
 
   override endSubscript(): void {
     this.os(')');
+    this.exitMathMode();
+    this.end();
   }
 
   override startSuperscript(): void {
-    this.os(`\\\\s\\\\up${this.specFormat_.superscriptHeight}(`);
+    this.start();
+    this.inlinePrepare();
+    this.enterMathMode();
+    this.os(`\\s\\up${this.specFormat_.superscriptHeight}(`);
   }
 
   override endSuperscript(): void {
     this.os(')');
+    this.exitMathMode();
+    this.end();
   }
 
   private enterMathMode(): void {
