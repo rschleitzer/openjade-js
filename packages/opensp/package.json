@@ -1,22 +1,39 @@
 {
-  "name": "@openjade-js/opensp",
+  "name": "@scaly/opensp",
   "version": "0.1.0",
   "description": "TypeScript port of OpenSP SGML parser",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "ts-node src/test.ts"
+    "test": "ts-node src/test.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "sgml",
     "parser",
-    "opensp"
+    "opensp",
+    "xml",
+    "dtd",
+    "doctype"
   ],
   "author": "TypeScript port of OpenSP by James Clark and the OpenJade community",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rschleitzer/openjade-js.git",
+    "directory": "packages/opensp"
+  },
+  "bugs": {
+    "url": "https://github.com/rschleitzer/openjade-js/issues"
+  },
+  "homepage": "https://github.com/rschleitzer/openjade-js#readme",
   "devDependencies": {
     "@types/node": "^20.0.0",
     "typescript": "^5.9.3"

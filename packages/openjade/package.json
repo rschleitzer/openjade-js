@@ -1,25 +1,41 @@
 {
-  "name": "@openjade-js/openjade",
+  "name": "@scaly/openjade",
   "version": "0.1.0",
   "description": "TypeScript port of OpenJade DSSSL engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "ts-node src/test.ts"
+    "test": "ts-node src/test.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "dsssl",
     "sgml",
     "jade",
-    "openjade"
+    "openjade",
+    "stylesheet",
+    "document-processing"
   ],
   "author": "TypeScript port of OpenJade by James Clark and the OpenJade community",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rschleitzer/openjade-js.git",
+    "directory": "packages/openjade"
+  },
+  "bugs": {
+    "url": "https://github.com/rschleitzer/openjade-js/issues"
+  },
+  "homepage": "https://github.com/rschleitzer/openjade-js#readme",
   "dependencies": {
-    "@openjade-js/opensp": "file:../opensp"
+    "@scaly/opensp": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
