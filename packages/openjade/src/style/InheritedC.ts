@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, StringC, Char } from '@openjade-js/opensp';
+import { Location, StringC, Char } from '@scaly/opensp';
 import { ELObj, IntegerObj, StringObj, LengthObj, LengthSpecObj, SymbolObj, LengthSpec, ColorObj } from './ELObj';
 import { VM } from './Insn';
 import { InheritedC, VarStyleObj } from './Style';

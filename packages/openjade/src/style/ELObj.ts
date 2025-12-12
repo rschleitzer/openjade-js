@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Char, Location, StringC } from '@openjade-js/opensp';
+import { Char, Location, StringC } from '@scaly/opensp';
 import { GroveString, NodePtr } from '../grove/Node';
 import { Collector, CollectorObject } from './Collector';
 import {

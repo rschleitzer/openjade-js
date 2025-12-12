@@ -4,7 +4,7 @@
 // This file defines the Identifier interface - equivalent to C++ forward declaration.
 // The actual implementation is IdentifierImpl in Interpreter.ts
 
-import { Location, StringC } from '@openjade-js/opensp';
+import { Location, StringC } from '@scaly/opensp';
 
 // Forward declarations using type-only imports
 import type { ELObj } from './ELObj';

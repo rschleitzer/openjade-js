@@ -1,7 +1,7 @@
 // Copyright (c) 1997 James Clark
 // See the file copying.txt for copying permission.
 
-import { StringC, Char, String as StringOf } from '@openjade-js/opensp';
+import { StringC, Char, String as StringOf } from '@scaly/opensp';
 import { NodePtr, GroveString, SdataMapper, GroveChar } from '../grove/Node';
 
 // Helper to convert StringC to GroveString

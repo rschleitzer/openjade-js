@@ -26,7 +26,7 @@ import {
   SOCatalogManager,
   Vector,
   ExternalInfoImpl
-} from '@openjade-js/opensp';
+} from '@scaly/opensp';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NodePtr } from '../grove/Node';

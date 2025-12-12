@@ -3,7 +3,7 @@
 // Original: Copyright (c) 1998 ISOGEN International Corp.
 // Created by Kathleen Marszalek and Paul Prescod.
 
-import { Char, StringC } from '@openjade-js/opensp';
+import { Char, StringC } from '@scaly/opensp';
 import { NodePtr } from '../grove/Node';
 import {
   FOTBuilder,

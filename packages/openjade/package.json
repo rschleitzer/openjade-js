@@ -1,12 +1,13 @@
 {
   "name": "@scaly/openjade",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "TypeScript port of OpenJade DSSSL engine",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "src"
+    "src",
+    "dsssl"
   ],
   "scripts": {
     "build": "tsc",
@@ -35,7 +36,7 @@
   },
   "homepage": "https://github.com/rschleitzer/openjade-js#readme",
   "dependencies": {
-    "@scaly/opensp": "^0.1.0"
+    "@scaly/opensp": "^0.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -1,7 +1,7 @@
 // Copyright (c) 1997 James Clark
 // See the file COPYING for copying permission.
 
-import { Location } from '@openjade-js/opensp';
+import { Location } from '@scaly/opensp';
 import { AccessResult, NodePtr } from './Node';
 
 export abstract class LocNode {

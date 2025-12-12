@@ -62,3 +62,30 @@ export * from './Expression';
 
 // Export SgmlFOTBuilder
 export { SgmlFOTBuilder, makeSgmlFOTBuilder } from './SgmlFOTBuilder';
+
+// Export DssslApp - the main application class
+export { DssslApp } from './DssslApp';
+
+// Export StyleEngine and related interfaces
+export { StyleEngine, FOTBuilderExtension, GroveManager } from './StyleEngine';
+
+// Export TransformFOTBuilder and output streams
+export {
+  TransformFOTBuilder,
+  makeTransformFOTBuilder,
+  FileOutputStream,
+  StringOutputStream,
+  RecordOutputStream,
+  OutputCharStream as TransformOutputCharStream,
+  DocumentTypeNIC,
+  ElementNIC
+} from './TransformFOTBuilder';
+
+// Export RtfFOTBuilder
+export { RtfFOTBuilder, makeRtfFOTBuilder } from './RtfFOTBuilder';
+
+// Export TeXFOTBuilder
+export { TeXFOTBuilder, makeTeXFOTBuilder } from './TeXFOTBuilder';
+
+// Export MifFOTBuilder
+export { MifFOTBuilder, makeMifFOTBuilder } from './MifFOTBuilder';

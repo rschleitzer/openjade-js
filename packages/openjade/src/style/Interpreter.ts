@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, Char, StringC, String as StringOf, XcharMap, Messenger, Message, MessageType, MessageType1, MessageType2, MessageType3 } from '@openjade-js/opensp';
+import { Location, Char, StringC, String as StringOf, XcharMap, Messenger, Message, MessageType, MessageType1, MessageType2, MessageType3 } from '@scaly/opensp';
 import {
   ELObj,
   NilObj,

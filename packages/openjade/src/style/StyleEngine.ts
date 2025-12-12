@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Messenger, StringC, CharsetInfo, InputSource, InternalInputSource, InputSourceOrigin, SgmlParser } from '@openjade-js/opensp';
+import { Messenger, StringC, CharsetInfo, InputSource, InternalInputSource, InputSourceOrigin, SgmlParser } from '@scaly/opensp';
 import { NodePtr } from '../grove/Node';
 import { FOTBuilder } from './FOTBuilder';
 import { Interpreter } from './Interpreter';

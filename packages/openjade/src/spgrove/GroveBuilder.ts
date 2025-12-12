@@ -34,7 +34,7 @@ import {
   Char,
   Index,
   ConstPtr
-} from '@openjade-js/opensp';
+} from '@scaly/opensp';
 
 import {
   AccessResult,

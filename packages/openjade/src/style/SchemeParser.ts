@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, Char, StringC, String as StringOf, InputSource, Messenger, Message, Xchar } from '@openjade-js/opensp';
+import { Location, Char, StringC, String as StringOf, InputSource, Messenger, Message, Xchar } from '@scaly/opensp';
 import { Interpreter, LexCategory, SyntacticKey, ProcessingMode, IdentifierImpl, Unit, RuleType, Environment } from './Interpreter';
 import { ELObj, PairObj, SymbolObj, NilObj, CharObj, StringObj, IntegerObj, RealObj, VectorObj, LangObj, Identifier } from './ELObj';
 import { Pattern, Element } from './Pattern';

@@ -25,7 +25,7 @@ import {
   Vector,
   Notation,
   SubstTable
-} from '@openjade-js/opensp';
+} from '@scaly/opensp';
 
 // Helper to create StringC from string
 function makeStringC(s: string): StringC {

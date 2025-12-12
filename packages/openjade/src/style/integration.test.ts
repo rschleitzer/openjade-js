@@ -1,7 +1,7 @@
 // Integration test for DSSSL StyleEngine
 // This demonstrates that the stylesheet parsing and compilation works
 
-import { Messenger, Message, MessageType0 } from '@openjade-js/opensp';
+import { Messenger, Message, MessageType0 } from '@scaly/opensp';
 import { StyleEngine, GroveManager } from './StyleEngine';
 import { StringOutputStream, TransformFOTBuilder } from './TransformFOTBuilder';
 import { Interpreter } from './Interpreter';

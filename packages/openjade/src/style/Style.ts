@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Location, StringC, Messenger } from '@openjade-js/opensp';
+import { Location, StringC, Messenger } from '@scaly/opensp';
 import { ELObj, FunctionObj, Identifier } from './ELObj';
 import { Collector } from './Collector';
 import { NodePtr } from '../grove/Node';

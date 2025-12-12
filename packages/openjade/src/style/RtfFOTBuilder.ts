@@ -4,7 +4,7 @@
 // RtfFOTBuilder - RTF backend for OpenJade
 // Faithful port from upstream openjade/jade/RtfFOTBuilder.cxx
 
-import { Char, StringC } from '@openjade-js/opensp';
+import { Char, StringC } from '@scaly/opensp';
 import { NodePtr, AccessResult } from '../grove/Node';
 import {
   SerialFOTBuilder,

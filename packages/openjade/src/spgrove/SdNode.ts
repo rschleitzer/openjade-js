@@ -1,7 +1,7 @@
 // Copyright (c) 1997 James Clark
 // See the file COPYING for copying permission.
 
-import { Sd, Syntax } from '@openjade-js/opensp';
+import { Sd, Syntax } from '@scaly/opensp';
 import { AccessResult, NodePtr } from '../grove/Node';
 
 export abstract class SdNode {

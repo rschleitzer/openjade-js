@@ -18,7 +18,7 @@ import {
   ExtendEntityManager,
   SOCatalogManager,
   String as StringOf
-} from '@openjade-js/opensp';
+} from '@scaly/opensp';
 import { DssslApp } from '../style/DssslApp';
 import { FOTBuilder } from '../style/FOTBuilder';
 import { FOTBuilderExtension } from '../style/StyleEngine';

@@ -1,7 +1,7 @@
 // Copyright (c) 1996 James Clark
 // See the file copying.txt for copying permission.
 
-import { Char, StringC } from '@openjade-js/opensp';
+import { Char, StringC } from '@scaly/opensp';
 import { NodePtr, GroveString, AccessResult } from '../grove/Node';
 import {
   SerialFOTBuilder,

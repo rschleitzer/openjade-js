@@ -3,7 +3,7 @@
 // Original written by David Megginson <dmeggins@microstar.com>
 // With changes from Sebastian Rahtz <s.rahtz@elsevier.co.uk>
 
-import { Char, StringC } from '@openjade-js/opensp';
+import { Char, StringC } from '@scaly/opensp';
 import { NodePtr } from '../grove/Node';
 import {
   FOTBuilder,

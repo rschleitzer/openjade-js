@@ -1,7 +1,7 @@
 // Copyright (c) 1996, 1997 James Clark
 // See the file copying.txt for copying permission.
 
-import { Char, StringC } from '@openjade-js/opensp';
+import { Char, StringC } from '@scaly/opensp';
 import { GroveString, NodePtr } from '../grove/Node';
 
 // Simple string type for style module - uses native JavaScript strings where possible
